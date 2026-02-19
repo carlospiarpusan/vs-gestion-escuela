@@ -1,10 +1,19 @@
 "use client";
 
+/**
+ * @file Dashboard Home Page
+ * @description Main dashboard page for the driving school management system.
+ * Displays key statistics at a glance including active students, today's classes,
+ * pending exams, and monthly revenue. Data is fetched from Supabase on mount
+ * and presented as summary cards with loading states.
+ */
+
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { Users, Calendar, FileText, DollarSign } from "lucide-react";
 
+/** Shape of the aggregated dashboard statistics */
 interface Stats {
   alumnos: number;
   clasesHoy: number;
@@ -14,6 +23,8 @@ interface Stats {
 
 export default function DashboardPage() {
   const { perfil } = useAuth();
+
+  // Initialise stats with zeros so the UI always has valid numbers to render
   const [stats, setStats] = useState<Stats>({
     alumnos: 0,
     clasesHoy: 0,
@@ -23,57 +34,78 @@ export default function DashboardPage() {
   const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
+    // Wait until the user profile is available before fetching data
     if (!perfil) return;
 
     const fetchStats = async () => {
-      const supabase = createClient();
-      const hoy = new Date().toISOString().split("T")[0];
-      const primerDiaMes = new Date(
-        new Date().getFullYear(),
-        new Date().getMonth(),
-        1
-      )
-        .toISOString()
-        .split("T")[0];
+      try {
+        const supabase = createClient();
 
-      const [alumnosRes, clasesRes, examenesRes, ingresosRes] =
-        await Promise.all([
-          supabase
-            .from("alumnos")
-            .select("id", { count: "exact", head: true })
-            .eq("estado", "activo"),
-          supabase
-            .from("clases")
-            .select("id", { count: "exact", head: true })
-            .eq("fecha", hoy),
-          supabase
-            .from("examenes")
-            .select("id", { count: "exact", head: true })
-            .eq("resultado", "pendiente"),
-          supabase
-            .from("ingresos")
-            .select("monto")
-            .gte("fecha", primerDiaMes)
-            .eq("estado", "cobrado"),
-        ]);
+        // Compute date boundaries used to filter queries
+        const hoy = new Date().toISOString().split("T")[0];
+        const primerDiaMes = new Date(
+          new Date().getFullYear(),
+          new Date().getMonth(),
+          1
+        )
+          .toISOString()
+          .split("T")[0];
 
-      const totalIngresos =
-        ingresosRes.data?.reduce((sum, i) => sum + Number(i.monto), 0) ?? 0;
+        // Fire all four queries in parallel for faster loading
+        const [alumnosRes, clasesRes, examenesRes, ingresosRes] =
+          await Promise.all([
+            // Count active students
+            supabase
+              .from("alumnos")
+              .select("id", { count: "exact", head: true })
+              .eq("estado", "activo"),
+            // Count classes scheduled for today
+            supabase
+              .from("clases")
+              .select("id", { count: "exact", head: true })
+              .eq("fecha", hoy),
+            // Count exams still pending a result
+            supabase
+              .from("examenes")
+              .select("id", { count: "exact", head: true })
+              .eq("resultado", "pendiente"),
+            // Fetch collected revenue amounts for the current month
+            supabase
+              .from("ingresos")
+              .select("monto")
+              .gte("fecha", primerDiaMes)
+              .eq("estado", "cobrado"),
+          ]);
 
-      setStats({
-        alumnos: alumnosRes.count ?? 0,
-        clasesHoy: clasesRes.count ?? 0,
-        examenesPendientes: examenesRes.count ?? 0,
-        ingresosMes: totalIngresos,
-      });
-      setLoadingStats(false);
+        // Sum the monthly revenue, guarding against NaN values in monto
+        const totalIngresos =
+          ingresosRes.data?.reduce((sum, i) => {
+            const parsed = Number(i.monto);
+            return sum + (isNaN(parsed) ? 0 : parsed);
+          }, 0) ?? 0;
+
+        setStats({
+          alumnos: alumnosRes.count ?? 0,
+          clasesHoy: clasesRes.count ?? 0,
+          examenesPendientes: examenesRes.count ?? 0,
+          ingresosMes: totalIngresos,
+        });
+      } catch (error) {
+        // Log the error but keep the default zero stats so the UI still renders
+        console.error("Error al obtener estadísticas del dashboard:", error);
+      } finally {
+        // Always hide the loading skeleton, even if the fetch failed
+        setLoadingStats(false);
+      }
     };
 
     fetchStats();
   }, [perfil]);
 
+  // Display name with a sensible fallback
   const nombre = perfil?.nombre || "Usuario";
 
+  // Configuration for each stat card: label, formatted value, icon, and accent colour
   const statCards = [
     {
       label: "Alumnos Activos",

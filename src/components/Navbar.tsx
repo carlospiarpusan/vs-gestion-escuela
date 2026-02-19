@@ -3,125 +3,146 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 10);
+    const handleScroll = () => setScrolled(window.scrollY > 0);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  const navLinks = [
+    { name: "Características", href: "#features" },
+    { name: "Cómo funciona", href: "#how-it-works" },
+    { name: "Precios", href: "#pricing" },
+  ];
+
   return (
-    <nav
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 glass ${
-        scrolled
-          ? "bg-white/80 dark:bg-black/80 border-b border-gray-200/50 dark:border-gray-800/50"
-          : "bg-transparent"
-      }`}
-    >
-      <div className="max-w-[980px] mx-auto px-6">
-        <div className="flex items-center justify-between h-12">
-          {/* Logo */}
-          <Link
-            href="/"
-            className="text-xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]"
-          >
-            AutoEscuela<span className="gradient-text">Pro</span>
-          </Link>
-
-          {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-8">
-            <a
-              href="#features"
-              className="text-xs text-[#1d1d1f]/80 dark:text-[#f5f5f7]/80 hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
-            >
-              Características
-            </a>
-            <a
-              href="#how-it-works"
-              className="text-xs text-[#1d1d1f]/80 dark:text-[#f5f5f7]/80 hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
-            >
-              Cómo funciona
-            </a>
-            <a
-              href="#pricing"
-              className="text-xs text-[#1d1d1f]/80 dark:text-[#f5f5f7]/80 hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
-            >
-              Precios
-            </a>
-          </div>
-
-          {/* Auth Buttons */}
-          <div className="hidden md:flex items-center gap-3">
+    <>
+      <nav
+        className={cn(
+          "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
+          scrolled || menuOpen ? "glass-nav h-[52px]" : "bg-transparent h-[52px]"
+        )}
+      >
+        <div className="max-w-[980px] mx-auto px-6 h-full">
+          <div className="flex items-center justify-between h-full">
+            {/* Logo */}
             <Link
-              href="/login"
-              className="text-xs text-[#0071e3] hover:underline transition-colors"
+              href="/"
+              className="text-[17px] font-semibold tracking-tight text-foreground z-50 hover:opacity-80 transition-opacity"
             >
-              Iniciar Sesión
+              AutoEscuela<span className="text-blue-apple">Pro</span>
             </Link>
-            <Link
-              href="/registro"
-              className="text-xs bg-[#0071e3] text-white px-4 py-1.5 rounded-full hover:bg-[#0077ED] transition-colors"
-            >
-              Registro
-            </Link>
-          </div>
 
-          {/* Mobile menu button */}
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="md:hidden text-[#1d1d1f] dark:text-[#f5f5f7]"
-          >
-            {menuOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+            {/* Desktop Nav */}
+            <div className="hidden md:flex items-center gap-10">
+              {navLinks.map((link) => (
+                <a
+                  key={link.name}
+                  href={link.href}
+                  className="text-[12px] text-foreground/80 hover:text-blue-apple transition-colors tracking-wide"
+                >
+                  {link.name}
+                </a>
+              ))}
+            </div>
+
+            {/* Auth Buttons */}
+            <div className="hidden md:flex items-center gap-6">
+              <Link
+                href="/login"
+                className="text-[12px] text-foreground/80 hover:text-blue-apple transition-colors tracking-wide"
+              >
+                Iniciar Sesión
+              </Link>
+              <Link
+                href="/registro"
+                className="text-[12px] bg-foreground text-background px-3 py-1 rounded-full hover:bg-foreground/90 transition-all"
+              >
+                Prueba gratis
+              </Link>
+            </div>
+
+            {/* Mobile menu button */}
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="md:hidden text-foreground z-50"
+            >
+              <AnimatePresence mode="wait">
+                {menuOpen ? (
+                  <motion.div
+                    key="close"
+                    initial={{ opacity: 0, rotate: -90 }}
+                    animate={{ opacity: 1, rotate: 0 }}
+                    exit={{ opacity: 0, rotate: 90 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <X size={18} />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="menu"
+                    initial={{ opacity: 0, rotate: 90 }}
+                    animate={{ opacity: 1, rotate: 0 }}
+                    exit={{ opacity: 0, rotate: -90 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Menu size={18} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </button>
+          </div>
         </div>
+      </nav>
 
-        {/* Mobile menu */}
+      {/* Mobile menu overlay */}
+      <AnimatePresence>
         {menuOpen && (
-          <div className="md:hidden py-4 border-t border-gray-200/50 dark:border-gray-800/50 animate-fade-in">
-            <div className="flex flex-col gap-4">
-              <a
-                href="#features"
-                className="text-sm text-[#1d1d1f]/80 dark:text-[#f5f5f7]/80"
-                onClick={() => setMenuOpen(false)}
-              >
-                Características
-              </a>
-              <a
-                href="#how-it-works"
-                className="text-sm text-[#1d1d1f]/80 dark:text-[#f5f5f7]/80"
-                onClick={() => setMenuOpen(false)}
-              >
-                Cómo funciona
-              </a>
-              <a
-                href="#pricing"
-                className="text-sm text-[#1d1d1f]/80 dark:text-[#f5f5f7]/80"
-                onClick={() => setMenuOpen(false)}
-              >
-                Precios
-              </a>
-              <div className="flex flex-col gap-2 pt-2 border-t border-gray-200/20 dark:border-gray-800/20">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-40 bg-background/95 backdrop-blur-xl pt-24 px-8 md:hidden"
+          >
+            <div className="flex flex-col gap-8">
+              {navLinks.map((link) => (
+                <a
+                  key={link.name}
+                  href={link.href}
+                  className="text-2xl font-semibold text-foreground border-b border-gray-100 dark:border-gray-800 pb-4"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {link.name}
+                </a>
+              ))}
+              <div className="flex flex-col gap-4 mt-8">
                 <Link
                   href="/login"
-                  className="text-sm text-[#0071e3]"
+                  className="text-lg text-blue-apple font-medium"
+                  onClick={() => setMenuOpen(false)}
                 >
                   Iniciar Sesión
                 </Link>
                 <Link
                   href="/registro"
-                  className="text-sm bg-[#0071e3] text-white px-4 py-2 rounded-full text-center hover:bg-[#0077ED] transition-colors"
+                  className="text-lg bg-blue-apple text-white px-4 py-3 rounded-full text-center font-medium shadow-lg shadow-blue-apple/20"
+                  onClick={() => setMenuOpen(false)}
                 >
-                  Registro
+                  Prueba gratis
                 </Link>
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
-      </div>
-    </nav>
+      </AnimatePresence>
+    </>
   );
 }

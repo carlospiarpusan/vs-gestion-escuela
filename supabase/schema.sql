@@ -1,3 +1,23 @@
+-- ============================================================
+-- AGENTIC SCHOOL MANAGEMENT SYSTEM - DATABASE SCHEMA
+-- ============================================================
+--
+-- This schema defines the structure for a multi-tenant driving school management system.
+-- It uses Supabase Auth for user management and Row Level Security (RLS) for access control.
+--
+-- ROLES & HIERARCHY:
+-- 1. super_admin: Platform owner, full access to all schools.
+-- 2. admin_escuela: School owner, full access to their school and all its branches (sedes).
+-- 3. admin_sede: Branch manager, access only to their specific branch.
+-- 4. secretaria: Similar to admin_sede but focused on administrative tasks.
+-- 5. instructor: Access to assigned classes, students, and vehicles.
+-- 6. alumno: Access only to their own data (classes, exams, payments).
+--
+-- KEY ENTITIES:
+-- - Escuelas (Schools): Top-level tenant.
+-- - Sedes (Branches): Physical locations belonging to a school.
+-- - Perfiles (Profiles): User profiles linked to auth.users.
+--
 -- ============================================
 -- FUNCIONES AUXILIARES
 -- ============================================
@@ -372,29 +392,29 @@ create table public.mantenimiento_vehiculos (
   created_at timestamp with time zone default now()
 );
 
--- 17. CURSOS (catálogo global)
-create table public.cursos (
-  id serial primary key,
-  codigo text not null unique,
-  nombre text not null,
-  descripcion text
-);
-
--- 18. CURSOS POR SEDE (con precio)
-create table public.sede_cursos (
-  id serial primary key,
-  sede_id uuid references public.sedes(id) on delete cascade not null,
-  curso_id integer references public.cursos(id) on delete cascade not null,
-  precio decimal(10,2) not null default 0,
-  activo boolean default true
-);
-
--- 19. CURSOS POR ALUMNO (permite combos)
-create table public.alumno_cursos (
-  id serial primary key,
-  alumno_id uuid references public.alumnos(id) on delete cascade not null,
-  curso_id integer references public.cursos(id) on delete cascade not null
-);
+-- -- 17. CURSOS (catálogo global)
+-- create table public.cursos (
+--   id serial primary key,
+--   codigo text not null unique,
+--   nombre text not null,
+--   descripcion text
+-- );
+--
+-- -- 18. CURSOS POR SEDE (con precio)
+-- create table public.sede_cursos (
+--   id serial primary key,
+--   sede_id uuid references public.sedes(id) on delete cascade not null,
+--   curso_id integer references public.cursos(id) on delete cascade not null,
+--   precio decimal(10,2) not null default 0,
+--   activo boolean default true
+-- );
+--
+-- -- 19. CURSOS POR ALUMNO (permite combos)
+-- create table public.alumno_cursos (
+--   id serial primary key,
+--   alumno_id uuid references public.alumnos(id) on delete cascade not null,
+--   curso_id integer references public.cursos(id) on delete cascade not null
+-- );
 
 -- ============================================
 -- POLÍTICAS DE SEGURIDAD (RLS)
@@ -417,9 +437,9 @@ alter table public.preguntas_examen enable row level security;
 alter table public.respuestas_examen enable row level security;
 alter table public.actividad_log enable row level security;
 alter table public.mantenimiento_vehiculos enable row level security;
-alter table public.cursos enable row level security;
-alter table public.sede_cursos enable row level security;
-alter table public.alumno_cursos enable row level security;
+-- alter table public.cursos enable row level security;
+-- alter table public.sede_cursos enable row level security;
+-- alter table public.alumno_cursos enable row level security;
 
 -- ========== ESCUELAS ==========
 create policy "Super admin: ve todas las escuelas"
@@ -792,58 +812,58 @@ create policy "Alumno: crea sus respuestas"
     and sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id()
   );
 
--- ========== CURSOS (catálogo global) ==========
-create policy "Todos pueden ver cursos"
-  on public.cursos for select using (true);
-create policy "Solo super admin gestiona cursos"
-  on public.cursos for all using (public.is_super_admin());
-
--- ========== SEDE_CURSOS (cursos habilitados por sede con precio) ==========
-create policy "Super admin: ve todos los sede_cursos"
-  on public.sede_cursos for select using (public.is_super_admin());
-create policy "Super admin: gestiona sede_cursos"
-  on public.sede_cursos for all using (public.is_super_admin());
-create policy "Admin escuela: ve sede_cursos de su escuela"
-  on public.sede_cursos for select using (
-    sede_id in (select id from public.sedes where escuela_id = public.get_my_escuela_id())
-  );
-create policy "Admin escuela: gestiona sede_cursos de su escuela"
-  on public.sede_cursos for all using (
-    public.is_admin_escuela() and sede_id in (select id from public.sedes where escuela_id = public.get_my_escuela_id())
-  );
-create policy "Usuarios sede: ven cursos de su sede"
-  on public.sede_cursos for select using (
-    sede_id = public.get_my_sede_id()
-  );
-
--- ========== ALUMNO_CURSOS ==========
-create policy "Super admin: ve todos los alumno_cursos"
-  on public.alumno_cursos for select using (public.is_super_admin());
-create policy "Super admin: gestiona alumno_cursos"
-  on public.alumno_cursos for all using (public.is_super_admin());
-create policy "Admin escuela: ve alumno_cursos de su escuela"
-  on public.alumno_cursos for select using (
-    alumno_id in (select id from public.alumnos where escuela_id = public.get_my_escuela_id())
-  );
-create policy "Admin escuela: gestiona alumno_cursos de su escuela"
-  on public.alumno_cursos for all using (
-    public.is_admin_escuela() and alumno_id in (select id from public.alumnos where escuela_id = public.get_my_escuela_id())
-  );
-create policy "Usuarios sede: ven alumno_cursos de su sede"
-  on public.alumno_cursos for select using (
-    alumno_id in (select id from public.alumnos where sede_id = public.get_my_sede_id())
-    and not public.is_alumno() and not public.is_instructor()
-  );
-create policy "Usuarios sede: gestionan alumno_cursos de su sede"
-  on public.alumno_cursos for all using (
-    alumno_id in (select id from public.alumnos where sede_id = public.get_my_sede_id())
-    and not public.is_alumno() and not public.is_instructor()
-  );
--- Alumno: ve solo sus propios cursos
-create policy "Alumno: ve sus cursos"
-  on public.alumno_cursos for select using (
-    public.is_alumno() and alumno_id = public.get_my_alumno_id()
-  );
+-- -- ========== CURSOS (catálogo global) ==========
+-- create policy "Todos pueden ver cursos"
+--   on public.cursos for select using (true);
+-- create policy "Solo super admin gestiona cursos"
+--   on public.cursos for all using (public.is_super_admin());
+-- 
+-- -- ========== SEDE_CURSOS (cursos habilitados por sede con precio) ==========
+-- create policy "Super admin: ve todos los sede_cursos"
+--   on public.sede_cursos for select using (public.is_super_admin());
+-- create policy "Super admin: gestiona sede_cursos"
+--   on public.sede_cursos for all using (public.is_super_admin());
+-- create policy "Admin escuela: ve sede_cursos de su escuela"
+--   on public.sede_cursos for select using (
+--     sede_id in (select id from public.sedes where escuela_id = public.get_my_escuela_id())
+--   );
+-- create policy "Admin escuela: gestiona sede_cursos de su escuela"
+--   on public.sede_cursos for all using (
+--     public.is_admin_escuela() and sede_id in (select id from public.sedes where escuela_id = public.get_my_escuela_id())
+--   );
+-- create policy "Usuarios sede: ven cursos de su sede"
+--   on public.sede_cursos for select using (
+--     sede_id = public.get_my_sede_id()
+--   );
+-- 
+-- -- ========== ALUMNO_CURSOS ==========
+-- create policy "Super admin: ve todos los alumno_cursos"
+--   on public.alumno_cursos for select using (public.is_super_admin());
+-- create policy "Super admin: gestiona alumno_cursos"
+--   on public.alumno_cursos for all using (public.is_super_admin());
+-- create policy "Admin escuela: ve alumno_cursos de su escuela"
+--   on public.alumno_cursos for select using (
+--     alumno_id in (select id from public.alumnos where escuela_id = public.get_my_escuela_id())
+--   );
+-- create policy "Admin escuela: gestiona alumno_cursos de su escuela"
+--   on public.alumno_cursos for all using (
+--     public.is_admin_escuela() and alumno_id in (select id from public.alumnos where escuela_id = public.get_my_escuela_id())
+--   );
+-- create policy "Usuarios sede: ven alumno_cursos de su sede"
+--   on public.alumno_cursos for select using (
+--     alumno_id in (select id from public.alumnos where sede_id = public.get_my_sede_id())
+--     and not public.is_alumno() and not public.is_instructor()
+--   );
+-- create policy "Usuarios sede: gestionan alumno_cursos de su sede"
+--   on public.alumno_cursos for all using (
+--     alumno_id in (select id from public.alumnos where sede_id = public.get_my_sede_id())
+--     and not public.is_alumno() and not public.is_instructor()
+--   );
+-- -- Alumno: ve solo sus propios cursos
+-- create policy "Alumno: ve sus cursos"
+--   on public.alumno_cursos for select using (
+--     public.is_alumno() and alumno_id = public.get_my_alumno_id()
+--   );
 
 -- ========== MANTENIMIENTO VEHÍCULOS ==========
 create policy "Super admin: ve todo mantenimiento"

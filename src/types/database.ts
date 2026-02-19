@@ -225,23 +225,4 @@ export interface MantenimientoVehiculo {
   created_at: string;
 }
 
-export interface Curso {
-  id: number;
-  codigo: string;
-  nombre: string;
-  descripcion: string | null;
-}
 
-export interface SedeCurso {
-  id: number;
-  sede_id: string;
-  curso_id: number;
-  precio: number;
-  activo: boolean;
-}
-
-export interface AlumnoCurso {
-  id: number;
-  alumno_id: string;
-  curso_id: number;
-}

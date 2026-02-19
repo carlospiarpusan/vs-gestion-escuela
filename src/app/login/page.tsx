@@ -1,3 +1,28 @@
+/**
+ * ============================================================
+ * Página de Login - /login
+ * ============================================================
+ *
+ * Formulario de inicio de sesión con email y contraseña.
+ * Usa Supabase Auth para autenticar al usuario.
+ *
+ * Flujo:
+ * 1. Usuario introduce email y contraseña
+ * 2. Se valida el formato del email (trim + validación)
+ * 3. Se llama a supabase.auth.signInWithPassword()
+ * 4. Si es exitoso → redirige a /dashboard
+ * 5. Si falla → muestra error genérico (no revela si el email existe)
+ *
+ * Seguridad:
+ * - Mensaje de error genérico para evitar enumeración de emails
+ * - Trim del email para evitar espacios accidentales
+ * - Try/catch para manejar errores de red
+ * - El middleware.ts redirige a /dashboard si ya está autenticado
+ *
+ * Dependencias: lib/supabase.ts, lucide-react
+ * ============================================================
+ */
+
 "use client";
 
 import { useState } from "react";
@@ -14,29 +39,49 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  /**
+   * Manejar envío del formulario de login.
+   * Valida inputs, llama a Supabase Auth y redirige al dashboard.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setError("Correo o contraseña incorrectos");
+    // Validación: limpiar espacios del email
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) {
+      setError("Completa todos los campos.");
       setLoading(false);
       return;
     }
 
-    router.push("/dashboard");
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
+
+      if (error) {
+        // Mensaje genérico: no revelar si el email existe o no
+        setError("Correo o contraseña incorrectos");
+        setLoading(false);
+        return;
+      }
+
+      // Login exitoso → redirigir al dashboard
+      router.push("/dashboard");
+    } catch {
+      // Error de red o servidor
+      setError("Error de conexión. Intenta de nuevo.");
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-white dark:bg-black px-6">
-      {/* Back to home */}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f5f7] dark:bg-[#000] px-6 transition-colors duration-300">
+      {/* Enlace para volver al inicio */}
       <div className="absolute top-6 left-6">
         <Link href="/" className="text-sm text-[#0071e3] hover:underline">
           &larr; Volver al inicio
@@ -44,7 +89,7 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-sm animate-scale-in">
-        {/* Logo */}
+        {/* ========== Logo y título ========== */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
             AutoEscuela<span className="gradient-text">Pro</span>
@@ -54,15 +99,16 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Error */}
+        {/* ========== Mensaje de error ========== */}
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm text-center">
             {error}
           </div>
         )}
 
-        {/* Form */}
+        {/* ========== Formulario ========== */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Campo: Email */}
           <div>
             <label
               htmlFor="email"
@@ -77,10 +123,12 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="tu@email.com"
               required
+              autoComplete="email"
               className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] text-sm placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all"
             />
           </div>
 
+          {/* Campo: Contraseña (con toggle de visibilidad) */}
           <div>
             <label
               htmlFor="password"
@@ -96,18 +144,21 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Tu contraseña"
                 required
+                autoComplete="current-password"
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] text-sm placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all pr-12"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
+                aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
 
+          {/* Botón de envío */}
           <button
             type="submit"
             disabled={loading}
@@ -124,14 +175,14 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Divider */}
+        {/* ========== Separador ========== */}
         <div className="flex items-center gap-3 my-6">
           <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
           <span className="text-xs text-[#86868b]">o</span>
           <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
         </div>
 
-        {/* Register link */}
+        {/* ========== Enlace a registro ========== */}
         <p className="text-center text-sm text-[#86868b]">
           ¿No tienes cuenta?{" "}
           <Link

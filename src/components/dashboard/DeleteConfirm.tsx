@@ -1,3 +1,26 @@
+/**
+ * ============================================================
+ * Componente DeleteConfirm - Diálogo de confirmación de eliminación
+ * ============================================================
+ *
+ * Modal pequeño que pide confirmación antes de eliminar un registro.
+ * Muestra un mensaje personalizable y dos botones: Cancelar y Eliminar.
+ *
+ * Se usa en combinación con el estado `deleteOpen` y `deleting`
+ * en todas las páginas CRUD del dashboard.
+ *
+ * @prop open      - Si el diálogo está visible
+ * @prop onClose   - Callback para cancelar/cerrar
+ * @prop onConfirm - Callback al confirmar la eliminación
+ * @prop loading   - Si está procesando la eliminación (deshabilita botones)
+ * @prop title     - Título del diálogo (default: "Eliminar registro")
+ * @prop message   - Mensaje de confirmación personalizado
+ *
+ * Dependencias: Modal.tsx
+ * Usado por: todas las páginas CRUD del dashboard
+ * ============================================================
+ */
+
 "use client";
 
 import Modal from "./Modal";
@@ -21,8 +44,12 @@ export default function DeleteConfirm({
 }: DeleteConfirmProps) {
   return (
     <Modal open={open} onClose={onClose} title={title} maxWidth="max-w-sm">
+      {/* Mensaje de advertencia */}
       <p className="text-sm text-[#86868b] mb-6">{message}</p>
+
+      {/* Botones de acción */}
       <div className="flex gap-3 justify-end">
+        {/* Cancelar: cierra el diálogo sin hacer nada */}
         <button
           onClick={onClose}
           disabled={loading}
@@ -30,6 +57,7 @@ export default function DeleteConfirm({
         >
           Cancelar
         </button>
+        {/* Eliminar: ejecuta la acción destructiva */}
         <button
           onClick={onConfirm}
           disabled={loading}

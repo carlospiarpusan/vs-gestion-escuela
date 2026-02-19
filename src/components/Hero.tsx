@@ -1,119 +1,147 @@
 "use client";
 
 import Link from "next/link";
+import { motion, useScroll, useTransform } from "framer-motion";
+import { useRef } from "react";
 
 export default function Hero() {
-  return (
-    <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-white dark:bg-black pt-12">
-      {/* Subtle gradient background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-white via-white to-[#f5f5f7] dark:from-black dark:via-black dark:to-[#1d1d1f]/30" />
+  const ref = useRef(null);
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start start", "end start"],
+  });
 
+  const y = useTransform(scrollYProgress, [0, 1], [0, 150]);
+  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
+
+  return (
+    <section
+      ref={ref}
+      className="relative min-h-[120vh] flex flex-col items-center justify-start overflow-hidden bg-background pt-40 pb-32"
+    >
       <div className="relative z-10 max-w-[980px] mx-auto px-6 text-center">
         {/* Overline */}
-        <p className="text-[#0071e3] text-sm font-semibold mb-4 opacity-0 animate-fade-in-up">
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="text-blue-apple text-xs md:text-sm font-semibold mb-6 tracking-wider uppercase"
+        >
           Gestión de Escuelas de Conducción
-        </p>
+        </motion.p>
 
-        {/* Main headline - Apple style large text */}
-        <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-[80px] font-semibold tracking-[-0.015em] leading-[1.05] text-[#1d1d1f] dark:text-[#f5f5f7] mb-2 opacity-0 animate-fade-in-up delay-100">
-          AutoEscuela
-          <span className="gradient-text">Pro</span>
-        </h1>
+        {/* Main headline */}
+        <motion.h1
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+          className="text-6xl sm:text-7xl md:text-8xl font-semibold tracking-[-0.015em] leading-[1.05] text-foreground mb-6"
+        >
+          AutoEscuela<span className="text-blue-apple">Pro</span>
+        </motion.h1>
 
         {/* Subtitle */}
-        <h2 className="text-2xl sm:text-3xl md:text-4xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-1 mb-4 opacity-0 animate-fade-in-up delay-200">
+        <motion.h2
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          className="text-3xl sm:text-4xl md:text-5xl font-medium text-foreground mb-10 tracking-tight"
+        >
           Simple. Potente. Profesional.
-        </h2>
+        </motion.h2>
 
         {/* Description */}
-        <p className="text-lg sm:text-xl text-[#86868b] max-w-2xl mx-auto mb-8 opacity-0 animate-fade-in-up delay-300">
-          La plataforma todo en uno para gestionar alumnos, instructores,
-          vehículos, clases y exámenes. Diseñada para que te enfoques en lo
-          que importa: enseñar a conducir.
-        </p>
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
+          className="text-xl sm:text-2xl text-gray-500 max-w-2xl mx-auto mb-12 leading-relaxed font-normal"
+        >
+          La plataforma definitiva para tu autoescuela. Gestiona alumnos, pagos y clases desde un único lugar.
+        </motion.p>
 
         {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 opacity-0 animate-fade-in-up delay-400">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
+          className="flex flex-col sm:flex-row items-center justify-center gap-6"
+        >
           <Link
             href="/registro"
-            className="bg-[#0071e3] text-white text-lg px-8 py-3 rounded-full hover:bg-[#0077ED] transition-all duration-300 hover:scale-105 font-medium"
+            className="bg-blue-apple text-white text-[17px] px-8 py-3 rounded-full hover:bg-blue-hover transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
             Comenzar gratis
           </Link>
           <Link
             href="/login"
-            className="text-[#0071e3] text-lg px-8 py-3 rounded-full hover:bg-[#0071e3]/5 transition-all duration-300 font-medium"
+            className="text-blue-apple text-[17px] px-8 py-3 rounded-full hover:bg-blue-apple/10 transition-colors flex items-center gap-1 group"
           >
-            Iniciar sesión &gt;
+            Ver demostración
+            <span className="group-hover:translate-x-1 transition-transform">
+              &gt;
+            </span>
           </Link>
-        </div>
+        </motion.div>
 
-        {/* Hero visual */}
-        <div className="mt-16 opacity-0 animate-scale-in delay-500">
-          <div className="relative mx-auto max-w-4xl">
-            {/* Browser mockup */}
-            <div className="rounded-2xl border border-gray-200/80 dark:border-gray-800/80 bg-[#f5f5f7] dark:bg-[#1d1d1f] shadow-2xl overflow-hidden">
-              {/* Browser bar */}
-              <div className="flex items-center gap-2 px-4 py-3 bg-[#e8e8ed] dark:bg-[#2d2d2d] border-b border-gray-200/50 dark:border-gray-700/50">
+        {/* Hero visual with Parallax */}
+        <motion.div
+          style={{ y, opacity }}
+          initial={{ opacity: 0, scale: 0.95, y: 40 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 1, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="mt-24 w-full"
+        >
+          <div className="relative mx-auto max-w-6xl">
+            {/* Browser Window Mockup */}
+            <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-background shadow-2xl overflow-hidden ring-1 ring-black/5">
+              {/* Traffic Lights */}
+              <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 dark:bg-[#1c1c1e] border-b border-gray-200 dark:border-gray-800">
                 <div className="flex gap-1.5">
                   <div className="w-3 h-3 rounded-full bg-[#ff5f57]" />
                   <div className="w-3 h-3 rounded-full bg-[#febc2e]" />
                   <div className="w-3 h-3 rounded-full bg-[#28c840]" />
                 </div>
-                <div className="flex-1 mx-4">
-                  <div className="bg-white dark:bg-[#1d1d1f] rounded-md px-3 py-1 text-xs text-[#86868b] text-center">
-                    autoescuelapro.com/dashboard
-                  </div>
-                </div>
               </div>
 
-              {/* Dashboard preview */}
-              <div className="p-6 sm:p-8 bg-white dark:bg-[#161616]">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                  {[
-                    { label: "Alumnos Activos", value: "128", color: "#0071e3" },
-                    { label: "Clases Hoy", value: "24", color: "#28c840" },
-                    { label: "Exámenes", value: "12", color: "#ff9f0a" },
-                    { label: "Aprobados", value: "96%", color: "#bf5af2" },
-                  ].map((stat) => (
-                    <div
-                      key={stat.label}
-                      className="bg-[#f5f5f7] dark:bg-[#1d1d1f] rounded-xl p-4 text-center"
-                    >
-                      <p
-                        className="text-2xl sm:text-3xl font-bold"
-                        style={{ color: stat.color }}
-                      >
-                        {stat.value}
-                      </p>
-                      <p className="text-xs text-[#86868b] mt-1">
-                        {stat.label}
-                      </p>
+              {/* Window Content */}
+              <div className="p-8 md:p-12 bg-gray-50/50 dark:bg-[#000000]">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Dummy Dashboard Cards */}
+                  <div className="bg-background rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+                    <div className="text-sm text-gray-500 font-medium mb-2">Ingresos Mes</div>
+                    <div className="text-3xl font-semibold text-foreground">€12,450</div>
+                    <div className="mt-4 h-1 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 w-[75%] rounded-full" />
                     </div>
-                  ))}
+                  </div>
+                  <div className="bg-background rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+                    <div className="text-sm text-gray-500 font-medium mb-2">Nuevos Alumnos</div>
+                    <div className="text-3xl font-semibold text-foreground">+24</div>
+                    <div className="flex gap-1 mt-4">
+                      {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="h-6 w-full bg-blue-apple/10 rounded-sm" />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bg-background rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+                    <div className="text-sm text-gray-500 font-medium mb-2">Clases Hoy</div>
+                    <div className="text-3xl font-semibold text-foreground">18</div>
+                    <div className="mt-4 flex -space-x-2">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 border-2 border-background" />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="h-32 sm:h-40 bg-[#f5f5f7] dark:bg-[#1d1d1f] rounded-xl flex items-end justify-around px-4 pb-4">
-                  {[40, 65, 45, 80, 55, 90, 70, 85, 60, 95, 75, 88].map(
-                    (h, i) => (
-                      <div
-                        key={i}
-                        className="w-full max-w-[24px] rounded-t-md bg-[#0071e3]/70 dark:bg-[#0071e3]/50"
-                        style={{ height: `${h}%` }}
-                      />
-                    )
-                  )}
+                {/* Main Content Area */}
+                <div className="mt-6 bg-background rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 h-64 flex items-center justify-center">
+                  <div className="text-gray-400 font-medium">Gráfico de Rendimiento</div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Scroll indicator */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 opacity-0 animate-fade-in delay-600">
-        <div className="w-6 h-10 border-2 border-[#86868b]/40 rounded-full flex justify-center">
-          <div className="w-1.5 h-3 bg-[#86868b]/60 rounded-full mt-2 animate-bounce" />
-        </div>
+        </motion.div>
       </div>
     </section>
   );

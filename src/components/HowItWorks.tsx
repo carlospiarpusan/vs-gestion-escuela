@@ -1,59 +1,106 @@
 "use client";
 
+import { motion, useScroll, useTransform } from "framer-motion";
+import { useRef } from "react";
+import { cn } from "@/lib/utils";
+
 const steps = [
   {
     number: "01",
     title: "Crea tu cuenta",
-    description:
-      "Regístrate en menos de un minuto. Sin tarjeta de crédito, sin compromisos.",
+    description: "Regístrate en segundos. Solo necesitas tu correo electrónico.",
   },
   {
     number: "02",
     title: "Configura tu escuela",
-    description:
-      "Añade tus instructores, vehículos y personaliza la plataforma a tu medida.",
+    description: "Personaliza tu perfil, añade vehículos y define tus tarifas.",
   },
   {
     number: "03",
-    title: "Empieza a gestionar",
-    description:
-      "Registra alumnos, planifica clases y lleva el control total de tu autoescuela.",
+    title: "Gestiona alumnos",
+    description: "Empieza a registrar alumnos y organizar sus clases prácticas.",
   },
 ];
 
 export default function HowItWorks() {
+  const ref = useRef(null);
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start end", "end start"],
+  });
+
+  const lineHeight = useTransform(scrollYProgress, [0.1, 0.6], ["0%", "100%"]);
+
   return (
-    <section id="how-it-works" className="py-24 bg-white dark:bg-black">
+    <section ref={ref} id="how-it-works" className="py-32 bg-background relative overflow-hidden">
       <div className="max-w-[980px] mx-auto px-6">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl sm:text-5xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">
+        <div className="text-center mb-24">
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-4xl sm:text-5xl font-semibold tracking-tight text-foreground mb-4"
+          >
             Empieza en minutos.
-          </h2>
-          <p className="text-xl text-[#86868b] max-w-2xl mx-auto">
-            Sin complicaciones. Sin curva de aprendizaje. Tan simple como debería ser.
-          </p>
+          </motion.h2>
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="text-xl text-gray-500 font-medium"
+          >
+            Sin configuraciones complejas.
+          </motion.p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
-          {steps.map((step, index) => (
-            <div key={step.number} className="text-center relative">
-              {/* Connector line */}
-              {index < steps.length - 1 && (
-                <div className="hidden md:block absolute top-8 left-[60%] w-[80%] h-[1px] bg-gradient-to-r from-[#0071e3]/30 to-transparent" />
-              )}
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#0071e3]/10 mb-6">
-                <span className="text-2xl font-bold gradient-text">
-                  {step.number}
-                </span>
-              </div>
-              <h3 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">
-                {step.title}
-              </h3>
-              <p className="text-[#86868b] leading-relaxed max-w-xs mx-auto">
-                {step.description}
-              </p>
-            </div>
-          ))}
+        <div className="relative">
+          {/* Vertical Line for Desktop */}
+          <div className="absolute left-[50%] top-0 bottom-0 w-[1px] bg-gray-200 dark:bg-gray-800 hidden md:block" />
+
+          <motion.div
+            style={{ height: lineHeight }}
+            className="absolute left-[50%] top-0 w-[2px] bg-blue-apple origin-top hidden md:block"
+          />
+
+          <div className="flex flex-col gap-16 md:gap-32">
+            {steps.map((step, index) => (
+              <motion.div
+                key={step.number}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.8, delay: index * 0.2 }}
+                className={cn(
+                  "flex flex-col md:flex-row items-center gap-8 md:gap-24",
+                  index % 2 === 0 ? "md:flex-row-reverse" : ""
+                )}
+              >
+                <div className="flex-1 text-center md:text-left">
+                  <div className={cn("inline-block mb-4", index % 2 === 0 ? "md:text-left" : "md:text-right w-full")}>
+                    <span className="text-8xl font-bold text-gray-100 dark:text-gray-900 select-none block leading-none tracking-tighter">
+                      {step.number}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Center Point */}
+                <div className="relative z-10 hidden md:flex items-center justify-center w-8 h-8 rounded-full bg-background border-2 border-gray-200 dark:border-gray-800">
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-apple" />
+                </div>
+
+                <div className="flex-1 text-center md:text-left">
+                  <h3 className="text-2xl font-semibold text-foreground mb-3">
+                    {step.title}
+                  </h3>
+                  <p className="text-lg text-gray-500 leading-relaxed">
+                    {step.description}
+                  </p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
