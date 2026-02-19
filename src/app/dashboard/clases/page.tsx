@@ -199,16 +199,16 @@ export default function ClasesPage() {
   return (
     <div>
       {/* Cabecera con titulo y boton de nueva clase */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-8 animate-fade-in">
         <div>
-          <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Clases</h2>
-          <p className="text-sm text-[#86868b] mt-0.5">Programa y gestiona las clases</p>
+          <h2 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">Clases</h2>
+          <p className="text-lg text-[#86868b] mt-2 font-medium">Programa y gestiona las clases</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors"><Plus size={16} /> Nueva Clase</button>
       </div>
 
       {/* Tabla principal de clases */}
-      <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
+      <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 sm:p-8 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in delay-100">
         <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por fecha..." searchKeys={["fecha"]} onEdit={openEdit} onDelete={openDelete} />
       </div>
 

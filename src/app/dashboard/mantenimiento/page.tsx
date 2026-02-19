@@ -242,16 +242,16 @@ export default function MantenimientoPage() {
   const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center bg-[#f5f5f7] dark:bg-[#1d1d1f] transition-colors duration-300">
-      <div className="w-full max-w-4xl px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
+    <div className="min-h-screen w-full flex flex-col items-center bg-[#f5f5f7] dark:bg-[#000000] transition-colors duration-300">
+      <div className="w-full max-w-4xl px-4 py-8 animate-fade-in">
+        <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Mantenimiento</h2>
-            <p className="text-sm text-[#86868b] mt-0.5">Registro de mantenimiento de vehículos</p>
+            <h2 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">Mantenimiento</h2>
+            <p className="text-lg text-[#86868b] mt-2 font-medium">Registro de mantenimiento de vehículos</p>
           </div>
           <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors"><Plus size={16} /> Nuevo Registro</button>
         </div>
-        <div className="bg-white dark:bg-[#0a0a0a] rounded-2xl p-4 sm:p-6 shadow-lg">
+        <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 sm:p-8 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in delay-100">
           <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por descripción..." searchKeys={["descripcion", "fecha"]} onEdit={openEdit} onDelete={openDelete} />
         </div>
         <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Editar Registro" : "Nuevo Registro de Mantenimiento"} maxWidth="max-w-xl">
