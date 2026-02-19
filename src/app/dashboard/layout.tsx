@@ -84,7 +84,7 @@ export default function DashboardLayout({
   const escuela = user.user_metadata?.escuela || "Mi Autoescuela";
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#0a0a0a] transition-colors duration-300 flex">
+    <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#000000] transition-colors duration-300 flex">
       {/* ========== Sidebar: Navegación lateral ========== */}
       <Sidebar
         rol={perfil?.rol}

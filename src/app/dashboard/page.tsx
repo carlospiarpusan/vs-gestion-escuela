@@ -136,21 +136,21 @@ export default function DashboardPage() {
   return (
     <div>
       {/* Bienvenida */}
-      <div className="mb-8">
-        <h2 className="text-2xl sm:text-3xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+      <div className="mb-8 animate-fade-in">
+        <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
           Hola, {nombre}
         </h2>
-        <p className="text-[#86868b] mt-1 text-sm">
+        <p className="text-[#86868b] mt-2 text-lg font-medium">
           Resumen de tu escuela de conducción
         </p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 animate-fade-in delay-100">
         {statCards.map((stat) => (
           <div
             key={stat.label}
-            className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-5 hover:shadow-md transition-shadow"
+            className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 hover:scale-[1.02] transition-transform duration-300 shadow-sm border border-gray-100 dark:border-gray-800"
           >
             {loadingStats ? (
               <div className="h-9 w-16 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />
@@ -176,7 +176,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Acceso rápido */}
-      <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-8 text-center">
+      <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-10 text-center animate-fade-in delay-200 border border-gray-100 dark:border-gray-800">
         <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
           Panel de Gestión
         </h3>
