@@ -99,13 +99,14 @@ export default function MantenimientoPage() {
    * then maps vehicle/instructor names onto each maintenance record for display.
    */
   const fetchData = useCallback(async () => {
+    if (!perfil?.escuela_id) return;
     const supabase = createClient();
 
     // Fetch all three datasets concurrently for performance
     const [mantRes, vehiculosRes, instructoresRes] = await Promise.all([
-      supabase.from("mantenimiento_vehiculos").select("*").order("fecha", { ascending: false }),
-      supabase.from("vehiculos").select("id, marca, modelo, matricula"),
-      supabase.from("instructores").select("id, nombre, apellidos"),
+      supabase.from("mantenimiento_vehiculos").select("id, vehiculo_id, instructor_id, tipo, descripcion, monto, kilometraje_actual, litros, precio_por_litro, proveedor, numero_factura, fecha, notas, created_at").eq("escuela_id", perfil.escuela_id).order("fecha", { ascending: false }),
+      supabase.from("vehiculos").select("id, marca, modelo, matricula").eq("escuela_id", perfil.escuela_id),
+      supabase.from("instructores").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id),
     ]);
 
     // Build lookup maps to resolve IDs into human-readable names
@@ -126,7 +127,7 @@ export default function MantenimientoPage() {
     setVehiculos((vehiculosRes.data as Vehiculo[]) || []);
     setInstructores((instructoresRes.data as Instructor[]) || []);
     setLoading(false);
-  }, []);
+  }, [perfil?.escuela_id]);
 
   // Fetch data once the user's profile is available
   useEffect(() => {
@@ -244,7 +245,7 @@ export default function MantenimientoPage() {
   return (
     <div className="min-h-screen w-full flex flex-col items-center bg-[#f5f5f7] dark:bg-[#000000] transition-colors duration-300">
       <div className="w-full max-w-4xl px-4 py-8 animate-fade-in">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
             <h2 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">Mantenimiento</h2>
             <p className="text-lg text-[#86868b] mt-2 font-medium">Registro de mantenimiento de vehículos</p>

@@ -49,5 +49,5 @@ if (!supabaseAnonKey) {
  * const { data } = await supabase.from("alumnos").select("*");
  */
 export function createClient() {
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  return createBrowserClient(supabaseUrl!, supabaseAnonKey!);
 }

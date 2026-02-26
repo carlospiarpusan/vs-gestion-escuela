@@ -86,19 +86,19 @@ export default function Modal({
     >
       {/* Contenedor del modal */}
       <div
-        className={`bg-white dark:bg-[#1d1d1f] rounded-2xl shadow-xl w-full ${maxWidth} max-h-[90vh] flex flex-col animate-scale-in`}
+        className={`bg-white dark:bg-[#1d1d1f] rounded-2xl shadow-xl w-full ${maxWidth} max-h-[92vh] flex flex-col animate-scale-in`}
       >
         {/* --- Header: título + botón cerrar --- */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200/50 dark:border-gray-800/50">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200/50 dark:border-gray-800/50 shrink-0">
           <h3
             id="modal-title"
-            className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"
+            className="text-base sm:text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] pr-2 truncate"
           >
             {title}
           </h3>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0"
             aria-label="Cerrar modal"
           >
             <X size={16} className="text-[#86868b]" />
@@ -106,7 +106,7 @@ export default function Modal({
         </div>
 
         {/* --- Body: contenido del modal con scroll si es necesario --- */}
-        <div className="px-6 py-4 overflow-y-auto">{children}</div>
+        <div className="px-4 sm:px-6 py-4 overflow-y-auto">{children}</div>
       </div>
     </div>
   );

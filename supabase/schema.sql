@@ -24,79 +24,119 @@
 
 -- Verificar si es super_admin
 create or replace function public.is_super_admin()
-returns boolean as $$
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
 begin
   return exists (
     select 1 from public.perfiles
-    where id = auth.uid() and rol = 'super_admin'
+    where id = (select auth.uid()) and rol = 'super_admin'
   );
 end;
-$$ language plpgsql security definer;
+$$;
 
 -- Obtener escuela_id del usuario actual
 create or replace function public.get_my_escuela_id()
-returns uuid as $$
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
 begin
-  return (select escuela_id from public.perfiles where id = auth.uid());
+  return (
+    select escuela_id from public.perfiles
+    where id = (select auth.uid())
+  );
 end;
-$$ language plpgsql security definer;
+$$;
 
 -- Obtener sede_id del usuario actual
 create or replace function public.get_my_sede_id()
-returns uuid as $$
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
 begin
-  return (select sede_id from public.perfiles where id = auth.uid());
+  return (
+    select sede_id from public.perfiles
+    where id = (select auth.uid())
+  );
 end;
-$$ language plpgsql security definer;
+$$;
 
 -- Verificar si es admin de escuela (ve todas las sedes)
 create or replace function public.is_admin_escuela()
-returns boolean as $$
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
 begin
   return exists (
     select 1 from public.perfiles
-    where id = auth.uid() and rol = 'admin_escuela'
+    where id = (select auth.uid()) and rol = 'admin_escuela'
   );
 end;
-$$ language plpgsql security definer;
+$$;
 
 -- Verificar si es instructor
 create or replace function public.is_instructor()
-returns boolean as $$
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
 begin
   return exists (
     select 1 from public.perfiles
-    where id = auth.uid() and rol = 'instructor'
+    where id = (select auth.uid()) and rol = 'instructor'
   );
 end;
-$$ language plpgsql security definer;
+$$;
 
 -- Obtener instructor_id del usuario actual
 create or replace function public.get_my_instructor_id()
-returns uuid as $$
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
 begin
-  return (select id from public.instructores where user_id = auth.uid() limit 1);
+  return (
+    select id from public.instructores
+    where user_id = (select auth.uid()) limit 1
+  );
 end;
-$$ language plpgsql security definer;
+$$;
 
 -- Verificar si es alumno
 create or replace function public.is_alumno()
-returns boolean as $$
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
 begin
   return exists (
     select 1 from public.perfiles
-    where id = auth.uid() and rol = 'alumno'
+    where id = (select auth.uid()) and rol = 'alumno'
   );
 end;
-$$ language plpgsql security definer;
+$$;
 
 -- Obtener alumno_id del usuario actual (busca en tabla alumnos por user_id)
 create or replace function public.get_my_alumno_id()
-returns uuid as $$
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
 begin
-  return (select id from public.alumnos where user_id = auth.uid() limit 1);
+  return (
+    select id from public.alumnos
+    where user_id = (select auth.uid()) limit 1
+  );
 end;
-$$ language plpgsql security definer;
+$$;
+
+-- REVOKE: las funciones helper no son llamables directamente via API por anon.
+-- Las funciones trigger no son llamables directamente via API por nadie.
+-- (aplicar tras crear las funciones en un entorno limpio)
+-- revoke execute on function public.is_super_admin()       from anon;
+-- revoke execute on function public.get_my_escuela_id()    from anon;
+-- revoke execute on function public.get_my_sede_id()       from anon;
+-- revoke execute on function public.is_admin_escuela()     from anon;
+-- revoke execute on function public.is_instructor()        from anon;
+-- revoke execute on function public.get_my_instructor_id() from anon;
+-- revoke execute on function public.is_alumno()            from anon;
+-- revoke execute on function public.get_my_alumno_id()     from anon;
 
 -- ============================================
 -- TABLAS
@@ -490,10 +530,12 @@ create policy "Usuarios sede: ven perfiles de su sede"
 -- Alumno: solo ve su propio perfil
 create policy "Alumno: ve solo su perfil"
   on public.perfiles for select using (
-    public.is_alumno() and id = auth.uid()
+    public.is_alumno() and id = (select auth.uid())
   );
 create policy "Usuarios: actualizan su propio perfil"
-  on public.perfiles for update using (auth.uid() = id);
+  on public.perfiles for update
+  using     ((select auth.uid()) = id)
+  with check ((select auth.uid()) = id);
 
 -- ============================================================
 -- MACRO: Políticas para tablas con escuela_id + sede_id
@@ -521,9 +563,12 @@ create policy "Usuarios sede: ven alumnos de su sede"
     and not public.is_alumno() and not public.is_instructor()
   );
 -- Política eliminada: los instructores no pueden ver información de alumnos
+-- Nota: user_id en alumnos es el ID del propio alumno (no del creador),
+-- por eso NO se exige auth.uid() = user_id aquí.
 create policy "Usuarios sede: crean alumnos en su sede"
   on public.alumnos for insert with check (
-    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and auth.uid() = user_id
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id()
+    and not public.is_alumno()
   );
 create policy "Usuarios sede: actualizan alumnos de su sede"
   on public.alumnos for update using (
@@ -538,7 +583,7 @@ create policy "Usuarios sede: eliminan alumnos de su sede"
 -- Alumno: solo ve su propio registro
 create policy "Alumno: ve solo su registro"
   on public.alumnos for select using (
-    public.is_alumno() and user_id = auth.uid()
+    public.is_alumno() and user_id = (select auth.uid())
   );
 
 -- ========== INSTRUCTORES ==========
@@ -564,9 +609,11 @@ create policy "Instructor: ve solo su registro"
   on public.instructores for select using (
     public.is_instructor() and user_id = auth.uid()
   );
+-- Nota: user_id en instructores es el ID del propio instructor (no del creador).
 create policy "Usuarios sede: crean instructores en su sede"
   on public.instructores for insert with check (
-    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and auth.uid() = user_id
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id()
+    and not public.is_alumno() and not public.is_instructor()
   );
 create policy "Usuarios sede: actualizan instructores de su sede"
   on public.instructores for update using (
@@ -615,7 +662,7 @@ create policy "Instructor: actualiza vehiculo asignado"
   );
 create policy "Usuarios sede: crean vehiculos en su sede"
   on public.vehiculos for insert with check (
-    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and auth.uid() = user_id
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and (select auth.uid()) = user_id
   );
 create policy "Usuarios sede: actualizan vehiculos de su sede"
   on public.vehiculos for update using (
@@ -656,7 +703,7 @@ create policy "Alumno: ve solo sus clases"
   );
 create policy "Usuarios sede: crean clases en su sede"
   on public.clases for insert with check (
-    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and auth.uid() = user_id
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and (select auth.uid()) = user_id
   );
 create policy "Usuarios sede: actualizan clases de su sede"
   on public.clases for update using (
@@ -692,7 +739,7 @@ create policy "Alumno: ve solo sus examenes"
   );
 create policy "Usuarios sede: crean examenes en su sede"
   on public.examenes for insert with check (
-    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and auth.uid() = user_id
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and (select auth.uid()) = user_id
   );
 create policy "Usuarios sede: actualizan examenes de su sede"
   on public.examenes for update using (
@@ -725,7 +772,7 @@ create policy "Usuarios sede: ven gastos de su sede"
   );
 create policy "Usuarios sede: crean gastos en su sede"
   on public.gastos for insert with check (
-    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and auth.uid() = user_id
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and (select auth.uid()) = user_id
   );
 create policy "Usuarios sede: actualizan gastos de su sede"
   on public.gastos for update using (
@@ -756,7 +803,7 @@ create policy "Usuarios sede: ven ingresos de su sede"
   );
 create policy "Usuarios sede: crean ingresos en su sede"
   on public.ingresos for insert with check (
-    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and auth.uid() = user_id
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id() and (select auth.uid()) = user_id
   );
 create policy "Usuarios sede: actualizan ingresos de su sede"
   on public.ingresos for update using (
@@ -944,14 +991,16 @@ create policy "Usuarios sede: ven log de su sede"
     and not public.is_alumno()
   );
 create policy "Sistema: inserta log"
-  on public.actividad_log for insert with check (auth.uid() = user_id);
+  on public.actividad_log for insert with check ((select auth.uid()) = user_id);
 
 -- ============================================
 -- TRIGGER: Al registrarse crea escuela + sede principal + perfil
 -- ============================================
 
 create or replace function public.handle_new_user()
-returns trigger as $$
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
 declare
   nueva_escuela_id uuid;
   nueva_sede_id uuid;
@@ -987,18 +1036,20 @@ begin
 
   return new;
 end;
-$$ language plpgsql security definer;
+$$;
 
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute procedure public.handle_new_user();
+  for each row execute function public.handle_new_user();
 
 -- ============================================
 -- TRIGGER: Mantenimiento → auto-crear gasto
 -- ============================================
 
 create or replace function public.insert_gasto_from_mantenimiento()
-returns trigger as $$
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
 begin
   insert into public.gastos (
     escuela_id, sede_id, user_id, categoria, concepto, monto,
@@ -1011,7 +1062,7 @@ begin
   );
   return NEW;
 end;
-$$ language plpgsql security definer;
+$$;
 
 create trigger mantenimiento_to_gasto
   after insert on public.mantenimiento_vehiculos
@@ -1022,7 +1073,9 @@ create trigger mantenimiento_to_gasto
 -- ============================================
 
 create or replace function public.update_vehiculo_kilometraje()
-returns trigger as $$
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
 begin
   if NEW.kilometraje_actual is not null then
     update public.vehiculos
@@ -1032,7 +1085,7 @@ begin
   end if;
   return NEW;
 end;
-$$ language plpgsql security definer;
+$$;
 
 create trigger mantenimiento_actualiza_km
   after insert on public.mantenimiento_vehiculos

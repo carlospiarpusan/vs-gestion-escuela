@@ -63,14 +63,15 @@ export default function ClasesPage() {
    * Resuelve los nombres de alumno e instructor para mostrarlos en la tabla.
    */
   const fetchData = useCallback(async () => {
+    if (!perfil?.escuela_id) return;
     const supabase = createClient();
 
     // Consultas en paralelo para minimizar el tiempo de carga
     const [clasesRes, alumnosRes, instructoresRes, vehiculosRes] = await Promise.all([
-      supabase.from("clases").select("*").order("fecha", { ascending: false }),
-      supabase.from("alumnos").select("id, nombre, apellidos").eq("estado", "activo"),
-      supabase.from("instructores").select("id, nombre, apellidos").eq("estado", "activo"),
-      supabase.from("vehiculos").select("id, marca, modelo, matricula").neq("estado", "baja"),
+      supabase.from("clases").select("id, alumno_id, instructor_id, vehiculo_id, tipo, fecha, hora_inicio, hora_fin, estado, notas, created_at").eq("escuela_id", perfil.escuela_id).order("fecha", { ascending: false }),
+      supabase.from("alumnos").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id).eq("estado", "activo"),
+      supabase.from("instructores").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id).eq("estado", "activo"),
+      supabase.from("vehiculos").select("id, marca, modelo, matricula").eq("escuela_id", perfil.escuela_id).neq("estado", "baja"),
     ]);
 
     // Mapas id->nombre para resolver las relaciones sin joins adicionales
@@ -89,7 +90,7 @@ export default function ClasesPage() {
     setInstructores((instructoresRes.data as Instructor[]) || []);
     setVehiculos((vehiculosRes.data as Vehiculo[]) || []);
     setLoading(false);
-  }, []);
+  }, [perfil?.escuela_id]);
 
   // Cargar datos cuando el perfil este disponible
   useEffect(() => {
@@ -199,7 +200,7 @@ export default function ClasesPage() {
   return (
     <div>
       {/* Cabecera con titulo y boton de nueva clase */}
-      <div className="flex items-center justify-between mb-8 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 animate-fade-in">
         <div>
           <h2 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">Clases</h2>
           <p className="text-lg text-[#86868b] mt-2 font-medium">Programa y gestiona las clases</p>

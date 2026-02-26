@@ -34,7 +34,7 @@ import { createClient } from "@/lib/supabase";
 export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,9 +48,8 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    // Validación: limpiar espacios del email
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail || !password) {
+    const trimmed = identifier.trim().toLowerCase();
+    if (!trimmed || !password) {
       setError("Completa todos los campos.");
       setLoading(false);
       return;
@@ -58,19 +57,62 @@ export default function LoginPage() {
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail,
-        password,
-      });
 
-      if (error) {
-        // Mensaje genérico: no revelar si el email existe o no
-        setError("Correo o contraseña incorrectos");
-        setLoading(false);
-        return;
+      if (trimmed.includes("@")) {
+        // Es un correo real → intentar directamente
+        const { error } = await supabase.auth.signInWithPassword({ email: trimmed, password });
+        if (error) {
+          setError("Correo o contraseña incorrectos.");
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Es una cédula → probar alumno → instructor → administrativo → email real
+        const { error: errAlumno } = await supabase.auth.signInWithPassword({
+          email: `${trimmed}@alumno.local`,
+          password,
+        });
+        if (errAlumno) {
+          const { error: errInstructor } = await supabase.auth.signInWithPassword({
+            email: `${trimmed}@instructor.local`,
+            password,
+          });
+          if (errInstructor) {
+            const { error: errAdmin } = await supabase.auth.signInWithPassword({
+              email: `${trimmed}@administrativo.local`,
+              password,
+            });
+            if (errAdmin) {
+              // Último intento: el usuario puede tener email real.
+              // Buscar el email en la tabla perfiles por cédula.
+              const lookup = await fetch("/api/buscar-email-cedula", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ cedula: trimmed }),
+              });
+              if (lookup.ok) {
+                const { email: realEmail } = await lookup.json();
+                const { error: errReal } = await supabase.auth.signInWithPassword({
+                  email: realEmail,
+                  password,
+                });
+                if (errReal) {
+                  setError("Cédula o contraseña incorrectos.");
+                  setLoading(false);
+                  return;
+                }
+              } else {
+                setError("Cédula o contraseña incorrectos.");
+                setLoading(false);
+                return;
+              }
+            }
+          }
+        }
       }
 
-      // Login exitoso → redirigir al dashboard
+      // Login exitoso → refrescar sesión del servidor y redirigir
+      router.refresh();
       router.push("/dashboard");
     } catch {
       // Error de red o servidor
@@ -111,19 +153,19 @@ export default function LoginPage() {
           {/* Campo: Email */}
           <div>
             <label
-              htmlFor="email"
+              htmlFor="identifier"
               className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5"
             >
-              Correo electrónico
+              Correo electrónico o número de cédula
             </label>
             <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="tu@email.com"
+              id="identifier"
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="tu@email.com o número de cédula"
               required
-              autoComplete="email"
+              autoComplete="username"
               className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] text-sm placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all"
             />
           </div>

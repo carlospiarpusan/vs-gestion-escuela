@@ -4,7 +4,7 @@ export type Rol =
   | "super_admin"
   | "admin_escuela"
   | "admin_sede"
-  | "secretaria"
+  | "administrativo"
   | "instructor"
   | "recepcion"
   | "alumno";
@@ -27,7 +27,7 @@ export type EstadoIngreso = "cobrado" | "pendiente" | "anulado";
 export type CategoriaGasto =
   | "combustible" | "mantenimiento_vehiculo" | "alquiler" | "servicios"
   | "nominas" | "seguros" | "material_didactico" | "marketing"
-  | "impuestos" | "suministros" | "reparaciones" | "otros";
+  | "impuestos" | "suministros" | "reparaciones" | "tramitador" | "otros";
 export type CategoriaIngreso =
   | "matricula" | "mensualidad" | "clase_suelta" | "examen_teorico"
   | "examen_practico" | "material" | "tasas_dgt" | "otros";
@@ -41,6 +41,8 @@ export interface Escuela {
   cif: string | null;
   telefono: string | null;
   email: string | null;
+  direccion: string | null;
+  categorias: string[] | null;
   web: string | null;
   logo_url: string | null;
   numero_licencia: string | null;
@@ -96,9 +98,16 @@ export interface Alumno {
   fecha_nacimiento: string | null;
   direccion: string | null;
   tipo_permiso: TipoPermiso;
+  categorias: string[] | null;
   estado: EstadoAlumno;
   fecha_inscripcion: string | null;
   notas: string | null;
+  valor_total: number | null;
+  ciudad: string | null;
+  departamento: string | null;
+  tiene_tramitador: boolean;
+  tramitador_nombre: string | null;
+  tramitador_valor: number | null;
   created_at: string;
 }
 
@@ -113,7 +122,8 @@ export interface Instructor {
   email: string | null;
   telefono: string;
   licencia: string;
-  especialidad: TipoPermiso;
+  especialidad: string;
+  especialidades: string[] | null;
   estado: EstadoInstructor;
   color: string;
   created_at: string;
@@ -222,6 +232,25 @@ export interface MantenimientoVehiculo {
   foto_url: string | null;
   fecha: string;
   notas: string | null;
+  created_at: string;
+}
+
+export interface Evaluacion {
+  id: string;
+  titulo: string;
+  descripcion: string | null;
+  categoria: string | null;
+  activa: boolean;
+  created_at: string;
+}
+
+export interface Pregunta {
+  id: string;
+  evaluacion_id: string;
+  texto: string;
+  opciones: string[];
+  respuesta_correcta: number;
+  orden: number;
   created_at: string;
 }
 

@@ -24,7 +24,7 @@ import type { Gasto, CategoriaGasto, MetodoPagoGasto } from "@/types/database";
 import { Plus } from "lucide-react";
 
 /** All available expense categories. */
-const categorias: CategoriaGasto[] = ["combustible", "mantenimiento_vehiculo", "alquiler", "servicios", "nominas", "seguros", "material_didactico", "marketing", "impuestos", "suministros", "reparaciones", "otros"];
+const categorias: CategoriaGasto[] = ["combustible", "mantenimiento_vehiculo", "alquiler", "servicios", "nominas", "seguros", "material_didactico", "marketing", "impuestos", "suministros", "reparaciones", "tramitador", "otros"];
 
 /** Accepted payment methods. */
 const metodos: MetodoPagoGasto[] = ["efectivo", "tarjeta", "transferencia", "domiciliacion"];
@@ -32,7 +32,7 @@ const metodos: MetodoPagoGasto[] = ["efectivo", "tarjeta", "transferencia", "dom
 /** Default (empty) form values used when creating a new expense. */
 const emptyForm = {
   categoria: "otros" as CategoriaGasto, concepto: "", monto: "",
-  metodo_pago: "transferencia" as MetodoPagoGasto, proveedor: "",
+  metodo_pago: "efectivo" as MetodoPagoGasto, proveedor: "",
   numero_factura: "", fecha: new Date().toISOString().split("T")[0],
   recurrente: false, notas: "",
 };
@@ -55,11 +55,16 @@ export default function GastosPage() {
    * Called on mount and after every successful create/update/delete.
    */
   const fetchData = useCallback(async () => {
+    if (!perfil?.escuela_id) return;
     const supabase = createClient();
-    const { data } = await supabase.from("gastos").select("*").order("fecha", { ascending: false });
+    const { data } = await supabase
+      .from("gastos")
+      .select("id, categoria, concepto, monto, metodo_pago, proveedor, numero_factura, fecha, recurrente, notas, created_at")
+      .eq("escuela_id", perfil.escuela_id)
+      .order("fecha", { ascending: false });
     setData((data as Gasto[]) || []);
     setLoading(false);
-  }, []);
+  }, [perfil?.escuela_id]);
 
   // Fetch data once the authenticated profile is available.
   useEffect(() => {
@@ -167,7 +172,7 @@ export default function GastosPage() {
   return (
     <div>
       {/* Page header with title and "new expense" action button */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Gastos</h2>
           <p className="text-sm text-[#86868b] mt-0.5">Registra los gastos de tu escuela</p>

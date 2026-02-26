@@ -29,7 +29,7 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Search, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 
 // --- Tipos ---
@@ -53,6 +53,7 @@ interface DataTableProps<T> {
   searchKeys?: (keyof T)[];
   onEdit?: (row: T) => void;
   onDelete?: (row: T) => void;
+  extraActions?: (row: T) => React.ReactNode;
   pageSize?: number;
 }
 
@@ -64,10 +65,14 @@ export default function DataTable<T extends { id: string | number }>({
   searchKeys = [],
   onEdit,
   onDelete,
+  extraActions,
   pageSize = 10,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+
+  // Volver a la primera página cuando los datos cambian
+  useEffect(() => { setPage(0); }, [data]);
 
   /**
    * Filtrar datos por término de búsqueda.
@@ -138,7 +143,7 @@ export default function DataTable<T extends { id: string | number }>({
                 </th>
               ))}
               {/* Columna de acciones (solo si hay callbacks) */}
-              {(onEdit || onDelete) && (
+              {(onEdit || onDelete || extraActions) && (
                 <th
                   scope="col"
                   className="px-4 py-3 text-right font-medium text-[#86868b] text-xs uppercase tracking-wider"
@@ -155,7 +160,7 @@ export default function DataTable<T extends { id: string | number }>({
               /* Mensaje cuando no hay datos */
               <tr>
                 <td
-                  colSpan={columns.length + (onEdit || onDelete ? 1 : 0)}
+                  colSpan={columns.length + (onEdit || onDelete || extraActions ? 1 : 0)}
                   className="px-4 py-8 text-center text-[#86868b]"
                 >
                   {search ? "Sin resultados" : "No hay registros"}
@@ -178,10 +183,11 @@ export default function DataTable<T extends { id: string | number }>({
                         : String((row as Record<string, unknown>)[String(col.key)] ?? "")}
                     </td>
                   ))}
-                  {/* Botones de acción (editar/eliminar) */}
-                  {(onEdit || onDelete) && (
+                  {/* Botones de acción (editar/eliminar/extra) */}
+                  {(onEdit || onDelete || extraActions) && (
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {extraActions && extraActions(row)}
                         {onEdit && (
                           <button
                             onClick={() => onEdit(row)}
