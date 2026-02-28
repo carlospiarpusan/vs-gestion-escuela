@@ -64,7 +64,8 @@ export default function HorasPage() {
 
   // Anchos fijos de columnas sticky derecha
   const VALOR_COL_W = 110; // px — columna valor total (solo admins)
-  const TOTAL_COL_W = 72;  // px — columna total horas
+  const TOTAL_COL_W = 64;  // px — columna total horas
+  const DAY_COL_W   = 36;  // px — columna de cada día
 
   // ── Carga de datos ────────────────────────────────────────────
 
@@ -105,7 +106,7 @@ export default function HorasPage() {
       map[h.instructor_id][day] = Number(h.horas);
     });
 
-    setInstructores((instRes.data as Instructor[]) || []);
+    setInstructores((instRes.data as unknown as Instructor[]) || []);
     setHorasMap(map);
     setValorHoras(vh);
     setInputOverrides({});
@@ -135,7 +136,7 @@ export default function HorasPage() {
     if (!perfil?.escuela_id) return;
     const key = `${instructorId}-${day}`;
     const raw = inputOverrides[key] ?? String(horasMap[instructorId]?.[day] ?? "");
-    const parsed = parseFloat(raw);
+    const parsed = parseInt(raw, 10);
     const hours = isNaN(parsed) ? 0 : Math.min(Math.max(parsed, 0), 24);
 
     setHorasMap(prev => ({
@@ -264,11 +265,11 @@ export default function HorasPage() {
             <p className="text-sm">No hay instructores activos para mostrar</p>
           </div>
         ) : (
-          /* overflow-x-auto permite scroll horizontal; las columnas sticky quedan fijas */
-          <div className="overflow-x-auto">
+          /* overflow-x-scroll muestra siempre la barra; sticky queda fijo */
+          <div className="overflow-x-scroll">
             <table
               className="border-collapse"
-              style={{ minWidth: `${180 + daysInMonth * 46 + TOTAL_COL_W + (isAdmin ? VALOR_COL_W : 0)}px` }}
+              style={{ minWidth: `${180 + daysInMonth * DAY_COL_W + TOTAL_COL_W + (isAdmin ? VALOR_COL_W : 0)}px` }}
             >
               {/* ── Encabezado ── */}
               <thead>
@@ -292,7 +293,7 @@ export default function HorasPage() {
                       <th
                         key={d}
                         scope="col"
-                        style={{ width: 46, minWidth: 46 }}
+                        style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
                         className={`py-1.5 text-center border-r border-gray-100 dark:border-gray-800 ${
                           isToday ? "bg-[#0071e3]/10 dark:bg-[#0071e3]/15"
                           : isWE  ? "bg-gray-100 dark:bg-[#1a1a1a]"
@@ -393,7 +394,7 @@ export default function HorasPage() {
                         return (
                           <td
                             key={d}
-                            style={{ width: 46, minWidth: 46 }}
+                            style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
                             className={`p-0 border-r border-gray-100 dark:border-gray-800 transition-opacity ${isSaving ? "opacity-40" : ""} ${
                               isToday && hasVal ? "bg-[#0071e3]/12"
                               : isToday         ? "bg-[#0071e3]/6"
@@ -404,28 +405,28 @@ export default function HorasPage() {
                             }`}
                           >
                             <input
-                              type="number"
-                              inputMode="decimal"
-                              min="0"
-                              max="24"
-                              step="0.5"
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={2}
                               value={val}
-                              onChange={e => handleChange(inst.id, d, e.target.value)}
+                              onChange={e => {
+                                const v = e.target.value.replace(/[^0-9]/g, "");
+                                handleChange(inst.id, d, v);
+                              }}
                               onBlur={() => handleBlur(inst.id, d)}
+                              onFocus={e => e.target.select()}
                               readOnly={isReadOnly}
                               placeholder="·"
                               aria-label={`${inst.nombre} día ${d}`}
                               className={`
-                                w-full h-10 text-center text-sm bg-transparent
-                                border-0 outline-none select-all
-                                [appearance:textfield]
-                                [&::-webkit-outer-spin-button]:appearance-none
-                                [&::-webkit-inner-spin-button]:appearance-none
+                                w-full h-9 text-center text-sm bg-transparent
+                                border-0 outline-none
                                 placeholder:text-gray-300 dark:placeholder:text-gray-700
                                 ${hasVal ? "font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]" : "text-[#86868b]"}
                                 ${isReadOnly
                                   ? "cursor-default"
-                                  : "focus:bg-[#0071e3]/10 dark:focus:bg-[#0071e3]/20 cursor-text hover:bg-gray-50 dark:hover:bg-white/5"}
+                                  : "focus:bg-[#0071e3]/10 dark:focus:bg-[#0071e3]/20 cursor-text"}
                               `}
                             />
                           </td>
@@ -476,7 +477,7 @@ export default function HorasPage() {
                     return (
                       <td
                         key={d}
-                        style={{ width: 46, minWidth: 46 }}
+                        style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
                         className={`py-2 text-center border-r border-gray-100 dark:border-gray-800 ${
                           isWE ? "bg-gray-100/70 dark:bg-[#1a1a1a]" : "bg-gray-50 dark:bg-[#141414]"
                         }`}
