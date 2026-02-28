@@ -84,6 +84,12 @@ const navItems: NavItem[] = [
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "recepcion"],
   },
   {
+    label: "Administrativos",
+    href: "/dashboard/administrativos",
+    icon: <UserCog size={18} />,
+    roles: ["super_admin", "admin_escuela", "admin_sede"],
+  },
+  {
     label: "Instructores",
     href: "/dashboard/instructores",
     icon: <UserCheck size={18} />,
@@ -130,12 +136,6 @@ const navItems: NavItem[] = [
     href: "/dashboard/gastos",
     icon: <TrendingDown size={18} />,
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
-  },
-  {
-    label: "Administrativos",
-    href: "/dashboard/administrativos",
-    icon: <UserCog size={18} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede"],
   },
   {
     label: "Sedes",
