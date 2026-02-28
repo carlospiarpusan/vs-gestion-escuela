@@ -265,8 +265,8 @@ export default function HorasPage() {
             <p className="text-sm">No hay instructores activos para mostrar</p>
           </div>
         ) : (
-          /* overflow-x-scroll muestra siempre la barra; sticky queda fijo */
-          <div className="overflow-x-scroll">
+          /* overflow-x-auto con w-full: la tabla scrollea dentro del card */
+          <div className="overflow-x-auto w-full">
             <table
               className="border-collapse"
               style={{ minWidth: `${180 + daysInMonth * DAY_COL_W + TOTAL_COL_W + (isAdmin ? VALOR_COL_W : 0)}px` }}
