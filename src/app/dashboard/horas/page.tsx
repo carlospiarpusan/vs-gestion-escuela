@@ -61,6 +61,7 @@ export default function HorasPage() {
 
   const isReadOnly = perfil?.rol === "instructor" || perfil?.rol === "alumno";
   const isAdmin = !["instructor", "alumno"].includes(perfil?.rol ?? "");
+  const canEditValor = ["super_admin", "admin_escuela", "admin_sede"].includes(perfil?.rol ?? "");
 
   // Anchos fijos de columnas sticky derecha
   const VALOR_COL_W = 110; // px — columna valor total (solo admins)
@@ -233,7 +234,7 @@ export default function HorasPage() {
     "p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-[#1d1d1f] dark:text-[#f5f5f7]";
 
   // right offset para la columna de total horas (deja espacio para la columna valor)
-  const totalColRight = isAdmin ? VALOR_COL_W : 0;
+  const totalColRight = canEditValor ? VALOR_COL_W : 0;
 
   // ── Render ────────────────────────────────────────────────────
 
@@ -282,7 +283,7 @@ export default function HorasPage() {
           <div className="overflow-x-auto w-full">
             <table
               className="border-collapse"
-              style={{ minWidth: `${180 + daysInMonth * DAY_COL_W + TOTAL_COL_W + (isAdmin ? VALOR_COL_W : 0)}px` }}
+              style={{ minWidth: `${180 + daysInMonth * DAY_COL_W + TOTAL_COL_W + (canEditValor ? VALOR_COL_W : 0)}px` }}
             >
               {/* ── Encabezado ── */}
               <thead>
@@ -332,8 +333,8 @@ export default function HorasPage() {
                     Total h
                   </th>
 
-                  {/* Valor total — sticky derecha extremo (solo admins) */}
-                  {isAdmin && (
+                  {/* Valor total — sticky derecha extremo (solo admins de escuela/sede) */}
+                  {canEditValor && (
                     <th
                       scope="col"
                       className="sticky right-0 z-20 bg-gray-50 dark:bg-[#141414] px-2 py-2.5 text-center text-[10px] font-semibold text-[#86868b] uppercase tracking-wider border-l border-gray-200 dark:border-gray-700"
@@ -374,8 +375,8 @@ export default function HorasPage() {
                               {inst.nombre} {inst.apellidos}
                             </span>
 
-                            {/* Input valor/hora — solo admins */}
-                            {isAdmin && (
+                            {/* Input valor/hora — solo admins de escuela/sede */}
+                            {canEditValor && (
                               <div className="flex items-center gap-1 mt-1.5">
                                 <span className="text-[10px] text-[#86868b] shrink-0">$/h</span>
                                 <input
@@ -461,8 +462,8 @@ export default function HorasPage() {
                         </span>
                       </td>
 
-                      {/* Valor total — sticky right-0 (solo admins) */}
-                      {isAdmin && (
+                      {/* Valor total — sticky right-0 (solo admins de escuela/sede) */}
+                      {canEditValor && (
                         <td
                           className={`sticky right-0 z-10 px-2 py-0 text-center border-l border-gray-200 dark:border-gray-700 ${footBg}`}
                           style={{ width: VALOR_COL_W, minWidth: VALOR_COL_W }}
@@ -517,8 +518,8 @@ export default function HorasPage() {
                     </span>
                   </td>
 
-                  {/* Gran total valor (solo admins) */}
-                  {isAdmin && (
+                  {/* Gran total valor (solo admins de escuela/sede) */}
+                  {canEditValor && (
                     <td
                       className="sticky right-0 z-10 bg-gray-50 dark:bg-[#141414] px-2 py-2 text-center border-l border-gray-200 dark:border-gray-700"
                       style={{ width: VALOR_COL_W, minWidth: VALOR_COL_W }}
@@ -554,7 +555,7 @@ export default function HorasPage() {
             <span className="w-3 h-3 rounded-sm bg-[#0071e3]/10 border border-[#0071e3]/30" />
             Hoy
           </div>
-          {isAdmin && (
+          {canEditValor && (
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-200 dark:border-green-800" />
               Valor = horas × $/h
