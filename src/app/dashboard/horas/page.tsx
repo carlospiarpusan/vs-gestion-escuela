@@ -124,8 +124,9 @@ export default function HorasPage() {
   const getCellValue = (instructorId: string, day: number): string => {
     const key = `${instructorId}-${day}`;
     if (key in inputOverrides) return inputOverrides[key];
-    const h = horasMap[instructorId]?.[day];
-    return h ? String(h) : "";
+    const map = horasMap[instructorId];
+    if (!map || !(day in map)) return "";
+    return String(map[day]); // muestra "0" para descanso
   };
 
   const handleChange = (instructorId: string, day: number, value: string) => {
@@ -136,13 +137,23 @@ export default function HorasPage() {
     if (!perfil?.escuela_id) return;
     const key = `${instructorId}-${day}`;
     const raw = inputOverrides[key] ?? String(horasMap[instructorId]?.[day] ?? "");
+    const isEmpty = raw.trim() === "";
     const parsed = parseInt(raw, 10);
     const hours = isNaN(parsed) ? 0 : Math.min(Math.max(parsed, 0), 24);
 
-    setHorasMap(prev => ({
-      ...prev,
-      [instructorId]: { ...prev[instructorId], [day]: hours },
-    }));
+    // Si el campo queda vacío, limpiar del mapa local
+    if (isEmpty) {
+      setHorasMap(prev => {
+        const next = { ...prev, [instructorId]: { ...prev[instructorId] } };
+        delete next[instructorId][day];
+        return next;
+      });
+    } else {
+      setHorasMap(prev => ({
+        ...prev,
+        [instructorId]: { ...prev[instructorId], [day]: hours },
+      }));
+    }
     setInputOverrides(prev => { const n = { ...prev }; delete n[key]; return n; });
 
     const instructor = instructores.find(i => i.id === instructorId);
@@ -152,10 +163,12 @@ export default function HorasPage() {
     const supabase = createClient();
     setSavingCells(prev => new Set(prev).add(key));
 
-    if (hours === 0) {
+    if (isEmpty) {
+      // Campo vacío → borrar registro (sin dato)
       await supabase.from("horas_trabajo").delete()
         .eq("instructor_id", instructorId).eq("fecha", fecha);
     } else {
+      // 0 = descanso, >0 = horas trabajadas → guardar ambos
       await supabase.from("horas_trabajo").upsert(
         { escuela_id: perfil.escuela_id, sede_id: instructor.sede_id, instructor_id: instructorId, fecha, horas: hours },
         { onConflict: "instructor_id,fecha" }
@@ -385,7 +398,9 @@ export default function HorasPage() {
                       {days.map(d => {
                         const key    = `${inst.id}-${d}`;
                         const val    = getCellValue(inst.id, d);
-                        const hasVal = val !== "" && parseFloat(val) > 0;
+                        const numVal = parseFloat(val);
+                        const hasVal = val !== "" && numVal > 0;
+                        const isRest = val === "0" || (val !== "" && numVal === 0 && horasMap[inst.id]?.[d] === 0);
                         const isSaving = savingCells.has(key);
                         const dow  = getDayOfWeek(anio, mes, d);
                         const isWE = dow === 0 || dow === 6;
@@ -396,11 +411,12 @@ export default function HorasPage() {
                             key={d}
                             style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
                             className={`p-0 border-r border-gray-100 dark:border-gray-800 transition-opacity ${isSaving ? "opacity-40" : ""} ${
-                              isToday && hasVal ? "bg-[#0071e3]/12"
-                              : isToday         ? "bg-[#0071e3]/6"
-                              : hasVal && isWE  ? "bg-blue-50/60 dark:bg-[#0071e3]/8"
-                              : hasVal          ? "bg-[#0071e3]/5 dark:bg-[#0071e3]/7"
-                              : isWE            ? "bg-gray-50/60 dark:bg-[#1a1a1a]/60"
+                              isRest              ? "bg-amber-100/70 dark:bg-amber-900/20"
+                              : isToday && hasVal ? "bg-[#0071e3]/12"
+                              : isToday           ? "bg-[#0071e3]/6"
+                              : hasVal && isWE    ? "bg-blue-50/60 dark:bg-[#0071e3]/8"
+                              : hasVal            ? "bg-[#0071e3]/5 dark:bg-[#0071e3]/7"
+                              : isWE              ? "bg-gray-50/60 dark:bg-[#1a1a1a]/60"
                               : ""
                             }`}
                           >
@@ -423,7 +439,9 @@ export default function HorasPage() {
                                 w-full h-9 text-center text-sm bg-transparent
                                 border-0 outline-none
                                 placeholder:text-gray-300 dark:placeholder:text-gray-700
-                                ${hasVal ? "font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]" : "text-[#86868b]"}
+                                ${isRest ? "font-semibold text-amber-600 dark:text-amber-400"
+                                  : hasVal ? "font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"
+                                  : "text-[#86868b]"}
                                 ${isReadOnly
                                   ? "cursor-default"
                                   : "focus:bg-[#0071e3]/10 dark:focus:bg-[#0071e3]/20 cursor-text"}
@@ -523,6 +541,10 @@ export default function HorasPage() {
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm bg-[#0071e3]/10 border border-[#0071e3]/20" />
             Día con horas
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-sm bg-amber-100 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800" />
+            Descanso (0)
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm bg-gray-100 dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700" />
