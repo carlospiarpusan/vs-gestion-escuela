@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { Users, Calendar, FileText, DollarSign, CreditCard, CheckCircle, Clock, BookOpen } from "lucide-react";
@@ -20,13 +20,21 @@ interface AlumnoInfo {
   dni: string;
   email: string;
   estado: string;
-  categorias: string[] | null;
+  valor_total: number | null;
+}
+
+interface MatriculaInfo {
+  id: string;
+  numero_contrato: string | null;
+  categorias: string[];
   valor_total: number | null;
   fecha_inscripcion: string | null;
+  estado: "activo" | "cerrado" | "cancelado";
 }
 
 interface Ingreso {
   id: string;
+  matricula_id: string | null;
   concepto: string;
   monto: number;
   metodo_pago: string;
@@ -35,13 +43,16 @@ interface Ingreso {
   categoria: string;
 }
 
-interface ClaseProxima {
+interface ExamenRealizado {
   id: string;
-  tipo: string;
+  tipo: "teorico" | "practico";
   fecha: string;
-  hora_inicio: string;
-  hora_fin: string;
-  estado: string;
+  hora: string | null;
+  resultado: "pendiente" | "aprobado" | "suspendido";
+  intentos: number;
+  notas: string | null;
+  total_respuestas: number;
+  respuestas_correctas: number;
 }
 
 /* ─────────────────── helpers ─────────────────── */
@@ -68,51 +79,132 @@ const METODO_LABEL: Record<string, string> = {
   otro: "Otro",
 };
 
-const TIPO_CLASE: Record<string, string> = { practica: "Práctica", teorica: "Teórica" };
+const TIPO_EXAMEN: Record<ExamenRealizado["tipo"], string> = {
+  teorico: "Teórico",
+  practico: "Práctico",
+};
+
+const RESULTADO_LABEL: Record<ExamenRealizado["resultado"], string> = {
+  pendiente: "Pendiente",
+  aprobado: "Aprobado",
+  suspendido: "Suspendido",
+};
+
+const RESULTADO_COLOR: Record<ExamenRealizado["resultado"], string> = {
+  pendiente: "text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400",
+  aprobado: "text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400",
+  suspendido: "text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400",
+};
 
 /* ─────────────────── vista alumno ─────────────────── */
 function AlumnoDashboard() {
   const { user, perfil } = useAuth();
   const [alumno, setAlumno] = useState<AlumnoInfo | null>(null);
+  const [matriculas, setMatriculas] = useState<MatriculaInfo[]>([]);
   const [ingresos, setIngresos] = useState<Ingreso[]>([]);
-  const [clases, setClases] = useState<ClaseProxima[]>([]);
+  const [examenes, setExamenes] = useState<ExamenRealizado[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
     const fetchData = async () => {
       const supabase = createClient();
-      const hoy = new Date().toISOString().split("T")[0];
 
       const { data: alumnoData } = await supabase
         .from("alumnos")
-        .select("id, nombre, apellidos, dni, email, estado, categorias, valor_total, fecha_inscripcion")
+        .select("id, nombre, apellidos, dni, email, estado, valor_total")
         .eq("user_id", user.id)
         .maybeSingle();
 
       if (alumnoData) {
         setAlumno(alumnoData);
-        const [ingresosRes, clasesRes] = await Promise.all([
+        const [matriculasRes, ingresosRes, examenesRes, respuestasRes] = await Promise.all([
+          supabase
+            .from("matriculas_alumno")
+            .select("id, numero_contrato, categorias, valor_total, fecha_inscripcion, estado")
+            .eq("alumno_id", alumnoData.id)
+            .order("fecha_inscripcion", { ascending: false })
+            .order("created_at", { ascending: false }),
           supabase
             .from("ingresos")
-            .select("id, concepto, monto, metodo_pago, fecha, estado, categoria")
+            .select("id, matricula_id, concepto, monto, metodo_pago, fecha, estado, categoria")
             .eq("alumno_id", alumnoData.id)
             .order("fecha", { ascending: false }),
           supabase
-            .from("clases")
-            .select("id, tipo, fecha, hora_inicio, hora_fin, estado")
+            .from("examenes")
+            .select("id, tipo, fecha, hora, resultado, intentos, notas")
             .eq("alumno_id", alumnoData.id)
-            .gte("fecha", hoy)
-            .order("fecha", { ascending: true })
-            .limit(5),
+            .order("fecha", { ascending: false }),
+          supabase
+            .from("respuestas_examen")
+            .select("examen_id, es_correcta")
+            .eq("alumno_id", alumnoData.id),
         ]);
+
+        const respuestasPorExamen = new Map<string, { total: number; correctas: number }>();
+        for (const respuesta of respuestasRes.data ?? []) {
+          if (!respuesta.examen_id) continue;
+          const actual = respuestasPorExamen.get(respuesta.examen_id) ?? { total: 0, correctas: 0 };
+          actual.total += 1;
+          if (respuesta.es_correcta) actual.correctas += 1;
+          respuestasPorExamen.set(respuesta.examen_id, actual);
+        }
+
+        setMatriculas((matriculasRes.data as MatriculaInfo[]) ?? []);
         setIngresos(ingresosRes.data ?? []);
-        setClases(clasesRes.data ?? []);
+        setExamenes(
+          (examenesRes.data ?? []).map((examen) => {
+            const resumen = respuestasPorExamen.get(examen.id) ?? { total: 0, correctas: 0 };
+            return {
+              ...examen,
+              total_respuestas: resumen.total,
+              respuestas_correctas: resumen.correctas,
+            };
+          })
+        );
       }
       setLoading(false);
     };
     fetchData();
   }, [user]);
+
+  const nombre = alumno?.nombre || perfil?.nombre || "Alumno";
+  const ingresosCobrados = useMemo(
+    () => ingresos.filter((ingreso) => ingreso.estado === "cobrado"),
+    [ingresos]
+  );
+  const totalPagado = useMemo(
+    () => ingresosCobrados.reduce((sum, ingreso) => sum + Number(ingreso.monto), 0),
+    [ingresosCobrados]
+  );
+  const valorTotal = useMemo(() => {
+    if (matriculas.length === 0) return alumno?.valor_total ?? 0;
+    return matriculas
+      .filter((matricula) => matricula.estado !== "cancelado")
+      .reduce((sum, matricula) => sum + Number(matricula.valor_total || 0), 0);
+  }, [alumno?.valor_total, matriculas]);
+  const totalPendiente = Math.max(valorTotal - totalPagado, 0);
+  const porcentajePagado = valorTotal > 0 ? Math.min(100, Math.round((totalPagado / valorTotal) * 100)) : 0;
+  const resumenMatriculas = useMemo(
+    () =>
+      matriculas.map((matricula) => {
+        const valor = Number(matricula.valor_total || 0);
+        const pagado = ingresosCobrados
+          .filter((ingreso) => ingreso.matricula_id === matricula.id)
+          .reduce((sum, ingreso) => sum + Number(ingreso.monto), 0);
+
+        return {
+          ...matricula,
+          total_pagado: pagado,
+          saldo_pendiente: Math.max(valor - pagado, 0),
+        };
+      }),
+    [ingresosCobrados, matriculas]
+  );
+  const matriculasById = useMemo(
+    () => new Map(resumenMatriculas.map((matricula) => [matricula.id, matricula])),
+    [resumenMatriculas]
+  );
 
   if (loading) {
     return (
@@ -121,16 +213,6 @@ function AlumnoDashboard() {
       </div>
     );
   }
-
-  const nombre = alumno?.nombre || perfil?.nombre || "Alumno";
-  const totalPagado = ingresos
-    .filter((i) => i.estado === "cobrado")
-    .reduce((s, i) => s + Number(i.monto), 0);
-  const totalPendiente = ingresos
-    .filter((i) => i.estado === "pendiente")
-    .reduce((s, i) => s + Number(i.monto), 0);
-  const valorTotal = alumno?.valor_total ?? 0;
-  const porcentajePagado = valorTotal > 0 ? Math.min(100, Math.round((totalPagado / valorTotal) * 100)) : 0;
 
   return (
     <div className="animate-fade-in">
@@ -202,15 +284,84 @@ function AlumnoDashboard() {
         </div>
       )}
 
+      {resumenMatriculas.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <BookOpen size={16} className="text-[#0071e3]" />
+            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tus cursos</h3>
+          </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {resumenMatriculas.map((matricula) => (
+              <div
+                key={matricula.id}
+                className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {matricula.numero_contrato ? `Contrato ${matricula.numero_contrato}` : "Curso sin contrato"}
+                    </p>
+                    <p className="text-xs text-[#86868b]">
+                      {matricula.fecha_inscripcion
+                        ? new Date(matricula.fecha_inscripcion + "T00:00:00").toLocaleDateString("es-CO", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })
+                        : "Fecha no disponible"}
+                    </p>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-[#0071e3]/10 text-[#0071e3]">
+                    {matricula.estado}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                  {(matricula.categorias ?? []).map((categoria) => (
+                    <span
+                      key={`${matricula.id}-${categoria}`}
+                      className="px-2 py-0.5 text-[10px] rounded-full bg-gray-100 dark:bg-gray-800 text-[#1d1d1f] dark:text-[#f5f5f7] font-medium"
+                    >
+                      {categoria}
+                    </span>
+                  ))}
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="rounded-2xl bg-gray-50 dark:bg-[#0a0a0a] p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-[#86868b] mb-1">Valor</p>
+                    <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {matricula.valor_total ? fmt(Number(matricula.valor_total)) : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-green-50 dark:bg-green-900/20 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-green-600 dark:text-green-400 mb-1">Abonos</p>
+                    <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                      {fmt(matricula.total_pagado)}
+                    </p>
+                  </div>
+                  <div className={`rounded-2xl p-3 ${matricula.saldo_pendiente <= 0 ? "bg-green-50 dark:bg-green-900/20" : "bg-amber-50 dark:bg-amber-900/20"}`}>
+                    <p className={`text-[10px] uppercase tracking-wider mb-1 ${matricula.saldo_pendiente <= 0 ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}>
+                      {matricula.saldo_pendiente <= 0 ? "Al día" : "Pendiente"}
+                    </p>
+                    <p className={`text-sm font-semibold ${matricula.saldo_pendiente <= 0 ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}`}>
+                      {fmt(matricula.saldo_pendiente)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Historial de pagos */}
+        {/* Historial de abonos */}
         <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
             <CreditCard size={16} className="text-[#0071e3]" />
-            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Historial de pagos</h3>
+            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Historial de abonos</h3>
           </div>
           {ingresos.length === 0 ? (
-            <p className="text-center text-sm text-[#86868b] py-10">Sin registros de pago</p>
+            <p className="text-center text-sm text-[#86868b] py-10">Sin registros de abonos</p>
           ) : (
             <div className="divide-y divide-gray-100 dark:divide-gray-800 max-h-80 overflow-y-auto">
               {ingresos.map((ing) => (
@@ -224,6 +375,15 @@ function AlumnoDashboard() {
                         year: "numeric",
                       })}{" "}
                       · {METODO_LABEL[ing.metodo_pago] ?? ing.metodo_pago}
+                      {ing.matricula_id
+                        ? (() => {
+                            const matricula = matriculasById.get(ing.matricula_id);
+                            if (!matricula) return "";
+                            if (matricula.numero_contrato) return ` · Contrato ${matricula.numero_contrato}`;
+                            if ((matricula.categorias ?? []).length > 0) return ` · ${(matricula.categorias ?? []).join(", ")}`;
+                            return "";
+                          })()
+                        : ""}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
@@ -238,32 +398,46 @@ function AlumnoDashboard() {
           )}
         </div>
 
-        {/* Próximas clases */}
+        {/* Evaluaciones realizadas */}
         <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
-            <Calendar size={16} className="text-[#0071e3]" />
-            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Próximas clases</h3>
+            <FileText size={16} className="text-[#0071e3]" />
+            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Evaluaciones realizadas</h3>
           </div>
-          {clases.length === 0 ? (
-            <p className="text-center text-sm text-[#86868b] py-10">No tienes clases programadas</p>
+          {examenes.length === 0 ? (
+            <p className="text-center text-sm text-[#86868b] py-10">Aún no tienes evaluaciones registradas</p>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-gray-800">
-              {clases.map((cl) => (
-                <div key={cl.id} className="px-6 py-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      Clase {TIPO_CLASE[cl.tipo] ?? cl.tipo}
-                    </p>
+            <div className="divide-y divide-gray-100 dark:divide-gray-800 max-h-80 overflow-y-auto">
+              {examenes.map((examen) => (
+                <div key={examen.id} className="px-6 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                        {TIPO_EXAMEN[examen.tipo]}
+                      </p>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${RESULTADO_COLOR[examen.resultado]}`}>
+                        {RESULTADO_LABEL[examen.resultado]}
+                      </span>
+                    </div>
                     <p className="text-xs text-[#86868b]">
-                      {new Date(cl.fecha + "T00:00:00").toLocaleDateString("es-CO", {
-                        weekday: "long",
+                      {new Date(examen.fecha + "T00:00:00").toLocaleDateString("es-CO", {
                         day: "numeric",
-                        month: "long",
+                        month: "short",
+                        year: "numeric",
                       })}
+                      {examen.hora ? ` · ${examen.hora}` : ""}
                     </p>
+                    {examen.total_respuestas > 0 && (
+                      <p className="text-xs text-[#86868b]">
+                        {examen.respuestas_correctas}/{examen.total_respuestas} respuestas correctas
+                      </p>
+                    )}
+                    {examen.notas && (
+                      <p className="text-xs text-[#86868b] truncate">{examen.notas}</p>
+                    )}
                   </div>
-                  <span className="text-sm font-medium text-[#0071e3] shrink-0">
-                    {cl.hora_inicio} – {cl.hora_fin}
+                  <span className="text-xs font-medium text-[#0071e3] shrink-0">
+                    Intento {examen.intentos}
                   </span>
                 </div>
               ))}

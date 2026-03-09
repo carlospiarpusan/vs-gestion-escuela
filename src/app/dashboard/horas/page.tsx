@@ -60,7 +60,6 @@ export default function HorasPage() {
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
   const isReadOnly = perfil?.rol === "instructor" || perfil?.rol === "alumno";
-  const isAdmin = !["instructor", "alumno"].includes(perfil?.rol ?? "");
   const canEditValor = ["super_admin", "admin_escuela", "admin_sede"].includes(perfil?.rol ?? "");
 
   // Anchos fijos de columnas sticky derecha
@@ -229,9 +228,9 @@ export default function HorasPage() {
   const anios = Array.from({ length: 6 }, (_, i) => today.getFullYear() - 2 + i);
 
   const selectCls =
-    "px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3] cursor-pointer";
+    "apple-input cursor-pointer px-3 py-2";
   const navBtnCls =
-    "p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-[#1d1d1f] dark:text-[#f5f5f7]";
+    "apple-icon-button text-[#1d1d1f] dark:text-[#f5f5f7]";
 
   // right offset para la columna de total horas (deja espacio para la columna valor)
   const totalColRight = canEditValor ? VALOR_COL_W : 0;
