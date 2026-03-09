@@ -42,6 +42,7 @@ import {
   MapPin,
   UserCog,
   CalendarRange,
+  ClipboardList,
   X,
 } from "lucide-react";
 
@@ -117,6 +118,12 @@ const navItems: NavItem[] = [
     label: "Horas",
     href: "/dashboard/horas",
     icon: <CalendarRange size={18} />,
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
+  },
+  {
+    label: "Bitácora",
+    href: "/dashboard/bitacora",
+    icon: <ClipboardList size={18} />,
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
   },
   {
