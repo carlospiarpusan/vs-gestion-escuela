@@ -27,23 +27,57 @@ export async function POST(request: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Buscar perfil cuya cédula coincida y que tenga email real (no @*.local)
-    const { data, error } = await supabaseAdmin
+    const trimmedCedula = cedula.trim();
+
+    // 1. Buscar en perfiles por cédula
+    const { data } = await supabaseAdmin
       .from("perfiles")
       .select("email, rol, activo")
-      .eq("cedula", cedula.trim())
-      .not("email", "like", "%@alumno.local")
-      .not("email", "like", "%@instructor.local")
-      .not("email", "like", "%@administrativo.local")
+      .eq("cedula", trimmedCedula)
       .eq("activo", true)
       .maybeSingle();
 
-    if (error || !data) {
-      // No exponer si el usuario existe o no
-      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    if (data?.email) {
+      return NextResponse.json({ email: data.email });
     }
 
-    return NextResponse.json({ email: data.email });
+    // 2. Fallback: buscar en instructores por DNI → obtener user_id → email del perfil
+    const { data: inst } = await supabaseAdmin
+      .from("instructores")
+      .select("user_id")
+      .eq("dni", trimmedCedula)
+      .maybeSingle();
+
+    if (inst?.user_id) {
+      const { data: perfil } = await supabaseAdmin
+        .from("perfiles")
+        .select("email")
+        .eq("id", inst.user_id)
+        .maybeSingle();
+      if (perfil?.email) {
+        return NextResponse.json({ email: perfil.email });
+      }
+    }
+
+    // 3. Fallback: buscar en alumnos por DNI
+    const { data: alumno } = await supabaseAdmin
+      .from("alumnos")
+      .select("user_id")
+      .eq("dni", trimmedCedula)
+      .maybeSingle();
+
+    if (alumno?.user_id) {
+      const { data: perfil } = await supabaseAdmin
+        .from("perfiles")
+        .select("email")
+        .eq("id", alumno.user_id)
+        .maybeSingle();
+      if (perfil?.email) {
+        return NextResponse.json({ email: perfil.email });
+      }
+    }
+
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   } catch {
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
