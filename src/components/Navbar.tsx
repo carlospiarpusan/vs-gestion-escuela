@@ -53,7 +53,7 @@ export default function Navbar() {
               ))}
             </div>
 
-            {/* Auth Buttons */}
+            {/* Auth Buttons — desktop */}
             <div className="hidden md:flex items-center gap-6">
               <Link
                 href="/login"
@@ -69,11 +69,18 @@ export default function Navbar() {
               </Link>
             </div>
 
-            {/* Mobile menu button */}
-            <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="md:hidden text-foreground z-50"
-            >
+            {/* Mobile: login button + hamburger */}
+            <div className="flex md:hidden items-center gap-3 z-50">
+              <Link
+                href="/login"
+                className="text-[12px] font-medium text-white bg-[#0071e3] px-3.5 py-1.5 rounded-full active:scale-95 transition-transform"
+              >
+                Iniciar Sesión
+              </Link>
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="text-foreground"
+              >
               <AnimatePresence mode="wait">
                 {menuOpen ? (
                   <motion.div
@@ -97,7 +104,8 @@ export default function Navbar() {
                   </motion.div>
                 )}
               </AnimatePresence>
-            </button>
+              </button>
+            </div>
           </div>
         </div>
       </nav>

@@ -16,25 +16,25 @@ const features = [
     icon: Users,
     title: "Alumnos",
     description: "Expedientes completos, pagos y progreso práctico.",
-    className: "md:col-span-2 md:row-span-2",
+    className: "sm:col-span-2 md:col-span-2 md:row-span-2",
   },
   {
     icon: Calendar,
     title: "Agenda",
     description: "Calendario drag-and-drop para clases y exámenes.",
-    className: "md:col-span-1 md:row-span-1",
+    className: "sm:col-span-1 md:col-span-1 md:row-span-1",
   },
   {
     icon: Car,
     title: "Flota",
     description: "Control de vehículos, ITV y seguros.",
-    className: "md:col-span-1 md:row-span-1",
+    className: "sm:col-span-1 md:col-span-1 md:row-span-1",
   },
   {
     icon: BarChart3,
     title: "Finanzas",
     description: "Control de ingresos, gastos y facturación.",
-    className: "md:col-span-2 md:row-span-1",
+    className: "sm:col-span-2 md:col-span-2 md:row-span-1",
   },
 ];
 
@@ -99,15 +99,15 @@ function FeatureCard({ feature, index }: { feature: any; index: number }) {
 
 export default function Features() {
   return (
-    <section id="features" className="py-32 bg-gray-50 dark:bg-black">
+    <section id="features" className="py-16 sm:py-24 md:py-32 bg-gray-50 dark:bg-black">
       <div className="max-w-[1200px] mx-auto px-6">
-        <div className="text-center mb-24">
+        <div className="text-center mb-12 sm:mb-16 md:mb-24">
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
-            className="text-4xl sm:text-5xl font-semibold tracking-tight text-foreground mb-4"
+            className="text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-foreground mb-4"
           >
             Orden. Control.
             <br />
@@ -115,7 +115,7 @@ export default function Features() {
           </motion.h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[minmax(240px,auto)]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 auto-rows-[minmax(200px,auto)] sm:auto-rows-[minmax(240px,auto)]">
           {features.map((feature, index) => (
             <FeatureCard key={feature.title} feature={feature} index={index} />
           ))}

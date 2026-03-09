@@ -32,15 +32,15 @@ export default function HowItWorks() {
   const lineHeight = useTransform(scrollYProgress, [0.1, 0.6], ["0%", "100%"]);
 
   return (
-    <section ref={ref} id="how-it-works" className="py-32 bg-background relative overflow-hidden">
+    <section ref={ref} id="how-it-works" className="py-16 sm:py-24 md:py-32 bg-background relative overflow-hidden">
       <div className="max-w-[980px] mx-auto px-6">
-        <div className="text-center mb-24">
+        <div className="text-center mb-12 sm:mb-16 md:mb-24">
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
-            className="text-4xl sm:text-5xl font-semibold tracking-tight text-foreground mb-4"
+            className="text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-foreground mb-4"
           >
             Empieza en minutos.
           </motion.h2>
@@ -79,7 +79,7 @@ export default function HowItWorks() {
               >
                 <div className="flex-1 text-center md:text-left">
                   <div className={cn("inline-block mb-4", index % 2 === 0 ? "md:text-left" : "md:text-right w-full")}>
-                    <span className="text-8xl font-bold text-gray-100 dark:text-gray-900 select-none block leading-none tracking-tighter">
+                    <span className="text-6xl sm:text-8xl font-bold text-gray-100 dark:text-gray-900 select-none block leading-none tracking-tighter">
                       {step.number}
                     </span>
                   </div>

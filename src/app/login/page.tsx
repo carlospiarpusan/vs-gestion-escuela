@@ -122,17 +122,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f5f7] dark:bg-[#000] px-6 transition-colors duration-300">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f5f7] dark:bg-[#000] px-4 sm:px-6 py-8 transition-colors duration-300">
       {/* Enlace para volver al inicio */}
-      <div className="absolute top-6 left-6">
+      <div className="absolute top-4 left-4 sm:top-6 sm:left-6">
         <Link href="/" className="text-sm text-[#0071e3] hover:underline">
-          &larr; Volver al inicio
+          &larr; Inicio
         </Link>
       </div>
 
       <div className="w-full max-w-sm animate-scale-in">
         {/* ========== Logo y título ========== */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6 sm:mb-8">
           <h1 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
             AutoEscuela<span className="gradient-text">Pro</span>
           </h1>
@@ -166,7 +166,7 @@ export default function LoginPage() {
               placeholder="tu@email.com o número de cédula"
               required
               autoComplete="username"
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] text-sm placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all"
+              className="w-full px-4 py-3.5 sm:py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] text-base sm:text-sm placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all"
             />
           </div>
 
@@ -187,7 +187,7 @@ export default function LoginPage() {
                 placeholder="Tu contraseña"
                 required
                 autoComplete="current-password"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] text-sm placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all pr-12"
+                className="w-full px-4 py-3.5 sm:py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] text-base sm:text-sm placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all pr-12"
               />
               <button
                 type="button"
@@ -204,7 +204,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#0071e3] text-white py-3 rounded-xl text-sm font-medium hover:bg-[#0077ED] transition-all duration-300 hover:shadow-lg hover:shadow-[#0071e3]/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full bg-[#0071e3] text-white py-3.5 sm:py-3 rounded-xl text-base sm:text-sm font-medium hover:bg-[#0077ED] transition-all duration-300 hover:shadow-lg hover:shadow-[#0071e3]/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
