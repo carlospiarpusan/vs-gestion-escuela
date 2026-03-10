@@ -17,7 +17,7 @@
  */
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import DataTable from "@/components/dashboard/DataTable";
@@ -26,8 +26,10 @@ import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import type { MantenimientoVehiculo, TipoMantenimiento, Vehiculo, Instructor } from "@/types/database";
 import { Plus } from "lucide-react";
 
+const PAGE_SIZE = 10;
+
 /** All possible maintenance type values used in the tipo selector */
-const tiposMant: TipoMantenimiento[] = ["cambio_aceite", "gasolina", "repuesto", "mano_obra", "lavado", "neumaticos", "revision_general", "otros"];
+const tiposMant: TipoMantenimiento[] = ["cambio_aceite", "gasolina", "repuesto", "mano_obra", "lavado", "neumaticos", "reparacion", "revision_general", "otros"];
 
 /** Default empty form state, reset when opening the create modal */
 const emptyForm = {
@@ -80,6 +82,10 @@ export default function MantenimientoPage() {
 
   // Data state: maintenance records enriched with display names
   const [data, setData] = useState<(MantenimientoVehiculo & { vehiculo_nombre?: string; instructor_nombre?: string })[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
+  const fetchIdRef = useRef(0);
   // Lookup lists for the form selectors
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [instructores, setInstructores] = useState<Instructor[]>([]);
@@ -95,19 +101,54 @@ export default function MantenimientoPage() {
   const [error, setError] = useState("");
 
   /**
-   * Fetches all maintenance records, vehicles, and instructors in parallel,
+   * Fetches paginated maintenance records, vehicles, and instructors,
    * then maps vehicle/instructor names onto each maintenance record for display.
    */
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (page = 0, search = "") => {
     if (!perfil?.escuela_id) return;
+
+    const fetchId = ++fetchIdRef.current;
+    setLoading(true);
     const supabase = createClient();
 
-    // Fetch all three datasets concurrently for performance
-    const [mantRes, vehiculosRes, instructoresRes] = await Promise.all([
-      supabase.from("mantenimiento_vehiculos").select("id, vehiculo_id, instructor_id, tipo, descripcion, monto, kilometraje_actual, litros, precio_por_litro, proveedor, numero_factura, fecha, notas, created_at").eq("escuela_id", perfil.escuela_id).order("fecha", { ascending: false }),
+    // 1. Count query for pagination
+    let countQuery = supabase
+      .from("mantenimiento_vehiculos")
+      .select("id", { count: "exact", head: true })
+      .eq("escuela_id", perfil.escuela_id);
+
+    if (search) {
+      countQuery = countQuery.or(
+        `descripcion.ilike.%${search}%,fecha.ilike.%${search}%,proveedor.ilike.%${search}%`
+      );
+    }
+
+    // 2. Paginated data query
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let dataQuery = supabase
+      .from("mantenimiento_vehiculos")
+      .select("id, vehiculo_id, instructor_id, tipo, descripcion, monto, kilometraje_actual, litros, precio_por_litro, proveedor, numero_factura, fecha, notas, created_at")
+      .eq("escuela_id", perfil.escuela_id)
+      .order("fecha", { ascending: false })
+      .range(from, to);
+
+    if (search) {
+      dataQuery = dataQuery.or(
+        `descripcion.ilike.%${search}%,fecha.ilike.%${search}%,proveedor.ilike.%${search}%`
+      );
+    }
+
+    // Fetch lookups for form selectors in parallel
+    const [countRes, mantRes, vehiculosRes, instructoresRes] = await Promise.all([
+      countQuery,
+      dataQuery,
       supabase.from("vehiculos").select("id, marca, modelo, matricula").eq("escuela_id", perfil.escuela_id),
       supabase.from("instructores").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id),
     ]);
+
+    if (fetchId !== fetchIdRef.current) return;
 
     // Build lookup maps to resolve IDs into human-readable names
     const vMap = new Map(
@@ -124,18 +165,29 @@ export default function MantenimientoPage() {
     }));
 
     setData(mant);
+    setTotalCount(countRes.count ?? 0);
     setVehiculos((vehiculosRes.data as Vehiculo[]) || []);
     setInstructores((instructoresRes.data as Instructor[]) || []);
     setLoading(false);
   }, [perfil?.escuela_id]);
 
-  // Fetch data once the user's profile is available
+  // Fetch data whenever page, search, or profile changes
   useEffect(() => {
     if (perfil) {
-      fetchData();
+      fetchData(currentPage, searchTerm);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perfil?.id]);
+  }, [fetchData, perfil, currentPage, searchTerm]);
+
+  /** Callback del DataTable server-side: cambio de página */
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
+
+  /** Callback del DataTable server-side: cambio de búsqueda */
+  const handleSearchChange = useCallback((term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(0);
+  }, []);
 
   /** Opens the modal in "create" mode with an empty form */
   const openCreate = () => { setEditing(null); setForm(emptyForm); setError(""); setModalOpen(true); };
@@ -225,6 +277,7 @@ export default function MantenimientoPage() {
     mano_obra: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
     lavado: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
     neumaticos: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400",
+    reparacion: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
     revision_general: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
     otros: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
   };
@@ -240,7 +293,7 @@ export default function MantenimientoPage() {
   ];
 
   /** Shared CSS class string for all form inputs and selects */
-  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
+  const inputCls = "apple-input";
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center bg-[#f5f5f7] dark:bg-[#000000] transition-colors duration-300">

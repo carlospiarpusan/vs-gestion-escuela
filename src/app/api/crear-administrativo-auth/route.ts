@@ -1,12 +1,39 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  authorizeApiRequest,
+  ensureSchoolScope,
+  ensureSedeScope,
+  findAuthUserByEmail,
+  normalizeCedula,
+  normalizeEmail,
+  normalizeText,
+} from "@/lib/api-auth";
 
 export async function POST(request: Request) {
   try {
-    const { nombre, cedula, email, escuela_id, sede_id } = await request.json();
+    const authz = await authorizeApiRequest(["super_admin", "admin_escuela", "admin_sede"]);
+    if (!authz.ok) return authz.response;
+
+    const body = await request.json();
+    const nombre = normalizeText(body.nombre);
+    const cedula = normalizeCedula(body.cedula);
+    const email = normalizeEmail(body.email);
+    const escuela_id = normalizeText(body.escuela_id);
+    const sede_id = normalizeText(body.sede_id);
 
     if (!nombre || !cedula || !escuela_id || !sede_id) {
       return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
+    }
+
+    const schoolScopeError = ensureSchoolScope(authz.perfil, escuela_id);
+    if (schoolScopeError) {
+      return NextResponse.json({ error: schoolScopeError }, { status: 403 });
+    }
+
+    const sedeScopeError = ensureSedeScope(authz.perfil, sede_id);
+    if (sedeScopeError) {
+      return NextResponse.json({ error: sedeScopeError }, { status: 403 });
     }
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -20,13 +47,9 @@ export async function POST(request: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Email de auth: real si tiene, si no usa cedula@administrativo.local
-    const authEmail = email?.trim() ? email.trim().toLowerCase() : `${cedula}@administrativo.local`;
-    const authPassword = cedula; // Contraseña inicial = número de cédula
-
-    // Verificar si ya existe un usuario con ese email
-    const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-    const existingUser = listData?.users?.find((u) => u.email === authEmail);
+    const authEmail = email || `${cedula}@administrativo.local`;
+    const authPassword = cedula;
+    const existingUser = await findAuthUserByEmail(supabaseAdmin, authEmail);
 
     if (existingUser) {
       const { data: perfilExistente } = await supabaseAdmin
@@ -42,11 +65,9 @@ export async function POST(request: Request) {
         );
       }
 
-      // Usuario huérfano: eliminar y recrear
       await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
     }
 
-    // Crear usuario en Supabase Auth
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: authEmail,
       password: authPassword,
@@ -67,7 +88,6 @@ export async function POST(request: Request) {
 
     const userId = authData.user.id;
 
-    // Crear perfil del administrativo en la tabla perfiles
     const { error: perfilError } = await supabaseAdmin.from("perfiles").upsert(
       {
         id: userId,
@@ -76,7 +96,7 @@ export async function POST(request: Request) {
         nombre,
         email: authEmail,
         rol: "administrativo",
-        cedula: cedula.trim(),
+        cedula,
         activo: true,
       },
       { onConflict: "id" }

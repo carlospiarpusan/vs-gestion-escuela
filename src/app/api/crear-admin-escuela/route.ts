@@ -1,11 +1,24 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  authorizeApiRequest,
+  findAuthUserByEmail,
+  normalizeEmail,
+  normalizeText,
+} from "@/lib/api-auth";
 
 export async function POST(request: Request) {
   try {
-    const { escuela_id, nombre, email, password } = await request.json();
+    const authz = await authorizeApiRequest(["super_admin"]);
+    if (!authz.ok) return authz.response;
 
-    if (!escuela_id || !nombre || !email || !password) {
+    const body = await request.json();
+    const escuela_id = normalizeText(body.escuela_id);
+    const nombre = normalizeText(body.nombre);
+    const email = normalizeEmail(body.email);
+    const password = typeof body.password === "string" ? body.password : null;
+
+    if (!escuela_id || !nombre || !email || !password || password.length < 6) {
       return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
     }
 
@@ -25,7 +38,6 @@ export async function POST(request: Request) {
 
     let userId: string;
 
-    // Intentar crear usuario en Supabase Auth
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -42,9 +54,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: authError.message }, { status: 400 });
       }
 
-      // Buscar el usuario existente en auth.users
-      const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-      const existingAuthUser = listData?.users?.find((u) => u.email === email);
+      const existingAuthUser = await findAuthUserByEmail(supabaseAdmin, email);
 
       if (!existingAuthUser) {
         return NextResponse.json(
@@ -53,7 +63,6 @@ export async function POST(request: Request) {
         );
       }
 
-      // Verificar si tiene perfil activo vinculado a otra escuela
       const { data: perfilExistente } = await supabaseAdmin
         .from("perfiles")
         .select("id, escuela_id, rol")
@@ -61,14 +70,12 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       if (perfilExistente && perfilExistente.escuela_id) {
-        // Usuario activo con perfil en otra escuela → no podemos reutilizarlo
         return NextResponse.json(
           { error: "El correo ya está en uso por otro administrador. Usa un correo diferente." },
           { status: 400 }
         );
       }
 
-      // Usuario huérfano (sin perfil o sin escuela asignada): eliminarlo y recrearlo limpio
       await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id);
 
       const { data: newAuthData, error: newAuthError } = await supabaseAdmin.auth.admin.createUser({
@@ -89,7 +96,6 @@ export async function POST(request: Request) {
       userId = authData.user.id;
     }
 
-    // Upsert perfil con rol admin_escuela
     const { error: perfilError } = await supabaseAdmin.from("perfiles").upsert(
       {
         id: userId,
@@ -104,7 +110,6 @@ export async function POST(request: Request) {
     );
 
     if (perfilError) {
-      // Rollback: eliminar el usuario recién creado
       await supabaseAdmin.auth.admin.deleteUser(userId);
       return NextResponse.json({ error: perfilError.message }, { status: 400 });
     }

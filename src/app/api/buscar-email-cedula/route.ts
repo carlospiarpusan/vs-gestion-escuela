@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { normalizeCedula } from "@/lib/api-auth";
 
 /**
  * POST /api/buscar-email-cedula
@@ -12,7 +13,8 @@ import { createClient } from "@supabase/supabase-js";
 export async function POST(request: Request) {
   try {
     const { cedula } = await request.json();
-    if (!cedula) {
+    const trimmedCedula = normalizeCedula(cedula);
+    if (!trimmedCedula) {
       return NextResponse.json({ error: "Cédula requerida" }, { status: 400 });
     }
 
@@ -27,8 +29,6 @@ export async function POST(request: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    const trimmedCedula = cedula.trim();
-
     // 1. Buscar en perfiles por cédula
     const { data } = await supabaseAdmin
       .from("perfiles")
@@ -38,7 +38,10 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (data?.email) {
-      return NextResponse.json({ email: data.email });
+      return NextResponse.json(
+        { email: data.email },
+        { headers: { "Cache-Control": "no-store" } }
+      );
     }
 
     // 2. Fallback: buscar en instructores por DNI → obtener user_id → email del perfil
@@ -55,7 +58,10 @@ export async function POST(request: Request) {
         .eq("id", inst.user_id)
         .maybeSingle();
       if (perfil?.email) {
-        return NextResponse.json({ email: perfil.email });
+        return NextResponse.json(
+          { email: perfil.email },
+          { headers: { "Cache-Control": "no-store" } }
+        );
       }
     }
 
@@ -73,11 +79,17 @@ export async function POST(request: Request) {
         .eq("id", alumno.user_id)
         .maybeSingle();
       if (perfil?.email) {
-        return NextResponse.json({ email: perfil.email });
+        return NextResponse.json(
+          { email: perfil.email },
+          { headers: { "Cache-Control": "no-store" } }
+        );
       }
     }
 
-    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    return NextResponse.json(
+      { error: "No encontrado" },
+      { status: 404, headers: { "Cache-Control": "no-store" } }
+    );
   } catch {
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }

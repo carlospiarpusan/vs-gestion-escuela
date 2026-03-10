@@ -229,7 +229,27 @@ create table public.alumnos (
   created_at timestamp with time zone default now()
 );
 
--- 5. INSTRUCTORES
+-- 5. MATRÍCULAS / CONTRATOS DE ALUMNOS
+create table public.matriculas_alumno (
+  id uuid default gen_random_uuid() primary key,
+  escuela_id uuid references public.escuelas(id) on delete cascade not null,
+  sede_id uuid references public.sedes(id) on delete cascade not null,
+  alumno_id uuid references public.alumnos(id) on delete cascade not null,
+  created_by uuid references public.perfiles(id) on delete set null,
+  numero_contrato text,
+  categorias text[] not null default '{}',
+  valor_total numeric,
+  fecha_inscripcion date default current_date,
+  estado text not null default 'activo' check (estado in ('activo', 'cerrado', 'cancelado')),
+  notas text,
+  tiene_tramitador boolean default false,
+  tramitador_nombre text,
+  tramitador_valor numeric,
+  created_at timestamp with time zone default now(),
+  constraint matriculas_alumno_contrato_unique unique (escuela_id, numero_contrato)
+);
+
+-- 6. INSTRUCTORES
 create table public.instructores (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
@@ -247,7 +267,7 @@ create table public.instructores (
   created_at timestamp with time zone default now()
 );
 
--- 6. VEHÍCULOS
+-- 7. VEHÍCULOS
 create table public.vehiculos (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
@@ -266,7 +286,7 @@ create table public.vehiculos (
   created_at timestamp with time zone default now()
 );
 
--- 7. CLASES
+-- 8. CLASES
 create table public.clases (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
@@ -284,7 +304,7 @@ create table public.clases (
   created_at timestamp with time zone default now()
 );
 
--- 8. EXÁMENES
+-- 9. EXÁMENES
 create table public.examenes (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
@@ -300,10 +320,10 @@ create table public.examenes (
   created_at timestamp with time zone default now()
 );
 
--- 9. PAGOS
+-- 10. PAGOS
 -- Tabla pagos eliminada. Todos los abonos de alumnos se registran en ingresos.
 
--- 10. GASTOS (por sede)
+-- 11. GASTOS (por sede)
 create table public.gastos (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
@@ -325,13 +345,14 @@ create table public.gastos (
   created_at timestamp with time zone default now()
 );
 
--- 11. INGRESOS (por sede)
+-- 12. INGRESOS (por sede)
 create table public.ingresos (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
   sede_id uuid references public.sedes(id) on delete cascade not null,
   user_id uuid references public.perfiles(id) on delete cascade not null,
   alumno_id uuid references public.alumnos(id) on delete set null,
+  matricula_id uuid references public.matriculas_alumno(id) on delete set null,
   categoria text not null check (categoria in (
     'matricula', 'mensualidad', 'clase_suelta', 'examen_teorico',
     'examen_practico', 'material', 'tasas_dgt', 'otros'
@@ -347,7 +368,7 @@ create table public.ingresos (
   created_at timestamp with time zone default now()
 );
 
--- 12. CATEGORÍAS DE PREGUNTAS DE EXAMEN (globales, solo super_admin)
+-- 13. CATEGORÍAS DE PREGUNTAS DE EXAMEN (globales, solo super_admin)
 create table public.categorias_examen (
   id uuid default gen_random_uuid() primary key,
   nombre text not null,
@@ -357,7 +378,7 @@ create table public.categorias_examen (
   created_at timestamp with time zone default now()
 );
 
--- 13. PREGUNTAS DE EXAMEN (globales, solo super_admin)
+-- 14. PREGUNTAS DE EXAMEN (globales, solo super_admin)
 create table public.preguntas_examen (
   id uuid default gen_random_uuid() primary key,
   categoria_id uuid references public.categorias_examen(id) on delete set null,
@@ -374,7 +395,7 @@ create table public.preguntas_examen (
   created_at timestamp with time zone default now()
 );
 
--- 14. RESPUESTAS DE ALUMNOS (por escuela y sede)
+-- 15. RESPUESTAS DE ALUMNOS (por escuela y sede)
 create table public.respuestas_examen (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
@@ -388,7 +409,7 @@ create table public.respuestas_examen (
   created_at timestamp with time zone default now()
 );
 
--- 15. LOG DE ACTIVIDAD
+-- 16. LOG DE ACTIVIDAD
 create table public.actividad_log (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade,
@@ -401,7 +422,7 @@ create table public.actividad_log (
   created_at timestamp with time zone default now()
 );
 
--- 16. MANTENIMIENTO DE VEHÍCULOS (registro por instructor)
+-- 17. MANTENIMIENTO DE VEHÍCULOS (registro por instructor)
 create table public.mantenimiento_vehiculos (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
@@ -416,6 +437,7 @@ create table public.mantenimiento_vehiculos (
     'mano_obra',        -- Mano de obra mecánica
     'lavado',           -- Lavado del vehículo
     'neumaticos',       -- Cambio/reparación de neumáticos
+    'reparacion',       -- Reparaciones generales
     'revision_general', -- Revisión general
     'otros'             -- Otros mantenimientos
   )),
@@ -431,6 +453,15 @@ create table public.mantenimiento_vehiculos (
   notas text,
   created_at timestamp with time zone default now()
 );
+
+alter table public.gastos
+  add column mantenimiento_id uuid unique;
+
+alter table public.gastos
+  add constraint gastos_mantenimiento_id_fkey
+  foreign key (mantenimiento_id)
+  references public.mantenimiento_vehiculos(id)
+  on delete cascade;
 
 -- -- 17. CURSOS (catálogo global)
 -- create table public.cursos (
@@ -448,6 +479,86 @@ create table public.mantenimiento_vehiculos (
 --   precio decimal(10,2) not null default 0,
 --   activo boolean default true
 -- );
+
+-- Índices operativos
+create index if not exists matriculas_alumno_escuela_idx on public.matriculas_alumno (escuela_id);
+create index if not exists matriculas_alumno_sede_idx on public.matriculas_alumno (sede_id);
+create index if not exists matriculas_alumno_alumno_idx on public.matriculas_alumno (alumno_id);
+create index if not exists ingresos_matricula_id_idx on public.ingresos (matricula_id);
+
+-- Mantiene el resumen legado del alumno sincronizado con sus contratos
+create or replace function public.sync_alumno_from_matriculas()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  target_alumno_id uuid := coalesce(NEW.alumno_id, OLD.alumno_id);
+begin
+  update public.alumnos
+  set
+    categorias = (
+      select array_agg(distinct categoria order by categoria)
+      from public.matriculas_alumno m
+      cross join lateral unnest(coalesce(m.categorias, array[]::text[])) as categoria
+      where m.alumno_id = target_alumno_id
+    ),
+    valor_total = (
+      select case
+        when count(*) = 0 then null
+        else coalesce(sum(coalesce(m.valor_total, 0)), 0)
+      end
+      from public.matriculas_alumno m
+      where m.alumno_id = target_alumno_id
+        and m.estado <> 'cancelado'
+    ),
+    numero_contrato = (
+      select m.numero_contrato
+      from public.matriculas_alumno m
+      where m.alumno_id = target_alumno_id
+        and m.numero_contrato is not null
+      order by coalesce(m.fecha_inscripcion, date '0001-01-01') desc, m.created_at desc
+      limit 1
+    ),
+    fecha_inscripcion = (
+      select m.fecha_inscripcion
+      from public.matriculas_alumno m
+      where m.alumno_id = target_alumno_id
+      order by coalesce(m.fecha_inscripcion, date '0001-01-01') desc, m.created_at desc
+      limit 1
+    ),
+    tiene_tramitador = exists (
+      select 1
+      from public.matriculas_alumno m
+      where m.alumno_id = target_alumno_id
+        and m.tiene_tramitador = true
+    ),
+    tramitador_nombre = (
+      select string_agg(distinct m.tramitador_nombre, ', ' order by m.tramitador_nombre)
+      from public.matriculas_alumno m
+      where m.alumno_id = target_alumno_id
+        and m.tiene_tramitador = true
+        and m.tramitador_nombre is not null
+    ),
+    tramitador_valor = (
+      select case
+        when count(*) = 0 then null
+        else coalesce(sum(coalesce(m.tramitador_valor, 0)), 0)
+      end
+      from public.matriculas_alumno m
+      where m.alumno_id = target_alumno_id
+        and m.tiene_tramitador = true
+    )
+  where id = target_alumno_id;
+
+  return null;
+end;
+$$;
+
+drop trigger if exists sync_alumno_from_matriculas_trigger on public.matriculas_alumno;
+create trigger sync_alumno_from_matriculas_trigger
+  after insert or update or delete on public.matriculas_alumno
+  for each row
+  execute function public.sync_alumno_from_matriculas();
 --
 -- -- 19. CURSOS POR ALUMNO (permite combos)
 -- create table public.alumno_cursos (
@@ -465,6 +576,7 @@ alter table public.escuelas enable row level security;
 alter table public.sedes enable row level security;
 alter table public.perfiles enable row level security;
 alter table public.alumnos enable row level security;
+alter table public.matriculas_alumno enable row level security;
 alter table public.instructores enable row level security;
 alter table public.vehiculos enable row level security;
 alter table public.clases enable row level security;
@@ -584,6 +696,45 @@ create policy "Usuarios sede: eliminan alumnos de su sede"
 create policy "Alumno: ve solo su registro"
   on public.alumnos for select using (
     public.is_alumno() and user_id = (select auth.uid())
+  );
+
+-- ========== MATRÍCULAS ALUMNO ==========
+create policy "Super admin: ve todas las matriculas alumno"
+  on public.matriculas_alumno for select using (public.is_super_admin());
+create policy "Super admin: gestiona matriculas alumno"
+  on public.matriculas_alumno for all using (public.is_super_admin());
+create policy "Admin escuela: ve matriculas de toda su escuela"
+  on public.matriculas_alumno for select using (
+    escuela_id = public.get_my_escuela_id() and public.is_admin_escuela()
+  );
+create policy "Admin escuela: gestiona matriculas de su escuela"
+  on public.matriculas_alumno for all using (
+    escuela_id = public.get_my_escuela_id() and public.is_admin_escuela()
+  );
+create policy "Usuarios sede: ven matriculas de su sede"
+  on public.matriculas_alumno for select using (
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id()
+    and not public.is_alumno() and not public.is_instructor()
+  );
+create policy "Usuarios sede: crean matriculas en su sede"
+  on public.matriculas_alumno for insert with check (
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id()
+    and created_by = (select auth.uid())
+    and not public.is_alumno() and not public.is_instructor()
+  );
+create policy "Usuarios sede: actualizan matriculas de su sede"
+  on public.matriculas_alumno for update using (
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id()
+    and not public.is_alumno() and not public.is_instructor()
+  );
+create policy "Usuarios sede: eliminan matriculas de su sede"
+  on public.matriculas_alumno for delete using (
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id()
+    and not public.is_alumno() and not public.is_instructor()
+  );
+create policy "Alumno: ve solo sus matriculas"
+  on public.matriculas_alumno for select using (
+    public.is_alumno() and alumno_id = public.get_my_alumno_id()
   );
 
 -- ========== INSTRUCTORES ==========
@@ -1043,30 +1194,73 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- ============================================
--- TRIGGER: Mantenimiento → auto-crear gasto
+-- TRIGGER: Mantenimiento → sincronizar gasto
 -- ============================================
 
-create or replace function public.insert_gasto_from_mantenimiento()
+create or replace function public.map_gasto_categoria_from_mantenimiento(p_tipo text)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when p_tipo = 'gasolina' then 'combustible'
+    when p_tipo in ('reparacion', 'repuesto', 'mano_obra', 'neumaticos') then 'reparaciones'
+    else 'mantenimiento_vehiculo'
+  end;
+$$;
+
+create or replace function public.sync_gasto_from_mantenimiento()
 returns trigger
 language plpgsql security definer set search_path = public
 as $$
 begin
   insert into public.gastos (
-    escuela_id, sede_id, user_id, categoria, concepto, monto,
+    escuela_id, sede_id, user_id, mantenimiento_id, categoria, concepto, monto,
     metodo_pago, proveedor, numero_factura, fecha, recurrente, notas
   ) values (
-    NEW.escuela_id, NEW.sede_id, NEW.user_id,
-    'mantenimiento_vehiculo', NEW.descripcion, NEW.monto,
+    NEW.escuela_id, NEW.sede_id, NEW.user_id, NEW.id,
+    public.map_gasto_categoria_from_mantenimiento(NEW.tipo), NEW.descripcion, NEW.monto,
     'transferencia', NEW.proveedor, NEW.numero_factura,
     NEW.fecha, false, NEW.notas
-  );
+  )
+  on conflict (mantenimiento_id) do update
+  set
+    escuela_id = excluded.escuela_id,
+    sede_id = excluded.sede_id,
+    user_id = excluded.user_id,
+    categoria = excluded.categoria,
+    concepto = excluded.concepto,
+    monto = excluded.monto,
+    metodo_pago = excluded.metodo_pago,
+    proveedor = excluded.proveedor,
+    numero_factura = excluded.numero_factura,
+    fecha = excluded.fecha,
+    recurrente = excluded.recurrente,
+    notas = excluded.notas;
+
   return NEW;
 end;
 $$;
 
+create or replace function public.delete_gasto_from_mantenimiento()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+begin
+  delete from public.gastos
+  where mantenimiento_id = OLD.id;
+
+  return OLD;
+end;
+$$;
+
 create trigger mantenimiento_to_gasto
-  after insert on public.mantenimiento_vehiculos
-  for each row execute function public.insert_gasto_from_mantenimiento();
+  after insert or update of escuela_id, sede_id, user_id, tipo, descripcion, monto, proveedor, numero_factura, fecha, notas on public.mantenimiento_vehiculos
+  for each row execute function public.sync_gasto_from_mantenimiento();
+
+create trigger mantenimiento_delete_gasto
+  after delete on public.mantenimiento_vehiculos
+  for each row execute function public.delete_gasto_from_mantenimiento();
 
 -- ============================================
 -- TRIGGER: Mantenimiento → auto-actualizar kilometraje del vehículo
@@ -1088,7 +1282,7 @@ end;
 $$;
 
 create trigger mantenimiento_actualiza_km
-  after insert on public.mantenimiento_vehiculos
+  after insert or update of kilometraje_actual on public.mantenimiento_vehiculos
   for each row execute function public.update_vehiculo_kilometraje();
 
 -- ============================================

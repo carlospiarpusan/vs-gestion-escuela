@@ -50,6 +50,7 @@ export default function HorasPage() {
   const [inputOverrides, setInputOverrides] = useState<InputOverrides>({});
   const [savingCells, setSavingCells] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Valor hora por instructor
   const [valorHoras, setValorHoras] = useState<Record<string, number>>({});
@@ -136,6 +137,7 @@ export default function HorasPage() {
   const handleBlur = async (instructorId: string, day: number) => {
     if (!perfil?.escuela_id) return;
     const key = `${instructorId}-${day}`;
+    const previousValue = horasMap[instructorId]?.[day];
     const raw = inputOverrides[key] ?? String(horasMap[instructorId]?.[day] ?? "");
     const isEmpty = raw.trim() === "";
     const parsed = parseInt(raw, 10);
@@ -162,17 +164,28 @@ export default function HorasPage() {
     const fecha = padMonth(anio, mes, day);
     const supabase = createClient();
     setSavingCells(prev => new Set(prev).add(key));
+    setSaveError(null);
 
-    if (isEmpty) {
-      // Campo vacío → borrar registro (sin dato)
-      await supabase.from("horas_trabajo").delete()
-        .eq("instructor_id", instructorId).eq("fecha", fecha);
-    } else {
-      // 0 = descanso, >0 = horas trabajadas → guardar ambos
-      await supabase.from("horas_trabajo").upsert(
-        { escuela_id: perfil.escuela_id, sede_id: instructor.sede_id, instructor_id: instructorId, fecha, horas: hours },
-        { onConflict: "instructor_id,fecha" }
-      );
+    const query = isEmpty
+      ? supabase.from("horas_trabajo").delete().eq("instructor_id", instructorId).eq("fecha", fecha)
+      : supabase.from("horas_trabajo").upsert(
+          { escuela_id: perfil.escuela_id, sede_id: instructor.sede_id, instructor_id: instructorId, fecha, horas: hours },
+          { onConflict: "instructor_id,fecha" }
+        );
+
+    const { error } = await query;
+
+    if (error) {
+      setSaveError("No se pudo guardar la hora. Recarga la página si el problema persiste.");
+      setHorasMap(prev => {
+        const next = { ...prev, [instructorId]: { ...(prev[instructorId] || {}) } };
+        if (previousValue === undefined) {
+          delete next[instructorId][day];
+        } else {
+          next[instructorId][day] = previousValue;
+        }
+        return next;
+      });
     }
 
     setSavingCells(prev => { const n = new Set(prev); n.delete(key); return n; });
@@ -190,13 +203,19 @@ export default function HorasPage() {
     const raw = valorHoraEdits[instructorId] ?? String(valorHoras[instructorId] ?? "");
     const parsed = parseFloat(raw.replace(/[^0-9.]/g, ""));
     const valor = isNaN(parsed) ? 0 : Math.max(parsed, 0);
+    const previousValue = valorHoras[instructorId] ?? 0;
 
     setValorHoras(prev => ({ ...prev, [instructorId]: valor }));
     setValorHoraEdits(prev => { const n = { ...prev }; delete n[instructorId]; return n; });
 
     setSavingValor(prev => new Set(prev).add(instructorId));
+    setSaveError(null);
     const supabase = createClient();
-    await supabase.from("instructores").update({ valor_hora: valor }).eq("id", instructorId);
+    const { error } = await supabase.from("instructores").update({ valor_hora: valor }).eq("id", instructorId);
+    if (error) {
+      setSaveError("No se pudo guardar el valor por hora.");
+      setValorHoras(prev => ({ ...prev, [instructorId]: previousValue }));
+    }
     setSavingValor(prev => { const n = new Set(prev); n.delete(instructorId); return n; });
   };
 
@@ -265,6 +284,12 @@ export default function HorasPage() {
           </button>
         </div>
       </div>
+
+      {saveError && (
+        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+          {saveError}
+        </div>
+      )}
 
       {/* ── Tabla ── */}
       <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in delay-100 overflow-hidden">
@@ -353,13 +378,15 @@ export default function HorasPage() {
                   const isEven = idx % 2 === 0;
                   const rowBg = isEven ? "bg-white dark:bg-[#1d1d1f]" : "bg-gray-50/40 dark:bg-[#1f1f1f]";
                   const footBg = isEven ? "bg-gray-50 dark:bg-[#141414]" : "bg-gray-100/70 dark:bg-[#111]";
+                  const stickyRowBg = isEven ? "bg-white dark:bg-[#1d1d1f]" : "bg-gray-50 dark:bg-[#1f1f1f]";
+                  const stickyFootBg = isEven ? "bg-gray-50 dark:bg-[#141414]" : "bg-gray-100 dark:bg-[#111]";
 
                   return (
                     <tr key={inst.id} className={`border-b border-gray-100 dark:border-gray-800 ${rowBg}`}>
 
                       {/* Nombre + valor/hora — sticky izquierda */}
                       <td
-                        className={`sticky left-0 z-10 px-4 border-r-2 border-gray-200 dark:border-gray-700 ${rowBg}`}
+                        className={`sticky left-0 z-10 px-4 border-r-2 border-gray-200 dark:border-gray-700 ${stickyRowBg}`}
                         style={{ width: 180, minWidth: 180 }}
                       >
                         <div className="flex items-start gap-2 py-2">
@@ -453,7 +480,7 @@ export default function HorasPage() {
 
                       {/* Total horas — sticky */}
                       <td
-                        className={`sticky z-10 px-2 py-0 text-center border-l-2 border-gray-200 dark:border-gray-700 ${footBg}`}
+                        className={`sticky z-10 px-2 py-0 text-center border-l-2 border-gray-200 dark:border-gray-700 ${stickyFootBg}`}
                         style={{ width: TOTAL_COL_W, minWidth: TOTAL_COL_W, right: totalColRight }}
                       >
                         <span className={`text-sm font-bold tabular-nums ${totalInst > 0 ? "text-[#0071e3]" : "text-gray-300 dark:text-gray-600"}`}>
@@ -464,7 +491,7 @@ export default function HorasPage() {
                       {/* Valor total — sticky right-0 (solo admins de escuela/sede) */}
                       {canEditValor && (
                         <td
-                          className={`sticky right-0 z-10 px-2 py-0 text-center border-l border-gray-200 dark:border-gray-700 ${footBg}`}
+                          className={`sticky right-0 z-10 px-2 py-0 text-center border-l border-gray-200 dark:border-gray-700 ${stickyFootBg}`}
                           style={{ width: VALOR_COL_W, minWidth: VALOR_COL_W }}
                         >
                           <span className={`text-sm font-bold tabular-nums ${totalValor > 0 ? "text-green-600 dark:text-green-400" : "text-gray-300 dark:text-gray-600"}`}>

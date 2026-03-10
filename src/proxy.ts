@@ -22,6 +22,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { canAccessDashboardPath, getDashboardFallbackPath } from "@/lib/access-control";
+import type { Rol } from "@/types/database";
 
 export async function proxy(request: NextRequest) {
   // --- Crear respuesta mutable para manipular cookies ---
@@ -73,6 +75,37 @@ export async function proxy(request: NextRequest) {
   if (isProtectedRoute && !user) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
+  }
+
+  if (isProtectedRoute && user) {
+    // Use role from JWT metadata to avoid a DB query on every request.
+    // The role in user_metadata is set when the user is created/updated.
+    // AuthContext still fetches the full perfil for the UI.
+    const rol = user.user_metadata?.rol as string | undefined;
+
+    if (!rol) {
+      // Fallback: fetch from DB only if metadata is missing
+      const { data: perfil } = await supabase
+        .from("perfiles")
+        .select("rol, activo")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (!perfil?.activo) {
+        const loginUrl = new URL("/login", request.url);
+        return NextResponse.redirect(loginUrl);
+      }
+
+      if (!canAccessDashboardPath(perfil.rol, pathname)) {
+        const fallbackUrl = new URL(getDashboardFallbackPath(perfil.rol), request.url);
+        return NextResponse.redirect(fallbackUrl);
+      }
+    } else {
+      if (!canAccessDashboardPath(rol as Rol, pathname)) {
+        const fallbackUrl = new URL(getDashboardFallbackPath(rol as Rol), request.url);
+        return NextResponse.redirect(fallbackUrl);
+      }
+    }
   }
 
   // Si ya está logueado e intenta ir a /login o /registro → ir al dashboard

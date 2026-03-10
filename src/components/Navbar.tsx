@@ -26,27 +26,37 @@ export default function Navbar() {
     <>
       <nav
         className={cn(
-          "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
-          scrolled || menuOpen ? "glass-nav h-[52px]" : "bg-transparent h-[52px]"
+          "fixed left-1/2 top-3 z-50 w-[min(1120px,calc(100%-1rem))] -translate-x-1/2 transition-all duration-300 sm:top-4 sm:w-[min(1120px,calc(100%-2rem))]",
+          scrolled || menuOpen
+            ? "opacity-100"
+            : "opacity-95"
         )}
       >
-        <div className="max-w-[980px] mx-auto px-6 h-full">
-          <div className="flex items-center justify-between h-full">
+        <div className={cn(
+          "apple-toolbar rounded-[26px] px-4 py-3 sm:px-5",
+          scrolled || menuOpen ? "shadow-[0_18px_40px_rgba(15,23,42,0.12)]" : "shadow-[0_10px_26px_rgba(15,23,42,0.08)]"
+        )}>
+          <div className="flex items-center justify-between gap-4">
             {/* Logo */}
             <Link
               href="/"
-              className="text-[17px] font-semibold tracking-tight text-foreground z-50 hover:opacity-80 transition-opacity"
+              className="z-50 flex items-center gap-3 transition-opacity hover:opacity-85"
             >
-              AutoEscuela<span className="text-blue-apple">Pro</span>
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0071e3] text-sm font-semibold text-white shadow-[0_14px_30px_rgba(0,113,227,0.3)]">
+                A
+              </span>
+              <span className="text-[16px] font-semibold tracking-tight text-foreground">
+                AutoEscuela<span className="gradient-text">Pro</span>
+              </span>
             </Link>
 
             {/* Desktop Nav */}
-            <div className="hidden md:flex items-center gap-10">
+            <div className="hidden md:flex items-center gap-2 rounded-full border border-[var(--surface-border)] bg-white/45 px-2 py-1 dark:bg-white/[0.03]">
               {navLinks.map((link) => (
                 <a
                   key={link.name}
                   href={link.href}
-                  className="text-[12px] text-foreground/80 hover:text-blue-apple transition-colors tracking-wide"
+                  className="rounded-full px-3 py-2 text-[12px] font-medium tracking-[0.02em] text-foreground/72 transition-colors hover:text-blue-apple"
                 >
                   {link.name}
                 </a>
@@ -54,16 +64,16 @@ export default function Navbar() {
             </div>
 
             {/* Auth Buttons — desktop */}
-            <div className="hidden md:flex items-center gap-6">
+            <div className="hidden md:flex items-center gap-2">
               <Link
                 href="/login"
-                className="text-[12px] text-foreground/80 hover:text-blue-apple transition-colors tracking-wide"
+                className="apple-button-ghost text-[12px] font-medium tracking-[0.02em]"
               >
                 Iniciar Sesión
               </Link>
               <Link
                 href="/registro"
-                className="text-[12px] bg-foreground text-background px-3 py-1 rounded-full hover:bg-foreground/90 transition-all"
+                className="apple-button-primary text-[12px] font-medium tracking-[0.02em]"
               >
                 Prueba gratis
               </Link>
@@ -73,37 +83,37 @@ export default function Navbar() {
             <div className="flex md:hidden items-center gap-3 z-50">
               <Link
                 href="/login"
-                className="text-[12px] font-medium text-white bg-[#0071e3] px-3.5 py-1.5 rounded-full active:scale-95 transition-transform"
+                className="apple-button-primary px-3.5 py-2 text-[12px] font-medium"
               >
                 Iniciar Sesión
               </Link>
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="text-foreground"
+                className="apple-icon-button"
               >
-              <AnimatePresence mode="wait">
-                {menuOpen ? (
-                  <motion.div
-                    key="close"
-                    initial={{ opacity: 0, rotate: -90 }}
-                    animate={{ opacity: 1, rotate: 0 }}
-                    exit={{ opacity: 0, rotate: 90 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <X size={18} />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="menu"
-                    initial={{ opacity: 0, rotate: 90 }}
-                    animate={{ opacity: 1, rotate: 0 }}
-                    exit={{ opacity: 0, rotate: -90 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <Menu size={18} />
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                <AnimatePresence mode="wait">
+                  {menuOpen ? (
+                    <motion.div
+                      key="close"
+                      initial={{ opacity: 0, rotate: -90 }}
+                      animate={{ opacity: 1, rotate: 0 }}
+                      exit={{ opacity: 0, rotate: 90 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <X size={18} />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="menu"
+                      initial={{ opacity: 0, rotate: 90 }}
+                      animate={{ opacity: 1, rotate: 0 }}
+                      exit={{ opacity: 0, rotate: -90 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <Menu size={18} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </button>
             </div>
           </div>
@@ -118,30 +128,41 @@ export default function Navbar() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-40 bg-background/95 backdrop-blur-xl pt-24 px-8 md:hidden"
+            className="apple-overlay fixed inset-0 z-40 px-5 pt-24 md:hidden"
           >
-            <div className="flex flex-col gap-8">
-              {navLinks.map((link) => (
-                <a
-                  key={link.name}
-                  href={link.href}
-                  className="text-2xl font-semibold text-foreground border-b border-gray-100 dark:border-gray-800 pb-4"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  {link.name}
-                </a>
-              ))}
-              <div className="flex flex-col gap-4 mt-8">
+            <div className="apple-panel mx-auto max-w-md p-5">
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#86868b]">
+                  Navegación
+                </p>
+                <p className="mt-1 text-sm text-[#6e6e73] dark:text-[#aeaeb2]">
+                  Acceso rápido a la información principal del sitio.
+                </p>
+              </div>
+              <div className="apple-divider mb-4" />
+              <div className="flex flex-col gap-2">
+                {navLinks.map((link) => (
+                  <a
+                    key={link.name}
+                    href={link.href}
+                    className="rounded-2xl px-4 py-3 text-lg font-semibold text-foreground transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    {link.name}
+                  </a>
+                ))}
+              </div>
+              <div className="mt-6 flex flex-col gap-3">
                 <Link
                   href="/login"
-                  className="text-lg text-blue-apple font-medium"
+                  className="apple-button-secondary justify-center text-sm font-medium"
                   onClick={() => setMenuOpen(false)}
                 >
                   Iniciar Sesión
                 </Link>
                 <Link
                   href="/registro"
-                  className="text-lg bg-blue-apple text-white px-4 py-3 rounded-full text-center font-medium shadow-lg shadow-blue-apple/20"
+                  className="apple-button-primary justify-center text-sm font-medium"
                   onClick={() => setMenuOpen(false)}
                 >
                   Prueba gratis

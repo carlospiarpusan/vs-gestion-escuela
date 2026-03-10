@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import Modal from "@/components/dashboard/Modal";
@@ -9,9 +9,14 @@ import type { Sede, EstadoSede } from "@/types/database";
 import { Plus, MapPin, Phone, Mail, Clock, Star, Building2, AlertTriangle } from "lucide-react";
 
 /* ─── estilos reutilizables ─── */
-const inputCls =
-  "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3] transition-colors";
-const labelCls = "block text-xs font-medium text-[#86868b] mb-1";
+const inputCls = "apple-input";
+const labelCls = "apple-label";
+const CATEGORIAS_INDIVIDUALES = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
+const CATEGORIAS_COMBO = [
+  "A2 y B1", "A2 y C1", "A2 y RC1", "A2 y C2", "A2 y C3",
+  "A1 y B1", "A1 y C1", "A1 y RC1", "A1 y C2", "A1 y C3",
+];
+const TODAS_CATEGORIAS = [...CATEGORIAS_INDIVIDUALES, ...CATEGORIAS_COMBO];
 
 const emptyForm = {
   nombre: "",
@@ -25,6 +30,7 @@ const emptyForm = {
   email: "",
   horario_apertura: "",
   horario_cierre: "",
+  categorias: [] as string[],
 };
 
 type FormType = typeof emptyForm;
@@ -42,31 +48,50 @@ export default function SedesPage() {
   const [saving, setSaving] = useState(false);
   const [deleting2, setDeleting2] = useState(false);
   const [form, setForm] = useState<FormType>(emptyForm);
+  const [categoriasEscuela, setCategoriasEscuela] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [deleteError, setDeleteError] = useState("");
-
-  /* ── fetch ── */
-  const fetchSedes = useCallback(async () => {
-    if (!perfil?.escuela_id) return;
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("sedes")
-      .select("*")
-      .eq("escuela_id", perfil.escuela_id)
-      .order("es_principal", { ascending: false })
-      .order("nombre");
-    setSedes((data as Sede[]) || []);
-    setLoading(false);
-  }, [perfil?.escuela_id]);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (perfil?.escuela_id) fetchSedes();
-  }, [perfil?.escuela_id, fetchSedes]);
+    if (!perfil?.escuela_id) return;
+
+    let cancelled = false;
+
+    const loadSedes = async () => {
+      const supabase = createClient();
+      const [sedesRes, escuelaRes] = await Promise.all([
+        supabase
+          .from("sedes")
+          .select("*")
+          .eq("escuela_id", perfil.escuela_id)
+          .order("es_principal", { ascending: false })
+          .order("nombre"),
+        supabase
+          .from("escuelas")
+          .select("categorias")
+          .eq("id", perfil.escuela_id)
+          .single(),
+      ]);
+
+      if (cancelled) return;
+
+      setSedes((sedesRes.data as Sede[]) || []);
+      setCategoriasEscuela(escuelaRes.data?.categorias || []);
+      setLoading(false);
+    };
+
+    void loadSedes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [perfil?.escuela_id, reloadKey]);
 
   /* ── abrir modal crear ── */
   const openCreate = () => {
     setEditing(null);
-    setForm({ ...emptyForm, es_principal: sedes.length === 0 });
+    setForm({ ...emptyForm, es_principal: sedes.length === 0, categorias: categoriasEscuela });
     setError("");
     setModalOpen(true);
   };
@@ -86,9 +111,27 @@ export default function SedesPage() {
       email: sede.email || "",
       horario_apertura: sede.horario_apertura || "",
       horario_cierre: sede.horario_cierre || "",
+      categorias: categoriasEscuela,
     });
     setError("");
     setModalOpen(true);
+  };
+
+  const toggleCategoria = (categoria: string) => {
+    setForm((prev) => ({
+      ...prev,
+      categorias: prev.categorias.includes(categoria)
+        ? prev.categorias.filter((item) => item !== categoria)
+        : [...prev.categorias, categoria],
+    }));
+  };
+
+  const toggleTodasCategorias = () => {
+    const todasActivas = TODAS_CATEGORIAS.every((categoria) => form.categorias.includes(categoria));
+    setForm((prev) => ({
+      ...prev,
+      categorias: todasActivas ? [] : TODAS_CATEGORIAS,
+    }));
   };
 
   /* ── guardar ── */
@@ -102,6 +145,17 @@ export default function SedesPage() {
     setSaving(true);
     setError("");
     const supabase = createClient();
+    const categoriasPayload = TODAS_CATEGORIAS.filter((categoria) => form.categorias.includes(categoria));
+
+    const { error: escuelaError } = await supabase
+      .from("escuelas")
+      .update({ categorias: categoriasPayload })
+      .eq("id", perfil.escuela_id);
+    if (escuelaError) {
+      setError(escuelaError.message);
+      setSaving(false);
+      return;
+    }
 
     const payload = {
       escuela_id: perfil.escuela_id,
@@ -148,7 +202,8 @@ export default function SedesPage() {
 
     setSaving(false);
     setModalOpen(false);
-    fetchSedes();
+    setCategoriasEscuela(categoriasPayload);
+    setReloadKey((value) => value + 1);
   };
 
   /* ── abrir confirmación borrar ── */
@@ -199,10 +254,12 @@ export default function SedesPage() {
     setDeleting2(false);
     setDeleteOpen(false);
     setDeleting(null);
-    fetchSedes();
+    setReloadKey((value) => value + 1);
   };
 
   /* ── render ── */
+  const todasCategoriasActivas = TODAS_CATEGORIAS.every((categoria) => form.categorias.includes(categoria));
+
   return (
     <div>
       {/* Cabecera */}
@@ -359,7 +416,7 @@ export default function SedesPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? "Editar Sede" : "Nueva Sede"}
-        maxWidth="max-w-lg"
+        maxWidth="max-w-4xl"
       >
         <div className="space-y-4">
           {error && (
@@ -411,6 +468,76 @@ export default function SedesPage() {
               <p className="text-xs text-[#86868b]">Se asignará automáticamente a los nuevos registros</p>
             </div>
           </label>
+
+          <div className="rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-700 dark:bg-[#0a0a0a]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <label className={labelCls}>Categorías habilitadas</label>
+                <p className="text-xs text-[#86868b] mt-1">
+                  Esta selección aplica a toda la escuela y ahora se administra desde la edición de sedes.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={toggleTodasCategorias}
+                className="px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-white dark:hover:bg-[#1d1d1f] transition-colors"
+              >
+                {todasCategoriasActivas ? "Desmarcar todas" : "Seleccionar todas"}
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] mb-2">
+                  Individuales
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                  {CATEGORIAS_INDIVIDUALES.map((categoria) => {
+                    const activa = form.categorias.includes(categoria);
+                    return (
+                      <button
+                        key={categoria}
+                        type="button"
+                        onClick={() => toggleCategoria(categoria)}
+                        className={`px-3 py-2 rounded-xl border text-sm font-semibold transition-colors ${
+                          activa
+                            ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
+                            : "border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-gray-600"
+                        }`}
+                      >
+                        {categoria}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] mb-2">
+                  Combos
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {CATEGORIAS_COMBO.map((categoria) => {
+                    const activa = form.categorias.includes(categoria);
+                    return (
+                      <button
+                        key={categoria}
+                        type="button"
+                        onClick={() => toggleCategoria(categoria)}
+                        className={`px-3 py-2 rounded-xl border text-sm font-semibold text-left transition-colors ${
+                          activa
+                            ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
+                            : "border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-gray-600"
+                        }`}
+                      >
+                        {categoria}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
 
           {/* Dirección */}
           <div>

@@ -72,41 +72,39 @@ export default function Modal({
   if (!open) return null;
 
   return (
-    /* Overlay oscuro: cubre toda la pantalla */
     <div
       ref={overlayRef}
-      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      className="apple-overlay fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
       onClick={(e) => {
-        // Cerrar solo si se hace clic directamente en el overlay (no en el contenido)
         if (e.target === overlayRef.current) onClose();
       }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
     >
-      {/* Contenedor del modal */}
       <div
-        className={`bg-white dark:bg-[#1d1d1f] rounded-2xl shadow-xl w-full ${maxWidth} max-h-[92vh] flex flex-col animate-scale-in`}
+        className={`apple-panel w-full ${maxWidth} max-h-[92vh] flex flex-col overflow-hidden rounded-[2rem] animate-scale-in shadow-[var(--surface-shadow-strong)]`}
       >
-        {/* --- Header: título + botón cerrar --- */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200/50 dark:border-gray-800/50 shrink-0">
+        <div className="flex items-center justify-between px-5 sm:px-7 py-4 sm:py-5 shrink-0">
           <h3
             id="modal-title"
-            className="text-base sm:text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] pr-2 truncate"
+            className="text-lg sm:text-xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7] pr-2 truncate"
           >
             {title}
           </h3>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0"
+            className="apple-icon-button shrink-0"
             aria-label="Cerrar modal"
           >
             <X size={16} className="text-[#86868b]" />
           </button>
         </div>
 
-        {/* --- Body: contenido del modal con scroll si es necesario --- */}
-        <div className="px-4 sm:px-6 py-4 overflow-y-auto">{children}</div>
+        <div className="px-5 sm:px-7 pb-6 overflow-y-auto">
+          <div className="apple-divider mb-5" />
+          {children}
+        </div>
       </div>
     </div>
   );

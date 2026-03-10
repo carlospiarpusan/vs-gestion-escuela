@@ -21,9 +21,8 @@ const emptyPregunta = { texto: "", opciones: ["", "", "", ""], respuesta_correct
 
 const LETRAS = ["A", "B", "C", "D"];
 
-const inputCls =
-  "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
-const labelCls = "block text-xs text-[#86868b] mb-1";
+const inputCls = "apple-input";
+const labelCls = "apple-label";
 
 // ─── Componente principal ────────────────────────────────────────────────────
 export default function ExamenesPage() {
@@ -37,16 +36,13 @@ export default function ExamenesPage() {
       <div>
         <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Exámenes</h2>
         {isSuperAdmin && (
-          <div className="flex gap-1 mt-4 bg-gray-100 dark:bg-gray-800 rounded-xl p-1 w-fit">
+          <div className="apple-segmented mt-4">
             {(["analiticas", "evaluaciones"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`flex items-center gap-1.5 px-4 py-1.5 text-sm rounded-lg font-medium transition-colors ${
-                  tab === t
-                    ? "bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm"
-                    : "text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
-                }`}
+                className="apple-segmented-button"
+                data-active={tab === t}
               >
                 {t === "analiticas" ? <BarChart2 size={14} /> : <BookOpen size={14} />}
                 {t === "analiticas" ? "Analíticas" : "Evaluaciones"}
@@ -356,12 +352,12 @@ function EvaluacionesView() {
           const preguntasEv = preguntas.filter((p) => p.evaluacion_id === ev.id);
           const abierta = expandida === ev.id;
           return (
-            <div key={ev.id} className="bg-white dark:bg-[#1d1d1f] rounded-2xl overflow-hidden">
+            <div key={ev.id} className="apple-panel-muted overflow-hidden">
               {/* Cabecera de la evaluación */}
               <div className="flex items-center justify-between px-5 py-4">
                 <div className="flex items-center gap-3 min-w-0">
                   <button onClick={() => setExpandida(abierta ? null : ev.id)}
-                    className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex-shrink-0">
+                    className="apple-icon-button h-8 w-8 flex-shrink-0">
                     {abierta ? <ChevronUp size={16} className="text-[#86868b]" /> : <ChevronDown size={16} className="text-[#86868b]" />}
                   </button>
                   <div className="min-w-0">
@@ -379,11 +375,11 @@ function EvaluacionesView() {
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0 ml-3">
                   <button onClick={() => openEditEval(ev)}
-                    className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-[#86868b] hover:text-[#0071e3] transition-colors">
+                    className="apple-icon-button hover:text-[#0071e3]">
                     <Pencil size={14} />
                   </button>
                   <button onClick={() => { setDeletingEval(ev); setDeleteEvalOpen(true); }}
-                    className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-[#86868b] hover:text-red-500 transition-colors">
+                    className="apple-icon-button hover:text-red-500">
                     <Trash2 size={14} />
                   </button>
                 </div>

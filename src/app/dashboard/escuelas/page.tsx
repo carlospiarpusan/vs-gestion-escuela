@@ -37,10 +37,9 @@ const emptyAdminForm = {
   password: "",
 };
 
-const inputClass =
-  "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
+const inputClass = "apple-input";
 
-const labelClass = "block text-xs text-[#86868b] mb-1";
+const labelClass = "apple-label";
 
 export default function EscuelasPage() {
   const { perfil } = useAuth();

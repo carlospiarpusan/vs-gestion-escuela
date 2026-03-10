@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import DataTable from "@/components/dashboard/DataTable";
@@ -10,7 +11,7 @@ import type {
   Vehiculo, TipoVehiculo, EstadoVehiculo,
   MantenimientoVehiculo, TipoMantenimiento, Instructor,
 } from "@/types/database";
-import { Plus, Car, Wrench } from "lucide-react";
+import { Plus, Car, ClipboardList } from "lucide-react";
 
 // ── Vehículos ──────────────────────────────────────────
 const tipos: TipoVehiculo[] = ["coche", "moto", "camion", "autobus"];
@@ -25,7 +26,7 @@ const emptyVForm = {
 // ── Mantenimiento ──────────────────────────────────────
 const tiposMant: TipoMantenimiento[] = [
   "cambio_aceite", "gasolina", "repuesto", "mano_obra",
-  "lavado", "neumaticos", "revision_general", "otros",
+  "lavado", "neumaticos", "reparacion", "revision_general", "otros",
 ];
 
 const emptyMForm = {
@@ -35,19 +36,65 @@ const emptyMForm = {
   fecha: new Date().toISOString().split("T")[0], notas: "",
 };
 
-const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
-const labelCls = "block text-xs text-[#86868b] mb-1";
+const inputCls = "apple-input";
+const labelCls = "apple-label";
 
 function safeFloat(v: string, fb = 0) { const n = parseFloat(v); return isNaN(n) ? fb : n; }
 function safeInt(v: string) { const n = parseInt(v, 10); return isNaN(n) ? null : n; }
 function safeFloatOrNull(v: string) { const n = parseFloat(v); return isNaN(n) ? null : n; }
 
+const tipoMantLabels: Record<TipoMantenimiento, string> = {
+  gasolina: "Tanqueo",
+  cambio_aceite: "Cambio de aceite",
+  reparacion: "Reparación",
+  revision_general: "Mantenimiento",
+  repuesto: "Repuesto",
+  mano_obra: "Mano de obra",
+  lavado: "Lavado",
+  neumaticos: "Neumáticos",
+  otros: "Otros",
+};
+
 type VehiculoRow = { id: string; marca: string; modelo: string; matricula: string };
 type InstructorRow = { id: string; nombre: string; apellidos: string };
+type MantenimientoRow = MantenimientoVehiculo & { vehiculo_nombre?: string; instructor_nombre?: string };
+type VehiculoConBitacora = Vehiculo & {
+  registros_bitacora: number;
+  ultimo_registro_fecha: string | null;
+  ultimo_registro_tipo: TipoMantenimiento | null;
+  ultimo_registro_descripcion: string | null;
+  ultimo_registro_monto: number | null;
+  ultimo_registro_km: number | null;
+};
+
+function formatTipoMantenimiento(tipo: string) {
+  return tipoMantLabels[tipo as TipoMantenimiento] || tipo.replace(/_/g, " ");
+}
+
+function formatFecha(fecha: string | null) {
+  if (!fecha) return "Sin fecha";
+  return new Date(`${fecha}T00:00:00`).toLocaleDateString("es-CO", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatCop(valor: number | null) {
+  if (valor == null) return "—";
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(valor);
+}
 
 export default function VehiculosPage() {
   const { perfil } = useAuth();
-  const [tab, setTab] = useState<"vehiculos" | "mantenimiento">("vehiculos");
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<"vehiculos" | "bitacora">("vehiculos");
+  const isInstructor = perfil?.rol === "instructor";
+  const canManageVehiculos = !isInstructor;
 
   // ── Vehículos state ──────────────────────────────────
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
@@ -61,7 +108,7 @@ export default function VehiculosPage() {
   const [errorV, setErrorV] = useState("");
 
   // ── Mantenimiento state ──────────────────────────────
-  const [mantenimientos, setMantenimientos] = useState<(MantenimientoVehiculo & { vehiculo_nombre?: string; instructor_nombre?: string })[]>([]);
+  const [mantenimientos, setMantenimientos] = useState<MantenimientoRow[]>([]);
   const [instructores, setInstructores] = useState<Instructor[]>([]);
   const [loadingM, setLoadingM] = useState(true);
   const [modalMOpen, setModalMOpen] = useState(false);
@@ -71,6 +118,19 @@ export default function VehiculosPage() {
   const [savingM, setSavingM] = useState(false);
   const [formM, setFormM] = useState(emptyMForm);
   const [errorM, setErrorM] = useState("");
+  const [currentInstructorId, setCurrentInstructorId] = useState<string | null>(null);
+  const [historialOpen, setHistorialOpen] = useState(false);
+  const [historialVehiculoId, setHistorialVehiculoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isInstructor) {
+      setTab("bitacora");
+      return;
+    }
+    if (searchParams.get("tab") === "bitacora") {
+      setTab("bitacora");
+    }
+  }, [isInstructor, searchParams]);
 
   // ── Fetch vehiculos ──────────────────────────────────
   const fetchVehiculos = useCallback(async () => {
@@ -89,8 +149,34 @@ export default function VehiculosPage() {
   const fetchMantenimiento = useCallback(async () => {
     if (!perfil?.escuela_id) return;
     const supabase = createClient();
+    let instructorId = currentInstructorId;
+    if (isInstructor && !instructorId) {
+      const { data: currentInstructor } = await supabase
+        .from("instructores")
+        .select("id")
+        .eq("user_id", perfil.id)
+        .maybeSingle();
+      instructorId = currentInstructor?.id ?? null;
+      setCurrentInstructorId(instructorId);
+    }
+
+    let mantenimientoQuery = supabase
+      .from("mantenimiento_vehiculos")
+      .select("id, vehiculo_id, instructor_id, tipo, descripcion, monto, kilometraje_actual, litros, precio_por_litro, proveedor, numero_factura, fecha, notas, created_at")
+      .eq("escuela_id", perfil.escuela_id)
+      .order("fecha", { ascending: false });
+
+    if (isInstructor) {
+      if (!instructorId) {
+        setMantenimientos([]);
+        setLoadingM(false);
+      } else {
+        mantenimientoQuery = mantenimientoQuery.eq("instructor_id", instructorId);
+      }
+    }
+
     const [mantRes, vehiculosRes, instructoresRes] = await Promise.all([
-      supabase.from("mantenimiento_vehiculos").select("id, vehiculo_id, instructor_id, tipo, descripcion, monto, kilometraje_actual, litros, precio_por_litro, proveedor, numero_factura, fecha, notas, created_at").eq("escuela_id", perfil.escuela_id).order("fecha", { ascending: false }),
+      isInstructor && !instructorId ? Promise.resolve({ data: [] }) : mantenimientoQuery,
       supabase.from("vehiculos").select("id, marca, modelo, matricula").eq("escuela_id", perfil.escuela_id),
       supabase.from("instructores").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id),
     ]);
@@ -104,7 +190,7 @@ export default function VehiculosPage() {
     setMantenimientos(mant);
     setInstructores((instructoresRes.data as Instructor[]) || []);
     setLoadingM(false);
-  }, [perfil?.escuela_id]);
+  }, [currentInstructorId, isInstructor, perfil?.escuela_id, perfil?.id]);
 
   useEffect(() => {
     if (perfil) { fetchVehiculos(); fetchMantenimiento(); }
@@ -159,7 +245,12 @@ export default function VehiculosPage() {
   };
 
   // ── Mantenimiento CRUD ───────────────────────────────
-  const openCreateM = () => { setEditingM(null); setFormM(emptyMForm); setErrorM(""); setModalMOpen(true); };
+  const openCreateM = () => {
+    setEditingM(null);
+    setFormM({ ...emptyMForm, instructor_id: isInstructor ? currentInstructorId ?? "" : "" });
+    setErrorM("");
+    setModalMOpen(true);
+  };
   const openEditM = (row: MantenimientoVehiculo) => {
     setEditingM(row);
     setFormM({ vehiculo_id: row.vehiculo_id, instructor_id: row.instructor_id || "", tipo: row.tipo, descripcion: row.descripcion, monto: row.monto.toString(), kilometraje_actual: row.kilometraje_actual?.toString() || "", litros: row.litros?.toString() || "", precio_por_litro: row.precio_por_litro?.toString() || "", proveedor: row.proveedor || "", numero_factura: row.numero_factura || "", fecha: row.fecha, notas: row.notas || "" });
@@ -167,13 +258,39 @@ export default function VehiculosPage() {
   };
   const openDeleteM = (row: MantenimientoVehiculo) => { setDeletingM(row); setDeleteMOpen(true); };
 
+  const syncVehiculoKilometraje = useCallback(async (vehiculoId: string, kilometrajeActual: number | null) => {
+    if (!vehiculoId || kilometrajeActual == null) return;
+    const vehiculoActual = vehiculos.find((vehiculo) => vehiculo.id === vehiculoId);
+    if (vehiculoActual && vehiculoActual.kilometraje >= kilometrajeActual) return;
+
+    await createClient()
+      .from("vehiculos")
+      .update({ kilometraje: kilometrajeActual })
+      .eq("id", vehiculoId);
+  }, [vehiculos]);
+
   const handleSaveM = async () => {
     if (!formM.vehiculo_id || !formM.descripcion) { setErrorM("Vehículo y descripción son obligatorios."); return; }
     setSavingM(true); setErrorM("");
     try {
       const supabase = createClient();
+      let instructorId = isInstructor ? currentInstructorId : formM.instructor_id || null;
+      if (isInstructor && !instructorId) {
+        const { data: currentInstructor } = await supabase
+          .from("instructores")
+          .select("id")
+          .eq("user_id", perfil?.id)
+          .maybeSingle();
+        instructorId = currentInstructor?.id ?? null;
+        setCurrentInstructorId(instructorId);
+      }
+      if (isInstructor && !instructorId) {
+        setErrorM("No se encontró tu perfil de instructor para asociar este registro.");
+        setSavingM(false);
+        return;
+      }
       const payload = {
-        vehiculo_id: formM.vehiculo_id, instructor_id: formM.instructor_id || null,
+        vehiculo_id: formM.vehiculo_id, instructor_id: instructorId,
         tipo: formM.tipo, descripcion: formM.descripcion,
         monto: safeFloat(formM.monto, 0),
         kilometraje_actual: formM.kilometraje_actual ? safeInt(formM.kilometraje_actual) : null,
@@ -195,7 +312,8 @@ export default function VehiculosPage() {
         const { error: err } = await supabase.from("mantenimiento_vehiculos").insert({ ...payload, escuela_id: perfil.escuela_id, sede_id: sedeId, user_id: perfil.id });
         if (err) { setErrorM(err.message); setSavingM(false); return; }
       }
-      setSavingM(false); setModalMOpen(false); fetchMantenimiento();
+      await syncVehiculoKilometraje(formM.vehiculo_id, payload.kilometraje_actual);
+      setSavingM(false); setModalMOpen(false); fetchVehiculos(); fetchMantenimiento();
     } catch (e: unknown) { setErrorM(e instanceof Error ? e.message : "Error al guardar"); setSavingM(false); }
   };
 
@@ -223,9 +341,47 @@ export default function VehiculosPage() {
     mano_obra: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
     lavado: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
     neumaticos: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400",
+    reparacion: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
     revision_general: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
     otros: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
   };
+
+  const vehiculosConBitacora = useMemo<VehiculoConBitacora[]>(() => {
+    const mantenimientosPorVehiculo = new Map<string, MantenimientoRow[]>();
+
+    for (const mantenimiento of mantenimientos) {
+      const historial = mantenimientosPorVehiculo.get(mantenimiento.vehiculo_id) || [];
+      historial.push(mantenimiento);
+      mantenimientosPorVehiculo.set(mantenimiento.vehiculo_id, historial);
+    }
+
+    return vehiculos.map((vehiculo) => {
+      const historial = mantenimientosPorVehiculo.get(vehiculo.id) || [];
+      const ultimo = historial[0];
+
+      return {
+        ...vehiculo,
+        registros_bitacora: historial.length,
+        ultimo_registro_fecha: ultimo?.fecha || null,
+        ultimo_registro_tipo: ultimo?.tipo || null,
+        ultimo_registro_descripcion: ultimo?.descripcion || null,
+        ultimo_registro_monto: ultimo?.monto ?? null,
+        ultimo_registro_km: ultimo?.kilometraje_actual ?? null,
+      };
+    });
+  }, [vehiculos, mantenimientos]);
+
+  const historialVehiculo = useMemo(
+    () => vehiculosConBitacora.find((vehiculo) => vehiculo.id === historialVehiculoId) || null,
+    [historialVehiculoId, vehiculosConBitacora]
+  );
+
+  const historialRegistros = useMemo(
+    () => (historialVehiculoId
+      ? mantenimientos.filter((registro) => registro.vehiculo_id === historialVehiculoId)
+      : []),
+    [historialVehiculoId, mantenimientos]
+  );
 
   const colsV = [
     { key: "marca" as keyof Vehiculo, label: "Vehículo", render: (r: Vehiculo) => <span className="font-medium">{r.marca} {r.modelo}</span> },
@@ -233,16 +389,37 @@ export default function VehiculosPage() {
     { key: "tipo" as keyof Vehiculo, label: "Tipo" },
     { key: "kilometraje" as keyof Vehiculo, label: "Km", render: (r: Vehiculo) => <span>{r.kilometraje.toLocaleString()} km</span> },
     { key: "estado" as keyof Vehiculo, label: "Estado", render: (r: Vehiculo) => <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${estadoColors[r.estado]}`}>{r.estado.replace("_", " ")}</span> },
+    {
+      key: "bitacora",
+      label: "Bitácora",
+      render: (r: VehiculoConBitacora) => (
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+            {r.registros_bitacora} registro{r.registros_bitacora === 1 ? "" : "s"}
+          </p>
+          {r.ultimo_registro_fecha ? (
+            <p className="text-xs leading-5 text-[#86868b]">
+              Último: {formatTipoMantenimiento(r.ultimo_registro_tipo || "")} el {formatFecha(r.ultimo_registro_fecha)}
+              {r.ultimo_registro_km != null ? ` · ${r.ultimo_registro_km.toLocaleString()} km` : ""}
+            </p>
+          ) : (
+            <p className="text-xs text-[#86868b]">Sin historial registrado.</p>
+          )}
+        </div>
+      ),
+    },
   ];
 
   const colsM = [
     { key: "fecha" as keyof MantenimientoVehiculo, label: "Fecha" },
     { key: "vehiculo_nombre" as string, label: "Vehículo", render: (r: MantenimientoVehiculo & { vehiculo_nombre?: string }) => <span className="font-medium">{r.vehiculo_nombre}</span> },
-    { key: "tipo" as keyof MantenimientoVehiculo, label: "Tipo", render: (r: MantenimientoVehiculo) => <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${tipoColors[r.tipo]}`}>{r.tipo.replace(/_/g, " ")}</span> },
+    { key: "tipo" as keyof MantenimientoVehiculo, label: "Tipo", render: (r: MantenimientoVehiculo) => <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${tipoColors[r.tipo]}`}>{formatTipoMantenimiento(r.tipo)}</span> },
     { key: "descripcion" as keyof MantenimientoVehiculo, label: "Descripción" },
     { key: "monto" as keyof MantenimientoVehiculo, label: "Monto", render: (r: MantenimientoVehiculo) => <span className="font-semibold text-red-500">${Number(r.monto).toLocaleString("es-CO")}</span> },
     { key: "kilometraje_actual" as keyof MantenimientoVehiculo, label: "Km", render: (r: MantenimientoVehiculo) => <span>{r.kilometraje_actual ? `${r.kilometraje_actual.toLocaleString()} km` : "—"}</span> },
   ];
+
+  const canOpenCreate = tab === "bitacora" || canManageVehiculos;
 
   return (
     <div>
@@ -250,54 +427,80 @@ export default function VehiculosPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Vehículos</h2>
-          <p className="text-sm text-[#86868b] mt-0.5">Gestiona la flota y el mantenimiento</p>
+          <p className="text-sm text-[#86868b] mt-0.5">
+            {isInstructor ? "Consulta y registra la bitácora de vehículos" : "Gestiona la flota y la bitácora de vehículos"}
+          </p>
         </div>
-        <button
-          onClick={tab === "vehiculos" ? openCreateV : openCreateM}
-          className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors"
-        >
-          <Plus size={16} />
-          {tab === "vehiculos" ? "Nuevo Vehículo" : "Nuevo Registro"}
-        </button>
+        {canOpenCreate && (
+          <button
+            onClick={tab === "vehiculos" ? openCreateV : openCreateM}
+            className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors"
+          >
+            <Plus size={16} />
+            {tab === "vehiculos" ? "Nuevo Vehículo" : "Nuevo Registro"}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 dark:bg-gray-800/50 rounded-xl p-1 mb-4 w-fit">
-        <button
-          onClick={() => setTab("vehiculos")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
-            tab === "vehiculos"
-              ? "bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm"
-              : "text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
-          }`}
-        >
-          <Car size={15} />
-          Vehículos
-        </button>
-        <button
-          onClick={() => setTab("mantenimiento")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
-            tab === "mantenimiento"
-              ? "bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm"
-              : "text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
-          }`}
-        >
-          <Wrench size={15} />
-          Mantenimiento
-        </button>
-      </div>
-
-      {/* Tabla Vehículos */}
-      {tab === "vehiculos" && (
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
-          <DataTable columns={colsV} data={vehiculos} loading={loadingV} searchPlaceholder="Buscar por marca o matrícula..." searchKeys={["marca", "modelo", "matricula"]} onEdit={openEditV} onDelete={openDeleteV} />
+      {canManageVehiculos && (
+        <div className="apple-segmented mb-4">
+          <button
+            onClick={() => setTab("vehiculos")}
+            className="apple-segmented-button"
+            data-active={tab === "vehiculos"}
+          >
+            <Car size={15} />
+            Vehículos
+          </button>
+          <button
+            onClick={() => setTab("bitacora")}
+            className="apple-segmented-button"
+            data-active={tab === "bitacora"}
+          >
+            <ClipboardList size={15} />
+            Bitácora
+          </button>
         </div>
       )}
 
-      {/* Tabla Mantenimiento */}
-      {tab === "mantenimiento" && (
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
-          <DataTable columns={colsM} data={mantenimientos} loading={loadingM} searchPlaceholder="Buscar por descripción..." searchKeys={["descripcion", "fecha"]} onEdit={openEditM} onDelete={openDeleteM} />
+      {/* Tabla Vehículos */}
+      {tab === "vehiculos" && (
+        <div className="apple-panel p-4 sm:p-6">
+          <DataTable
+            columns={colsV}
+            data={vehiculosConBitacora}
+            loading={loadingV}
+            searchPlaceholder="Buscar por marca o matrícula..."
+            searchKeys={["marca", "modelo", "matricula"]}
+            onEdit={canManageVehiculos ? openEditV : undefined}
+            onDelete={canManageVehiculos ? openDeleteV : undefined}
+            extraActions={(row: VehiculoConBitacora) => (
+              <button
+                onClick={() => { setHistorialVehiculoId(row.id); setHistorialOpen(true); }}
+                className="apple-icon-button hover:text-[#0071e3]"
+                title="Ver bitácora del vehículo"
+                aria-label="Ver bitácora del vehículo"
+              >
+                <ClipboardList size={14} />
+              </button>
+            )}
+          />
+        </div>
+      )}
+
+      {/* Tabla Bitácora */}
+      {tab === "bitacora" && (
+        <div className="apple-panel p-4 sm:p-6">
+          <DataTable
+            columns={colsM}
+            data={mantenimientos}
+            loading={loadingM}
+            searchPlaceholder="Buscar por vehículo, descripción o fecha..."
+            searchKeys={["descripcion", "fecha", "vehiculo_nombre"] as (keyof MantenimientoRow)[]}
+            onEdit={canManageVehiculos ? openEditM : undefined}
+            onDelete={canManageVehiculos ? openDeleteM : undefined}
+          />
         </div>
       )}
 
@@ -328,8 +531,8 @@ export default function VehiculosPage() {
         </div>
       </Modal>
 
-      {/* Modal Mantenimiento */}
-      <Modal open={modalMOpen} onClose={() => setModalMOpen(false)} title={editingM ? "Editar Registro" : "Nuevo Registro de Mantenimiento"} maxWidth="max-w-xl">
+      {/* Modal Bitácora */}
+      <Modal open={modalMOpen} onClose={() => setModalMOpen(false)} title={editingM ? "Editar Registro de Bitácora" : "Nuevo Registro de Bitácora"} maxWidth="max-w-xl">
         <div className="space-y-4">
           {errorM && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{errorM}</p>}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -339,15 +542,24 @@ export default function VehiculosPage() {
                 {vehiculos.map((v) => <option key={v.id} value={v.id}>{v.marca} {v.modelo} ({v.matricula})</option>)}
               </select>
             </div>
-            <div><label className={labelCls}>Instructor</label>
-              <select value={formM.instructor_id} onChange={(e) => setFormM({ ...formM, instructor_id: e.target.value })} className={inputCls}>
-                <option value="">Sin asignar</option>
-                {instructores.map((i) => <option key={i.id} value={i.id}>{i.nombre} {i.apellidos}</option>)}
-              </select>
-            </div>
+            {isInstructor ? (
+              <div>
+                <label className={labelCls}>Responsable</label>
+                <div className={`${inputCls} flex items-center text-sm text-[#86868b]`}>
+                  Registro asociado a tu perfil de instructor
+                </div>
+              </div>
+            ) : (
+              <div><label className={labelCls}>Instructor</label>
+                <select value={formM.instructor_id} onChange={(e) => setFormM({ ...formM, instructor_id: e.target.value })} className={inputCls}>
+                  <option value="">Sin asignar</option>
+                  {instructores.map((i) => <option key={i.id} value={i.id}>{i.nombre} {i.apellidos}</option>)}
+                </select>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className={labelCls}>Tipo</label><select value={formM.tipo} onChange={(e) => setFormM({ ...formM, tipo: e.target.value as TipoMantenimiento })} className={inputCls}>{tiposMant.map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}</select></div>
+            <div><label className={labelCls}>Tipo</label><select value={formM.tipo} onChange={(e) => setFormM({ ...formM, tipo: e.target.value as TipoMantenimiento })} className={inputCls}>{tiposMant.map((t) => <option key={t} value={t}>{formatTipoMantenimiento(t)}</option>)}</select></div>
             <div><label className={labelCls}>Fecha</label><input type="date" value={formM.fecha} onChange={(e) => setFormM({ ...formM, fecha: e.target.value })} className={inputCls} /></div>
           </div>
           <div><label className={labelCls}>Descripción *</label><input type="text" value={formM.descripcion} onChange={(e) => setFormM({ ...formM, descripcion: e.target.value })} className={inputCls} /></div>
@@ -369,8 +581,101 @@ export default function VehiculosPage() {
         </div>
       </Modal>
 
+      <Modal
+        open={historialOpen}
+        onClose={() => { setHistorialOpen(false); setHistorialVehiculoId(null); }}
+        title={historialVehiculo ? `Bitácora de ${historialVehiculo.marca} ${historialVehiculo.modelo}` : "Bitácora del vehículo"}
+        maxWidth="max-w-3xl"
+      >
+        {historialVehiculo && (
+          <div className="space-y-5">
+            <div className="apple-panel-muted grid gap-3 px-4 py-4 sm:grid-cols-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">Vehículo</p>
+                <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  {historialVehiculo.marca} {historialVehiculo.modelo}
+                </p>
+                <p className="text-xs text-[#86868b]">{historialVehiculo.matricula}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">Kilometraje</p>
+                <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  {historialVehiculo.kilometraje.toLocaleString()} km
+                </p>
+                <p className="text-xs text-[#86868b]">Sincronizado desde bitácora.</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">Historial</p>
+                <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  {historialVehiculo.registros_bitacora} registro{historialVehiculo.registros_bitacora === 1 ? "" : "s"}
+                </p>
+                <p className="text-xs text-[#86868b]">
+                  {historialVehiculo.ultimo_registro_fecha
+                    ? `Último: ${formatFecha(historialVehiculo.ultimo_registro_fecha)}`
+                    : "Sin movimientos todavía."}
+                </p>
+              </div>
+            </div>
+
+            {historialRegistros.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-[var(--surface-border-strong)] px-6 py-12 text-center">
+                <ClipboardList size={28} className="mx-auto text-[#86868b]" />
+                <p className="mt-3 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  Este vehículo todavía no tiene registros en bitácora.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {historialRegistros.map((registro) => (
+                  <div
+                    key={registro.id}
+                    className="rounded-3xl border border-[var(--surface-border)] bg-white/60 px-4 py-4 dark:bg-white/[0.03]"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${tipoColors[registro.tipo]}`}>
+                            {formatTipoMantenimiento(registro.tipo)}
+                          </span>
+                          <span className="text-xs text-[#86868b]">{formatFecha(registro.fecha)}</span>
+                          {registro.kilometraje_actual != null && (
+                            <span className="text-xs text-[#86868b]">{registro.kilometraje_actual.toLocaleString()} km</span>
+                          )}
+                        </div>
+                        <p className="mt-2 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                          {registro.descripcion}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-[#86868b]">
+                          {registro.instructor_nombre && registro.instructor_nombre !== "—"
+                            ? `Instructor: ${registro.instructor_nombre}`
+                            : "Sin instructor asignado"}
+                          {registro.litros != null ? ` · ${registro.litros} L` : ""}
+                          {registro.precio_por_litro != null ? ` · ${formatCop(registro.precio_por_litro)} / litro` : ""}
+                          {registro.numero_factura ? ` · Factura ${registro.numero_factura}` : ""}
+                        </p>
+                        {registro.notas && (
+                          <p className="mt-2 text-xs leading-5 text-[#6e6e73] dark:text-[#aeaeb2]">
+                            {registro.notas}
+                          </p>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-left sm:text-right">
+                        <p className="text-xs text-[#86868b]">Monto</p>
+                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                          {formatCop(registro.monto)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
       <DeleteConfirm open={deleteVOpen} onClose={() => setDeleteVOpen(false)} onConfirm={handleDeleteV} loading={savingV} message={`¿Eliminar ${deletingV?.marca} ${deletingV?.modelo} (${deletingV?.matricula})?`} />
-      <DeleteConfirm open={deleteMOpen} onClose={() => setDeleteMOpen(false)} onConfirm={handleDeleteM} loading={savingM} message="¿Eliminar este registro de mantenimiento?" />
+      <DeleteConfirm open={deleteMOpen} onClose={() => setDeleteMOpen(false)} onConfirm={handleDeleteM} loading={savingM} message="¿Eliminar este registro de bitácora?" />
     </div>
   );
 }

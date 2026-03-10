@@ -1,10 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Sidebar from "@/components/dashboard/Sidebar";
-import { LogOut, Sun, Moon, Menu, AlertCircle, KeyRound, Eye, EyeOff, UserCheck, UserCircle } from "lucide-react";
+import { LogOut, Sun, Moon, Menu, AlertCircle, KeyRound, Eye, EyeOff, UserCheck, UserCircle, PanelLeftOpen } from "lucide-react";
 import { createClient } from "@/lib/supabase";
+import { canAccessDashboardPath, getDashboardFallbackPath } from "@/lib/access-control";
+import ErrorBoundary from "@/components/dashboard/ErrorBoundary";
 
 const DEPARTAMENTOS_COLOMBIA = [
   "Amazonas", "Antioquia", "Arauca", "Atlántico", "Bolívar", "Boyacá",
@@ -15,9 +18,18 @@ const DEPARTAMENTOS_COLOMBIA = [
   "Vaupés", "Vichada", "Bogotá D.C.",
 ].sort();
 
-const inputCls =
-  "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
-const labelCls = "block text-xs text-[#86868b] mb-1";
+const inputCls = "apple-input";
+const labelCls = "apple-label";
+const modalOverlayCls =
+  "fixed inset-0 z-[100] flex items-end sm:items-center justify-center apple-overlay p-0 sm:p-4";
+const modalCardCls =
+  "apple-panel w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-5 sm:p-6 max-h-[90vh] overflow-y-auto";
+const modalErrorCls =
+  "mb-4 rounded-2xl border border-red-200/70 bg-red-50/80 px-3 py-2 text-center text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400";
+const modalSuccessCls =
+  "mb-4 rounded-2xl border border-green-200/70 bg-green-50/80 px-3 py-2 text-center text-sm text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-400";
+const visibilityToggleCls =
+  "absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[#86868b] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]";
 
 /* ─────────────────────────────────────────────────────────────
    DashboardInner: consume el AuthContext que provee el padre.
@@ -27,9 +39,13 @@ const labelCls = "block text-xs text-[#86868b] mb-1";
 function DashboardInner({ children }: { children: React.ReactNode }) {
   // Lee del contexto — sin llamadas extra a Supabase
   const { user, perfil, escuelaNombre, sedeNombre, loading, error, logout } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
 
   const [darkMode, setDarkMode] = useState(false);
+  const [themeReady, setThemeReady] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // --- Modal 1: Cambio de contraseña obligatorio ---
   const [cambioOpen, setCambioOpen] = useState(false);
@@ -226,30 +242,53 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    if (darkMode) document.documentElement.classList.add("dark");
-    else document.documentElement.classList.remove("dark");
-  }, [darkMode]);
+    const storedTheme = window.localStorage.getItem("theme");
+    const shouldUseDark = storedTheme === "dark";
+    setDarkMode(shouldUseDark);
+    setThemeReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!themeReady) return;
+    document.documentElement.classList.toggle("dark", darkMode);
+    window.localStorage.setItem("theme", darkMode ? "dark" : "light");
+  }, [darkMode, themeReady]);
+
+  useEffect(() => {
+    if (!perfil?.rol) return;
+    if (!canAccessDashboardPath(perfil.rol, pathname)) {
+      router.replace(getDashboardFallbackPath(perfil.rol));
+    }
+  }, [pathname, perfil?.rol, router]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black">
-        <div className="w-8 h-8 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+      <div className="apple-shell flex min-h-screen items-center justify-center px-4">
+        <div className="apple-panel flex items-center gap-3 px-5 py-4">
+          <div className="h-8 w-8 rounded-full border-2 border-[#0071e3] border-t-transparent animate-spin" />
+          <div>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Cargando panel</p>
+            <p className="text-xs text-[#86868b]">Preparando tu espacio de trabajo.</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black p-4">
-        <div className="text-center max-w-md">
-          <AlertCircle size={48} className="mx-auto mb-4 text-red-500" />
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
+      <div className="apple-shell flex min-h-screen items-center justify-center p-4">
+        <div className="apple-panel max-w-md px-6 py-7 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100/80 dark:bg-red-950/40">
+            <AlertCircle size={26} className="text-red-500" />
+          </div>
+          <h2 className="mb-2 text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
             Error de autenticación
           </h2>
-          <p className="text-sm text-[#86868b] mb-4">{error}</p>
+          <p className="mb-5 text-sm text-[#86868b]">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-[#0071e3] text-white rounded-lg text-sm hover:bg-[#0077ED] transition-colors"
+            className="apple-button-primary text-sm"
           >
             Reintentar
           </button>
@@ -263,24 +302,47 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const nombre = perfil?.nombre || user.user_metadata?.nombre || "Usuario";
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#000000] transition-colors duration-300 flex">
-      <Sidebar rol={perfil?.rol} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    <div className="apple-shell flex min-h-screen transition-colors duration-300">
+      <Sidebar rol={perfil?.rol} open={sidebarOpen} onClose={() => setSidebarOpen(false)} collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
-      <div className="flex-1 flex flex-col min-h-screen min-w-0 overflow-x-hidden">
-        <header className="bg-white/80 dark:bg-[#1d1d1f]/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-800/50 sticky top-0 z-30">
-          <div className="px-4 sm:px-6 h-12 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+      <div className="relative flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute left-[-10rem] top-[-8rem] h-72 w-72 rounded-full bg-[#0071e3]/10 blur-3xl" />
+          <div className="absolute bottom-[-9rem] right-[-6rem] h-80 w-80 rounded-full bg-sky-200/30 blur-3xl dark:bg-sky-900/20" />
+        </div>
+
+        <div className="sticky top-0 z-30 px-3 pt-3 sm:px-6 sm:pt-5">
+          <header className="apple-toolbar mx-auto w-full max-w-[1520px] rounded-[28px] px-4 py-3 sm:px-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="apple-icon-button lg:hidden"
                 aria-label="Abrir menú"
               >
-                <Menu size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
+                <Menu size={16} />
               </button>
-              <div>
-                <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{nombre}</span>
+              {sidebarCollapsed && (
+                <button
+                  onClick={() => setSidebarCollapsed(false)}
+                  className="apple-icon-button hidden lg:flex"
+                  aria-label="Mostrar menú"
+                  title="Mostrar menú"
+                >
+                  <PanelLeftOpen size={16} />
+                </button>
+              )}
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{nombre}</span>
+                  {perfil?.rol && (
+                    <span className="apple-badge hidden sm:inline-flex">
+                      {perfil.rol.replace("_", " ")}
+                    </span>
+                  )}
+                </div>
                 {escuelaNombre && (
-                  <span className="text-xs text-[#86868b] ml-2 hidden sm:inline">
+                  <span className="mt-1 block truncate text-xs text-[#86868b]">
                     {escuelaNombre}
                     {sedeNombre && sedeNombre !== "Sede 1" && (
                       <span className="text-[#0071e3]"> · {sedeNombre}</span>
@@ -288,51 +350,52 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                   </span>
                 )}
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {perfil?.rol && (
-                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium hidden sm:inline">
-                  {perfil.rol.replace("_", " ")}
-                </span>
-              )}
+              </div>
+              <div className="flex items-center gap-2 sm:gap-3">
               <button
                 onClick={abrirMiCuenta}
-                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="apple-icon-button"
                 title="Mi cuenta"
                 aria-label="Mi cuenta"
               >
-                <UserCircle size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
+                <UserCircle size={16} />
               </button>
               <button
                 onClick={() => setDarkMode(!darkMode)}
-                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="apple-icon-button"
+                title={darkMode ? "Activar modo claro" : "Activar modo oscuro"}
               >
                 {darkMode ? (
-                  <Sun size={16} className="text-[#f5f5f7]" />
+                  <Sun size={16} />
                 ) : (
-                  <Moon size={16} className="text-[#1d1d1f]" />
+                  <Moon size={16} />
                 )}
               </button>
               <button
                 onClick={logout}
-                className="flex items-center gap-1.5 text-xs text-[#86868b] hover:text-red-500 transition-colors"
+                className="apple-button-ghost text-xs hover:text-red-500"
               >
                 <LogOut size={14} />
                 <span className="hidden sm:inline">Salir</span>
               </button>
             </div>
-          </div>
-        </header>
+            </div>
+          </header>
+        </div>
 
-        <main className="flex-1 p-4 sm:p-6">{children}</main>
+        <main className="relative z-10 flex-1 px-3 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-5">
+          <div className="mx-auto w-full max-w-[1520px]">
+            <ErrorBoundary>{children}</ErrorBoundary>
+          </div>
+        </main>
       </div>
 
       {/* ========== Modal 1: Cambio de contraseña obligatorio ========== */}
       {cambioOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4">
-          <div className="bg-white dark:bg-[#1d1d1f] rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex flex-col items-center text-center mb-5">
-              <div className="w-12 h-12 rounded-full bg-[#0071e3]/10 flex items-center justify-center mb-3">
+        <div className={modalOverlayCls}>
+          <div className={modalCardCls}>
+            <div className="mb-5 flex flex-col items-center text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#0071e3]/10">
                 <KeyRound size={22} className="text-[#0071e3]" />
               </div>
               <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
@@ -343,7 +406,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
               </p>
             </div>
             {cambioError && (
-              <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg mb-4 text-center">
+              <p className={modalErrorCls}>
                 {cambioError}
               </p>
             )}
@@ -361,7 +424,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                   <button
                     type="button"
                     onClick={() => setShowNueva(!showNueva)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868b]"
+                    className={visibilityToggleCls}
                   >
                     {showNueva ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
@@ -380,7 +443,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                   <button
                     type="button"
                     onClick={() => setShowConfirmar(!showConfirmar)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868b]"
+                    className={visibilityToggleCls}
                   >
                     {showConfirmar ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
@@ -389,7 +452,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
               <button
                 onClick={handleCambioPassword}
                 disabled={cambioLoading}
-                className="w-full py-2.5 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors disabled:opacity-50 font-medium mt-1"
+                className="apple-button-primary mt-1 w-full text-sm disabled:opacity-50"
               >
                 {cambioLoading ? "Guardando..." : "Establecer nueva contraseña"}
               </button>
@@ -400,11 +463,11 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 
       {/* ========== Modal 3: Mi Cuenta ========== */}
       {cuentaOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4">
-          <div className="bg-white dark:bg-[#1d1d1f] rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
+        <div className={modalOverlayCls}>
+          <div className={modalCardCls}>
+            <div className="mb-5 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[#0071e3]/10 flex items-center justify-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0071e3]/10">
                   <UserCircle size={20} className="text-[#0071e3]" />
                 </div>
                 <div>
@@ -414,19 +477,21 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
               </div>
               <button
                 onClick={() => setCuentaOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-[#86868b]"
+                className="apple-icon-button"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
 
+            <div className="apple-divider mb-5" />
+
             {cuentaError && (
-              <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg mb-4 text-center">
+              <p className={modalErrorCls}>
                 {cuentaError}
               </p>
             )}
             {cuentaOk && (
-              <p className="text-sm text-green-600 bg-green-50 dark:bg-green-900/20 px-3 py-2 rounded-lg mb-4 text-center">
+              <p className={modalSuccessCls}>
                 {cuentaOk}
               </p>
             )}
@@ -476,7 +541,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                       <button
                         type="button"
                         onClick={() => setShowCuentaPass1(!showCuentaPass1)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868b]"
+                        className={visibilityToggleCls}
                       >
                         {showCuentaPass1 ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
@@ -486,22 +551,22 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                     <div>
                       <label className={labelCls}>Confirmar contraseña</label>
                       <div className="relative">
-                        <input
-                          type={showCuentaPass2 ? "text" : "password"}
-                          value={cuentaPass2}
-                          onChange={(e) => setCuentaPass2(e.target.value)}
-                          placeholder="Repite la contraseña"
-                          className={`${inputCls} pr-9`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowCuentaPass2(!showCuentaPass2)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868b]"
-                        >
-                          {showCuentaPass2 ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
+                          <input
+                            type={showCuentaPass2 ? "text" : "password"}
+                            value={cuentaPass2}
+                            onChange={(e) => setCuentaPass2(e.target.value)}
+                            placeholder="Repite la contraseña"
+                            className={`${inputCls} pr-9`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCuentaPass2(!showCuentaPass2)}
+                            className={visibilityToggleCls}
+                          >
+                            {showCuentaPass2 ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
+                        </div>
                       </div>
-                    </div>
                   )}
                 </div>
               </div>
@@ -509,14 +574,14 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setCuentaOpen(false)}
-                  className="flex-1 py-2.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  className="apple-button-secondary flex-1 text-sm"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={handleGuardarCuenta}
                   disabled={cuentaLoading}
-                  className="flex-1 py-2.5 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors disabled:opacity-50 font-medium"
+                  className="apple-button-primary flex-1 text-sm disabled:opacity-50"
                 >
                   {cuentaLoading ? "Guardando..." : "Guardar"}
                 </button>
@@ -528,10 +593,10 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 
       {/* ========== Modal 2: Completar perfil (alumnos) ========== */}
       {perfilOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4">
-          <div className="bg-white dark:bg-[#1d1d1f] rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex flex-col items-center text-center mb-5">
-              <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-3">
+        <div className={modalOverlayCls}>
+          <div className={modalCardCls}>
+            <div className="mb-5 flex flex-col items-center text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
                 <UserCheck size={22} className="text-green-600 dark:text-green-400" />
               </div>
               <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
@@ -542,7 +607,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
               </p>
             </div>
             {perfilError && (
-              <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg mb-4 text-center">
+              <p className={modalErrorCls}>
                 {perfilError}
               </p>
             )}
@@ -595,7 +660,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
               <button
                 onClick={handleGuardarPerfil}
                 disabled={perfilLoading}
-                className="w-full py-2.5 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors disabled:opacity-50 font-medium mt-1"
+                className="apple-button-primary mt-1 w-full text-sm disabled:opacity-50"
               >
                 {perfilLoading ? "Guardando..." : "Guardar información"}
               </button>

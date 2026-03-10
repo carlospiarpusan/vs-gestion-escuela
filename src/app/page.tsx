@@ -7,7 +7,7 @@ import Footer from "@/components/Footer";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gray-light dark:bg-[#000] transition-colors duration-300" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif" }}>
+    <div className="apple-shell min-h-screen transition-colors duration-300">
       <Navbar />
       <Hero />
       <Features />

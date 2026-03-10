@@ -12,7 +12,7 @@
  */
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import DataTable from "@/components/dashboard/DataTable";
@@ -20,6 +20,8 @@ import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import type { Clase, TipoClase, EstadoClase, Alumno, Instructor, Vehiculo } from "@/types/database";
 import { Plus } from "lucide-react";
+
+const PAGE_SIZE = 10;
 
 /** Opciones validas para el tipo de clase */
 const tiposClase: TipoClase[] = ["practica", "teorica"];
@@ -43,6 +45,12 @@ export default function ClasesPage() {
   // Estado principal: lista de clases con nombres resueltos
   const [data, setData] = useState<(Clase & { alumno_nombre?: string; instructor_nombre?: string })[]>([]);
 
+  // --- Paginacion server-side ---
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
+  const fetchIdRef = useRef(0);
+
   // Listas de referencia para los selectores del formulario
   const [alumnos, setAlumnos] = useState<Alumno[]>([]);
   const [instructores, setInstructores] = useState<Instructor[]>([]);
@@ -59,46 +67,95 @@ export default function ClasesPage() {
   const [error, setError] = useState("");
 
   /**
-   * fetchData - Obtiene clases, alumnos, instructores y vehiculos de Supabase.
-   * Resuelve los nombres de alumno e instructor para mostrarlos en la tabla.
+   * fetchData - Obtiene clases paginadas server-side, alumnos, instructores y vehiculos de Supabase.
+   * Resuelve los nombres de alumno e instructor solo para los IDs de la pagina actual.
    */
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (page = 0, search = "") => {
     if (!perfil?.escuela_id) return;
+
+    const fetchId = ++fetchIdRef.current;
+    setLoading(true);
     const supabase = createClient();
 
-    // Consultas en paralelo para minimizar el tiempo de carga
-    const [clasesRes, alumnosRes, instructoresRes, vehiculosRes] = await Promise.all([
-      supabase.from("clases").select("id, alumno_id, instructor_id, vehiculo_id, tipo, fecha, hora_inicio, hora_fin, estado, notas, created_at").eq("escuela_id", perfil.escuela_id).order("fecha", { ascending: false }),
+    // 1. Contar total (para la paginacion)
+    let countQuery = supabase
+      .from("clases")
+      .select("id", { count: "exact", head: true })
+      .eq("escuela_id", perfil.escuela_id);
+
+    if (search) {
+      countQuery = countQuery.or(
+        `fecha.ilike.%${search}%,tipo.ilike.%${search}%,estado.ilike.%${search}%,notas.ilike.%${search}%`
+      );
+    }
+
+    // 2. Traer solo la pagina actual
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let dataQuery = supabase
+      .from("clases")
+      .select("id, alumno_id, instructor_id, vehiculo_id, tipo, fecha, hora_inicio, hora_fin, estado, notas, created_at")
+      .eq("escuela_id", perfil.escuela_id)
+      .order("fecha", { ascending: false })
+      .range(from, to);
+
+    if (search) {
+      dataQuery = dataQuery.or(
+        `fecha.ilike.%${search}%,tipo.ilike.%${search}%,estado.ilike.%${search}%,notas.ilike.%${search}%`
+      );
+    }
+
+    // Listas de referencia para los selectores (siempre se necesitan completas)
+    const [countRes, clasesRes, alumnosFullRes, instructoresFullRes, vehiculosRes] = await Promise.all([
+      countQuery,
+      dataQuery,
       supabase.from("alumnos").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id).eq("estado", "activo"),
       supabase.from("instructores").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id).eq("estado", "activo"),
       supabase.from("vehiculos").select("id, marca, modelo, matricula").eq("escuela_id", perfil.escuela_id).neq("estado", "baja"),
     ]);
 
-    // Mapas id->nombre para resolver las relaciones sin joins adicionales
-    const alumnosMap = new Map((alumnosRes.data || []).map((a: PersonaRow) => [a.id, `${a.nombre} ${a.apellidos}`]));
-    const instructoresMap = new Map((instructoresRes.data || []).map((i: PersonaRow) => [i.id, `${i.nombre} ${i.apellidos}`]));
+    // Evitar race conditions: si ya se disparo otro fetch, ignorar este
+    if (fetchId !== fetchIdRef.current) return;
+
+    const clasesList = (clasesRes.data as Clase[]) || [];
+
+    // Mapas id->nombre para resolver las relaciones de la pagina actual
+    const alumnosMap = new Map((alumnosFullRes.data || []).map((a: PersonaRow) => [a.id, `${a.nombre} ${a.apellidos}`]));
+    const instructoresMap = new Map((instructoresFullRes.data || []).map((i: PersonaRow) => [i.id, `${i.nombre} ${i.apellidos}`]));
 
     // Enriquecer cada clase con los nombres resueltos
-    const clases = ((clasesRes.data as Clase[]) || []).map(c => ({
+    const clases = clasesList.map(c => ({
       ...c,
       alumno_nombre: alumnosMap.get(c.alumno_id) || "—",
       instructor_nombre: c.instructor_id ? instructoresMap.get(c.instructor_id) || "—" : "—",
     }));
 
     setData(clases);
-    setAlumnos((alumnosRes.data as Alumno[]) || []);
-    setInstructores((instructoresRes.data as Instructor[]) || []);
+    setAlumnos((alumnosFullRes.data as Alumno[]) || []);
+    setInstructores((instructoresFullRes.data as Instructor[]) || []);
     setVehiculos((vehiculosRes.data as Vehiculo[]) || []);
+    setTotalCount(countRes.count ?? 0);
     setLoading(false);
   }, [perfil?.escuela_id]);
 
-  // Cargar datos cuando el perfil este disponible
+  // Cargar datos cuando el perfil este disponible o cambie la pagina/busqueda
   useEffect(() => {
     if (perfil) {
-      fetchData();
+      fetchData(currentPage, searchTerm);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perfil?.id]);
+  }, [fetchData, perfil, currentPage, searchTerm]);
+
+  /** Callback del DataTable server-side: cambio de pagina */
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
+
+  /** Callback del DataTable server-side: cambio de busqueda (ya con debounce) */
+  const handleSearchChange = useCallback((term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(0); // volver a primera pagina al buscar
+  }, []);
 
   /** Abre el modal en modo creacion con el formulario vacio */
   const openCreate = () => { setEditing(null); setForm(emptyForm); setError(""); setModalOpen(true); };
@@ -145,7 +202,7 @@ export default function ClasesPage() {
         if (err) { setError(err.message); setSaving(false); return; }
       }
 
-      setSaving(false); setModalOpen(false); fetchData();
+      setSaving(false); setModalOpen(false); fetchData(currentPage, searchTerm);
     } catch (networkError) {
       // Capturar errores de red u otros fallos inesperados
       setError(networkError instanceof Error ? networkError.message : "Error de conexion inesperado al guardar la clase.");
@@ -168,7 +225,7 @@ export default function ClasesPage() {
         setSaving(false);
         return;
       }
-      setSaving(false); setDeleteOpen(false); setDeleting(null); fetchData();
+      setSaving(false); setDeleteOpen(false); setDeleting(null); fetchData(currentPage, searchTerm);
     } catch (networkError) {
       // Capturar errores de red u otros fallos inesperados
       setError(networkError instanceof Error ? networkError.message : "Error de conexion inesperado al eliminar la clase.");
@@ -195,7 +252,7 @@ export default function ClasesPage() {
   ];
 
   /** Clase CSS reutilizable para todos los inputs del formulario */
-  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
+  const inputCls = "apple-input";
 
   return (
     <div>
@@ -210,7 +267,7 @@ export default function ClasesPage() {
 
       {/* Tabla principal de clases */}
       <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 sm:p-8 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in delay-100">
-        <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por fecha..." searchKeys={["fecha"]} onEdit={openEdit} onDelete={openDelete} />
+        <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por fecha, tipo, estado..." onEdit={openEdit} onDelete={openDelete} serverSide totalCount={totalCount} currentPage={currentPage} onPageChange={handlePageChange} onSearchChange={handleSearchChange} pageSize={PAGE_SIZE} />
       </div>
 
       {/* Modal de creacion/edicion de clase */}

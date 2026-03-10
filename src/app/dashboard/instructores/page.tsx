@@ -12,7 +12,7 @@
  */
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import DataTable from "@/components/dashboard/DataTable";
@@ -20,6 +20,8 @@ import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import type { Instructor, EstadoInstructor } from "@/types/database";
 import { Plus } from "lucide-react";
+
+const PAGE_SIZE = 10;
 
 /** Allowed activity states for an instructor record. */
 const estados: EstadoInstructor[] = ["activo", "inactivo"];
@@ -42,7 +44,11 @@ export default function InstructoresPage() {
 
   // --- State -----------------------------------------------------------
   const [data, setData] = useState<Instructor[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
+  const fetchIdRef = useRef(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState<Instructor | null>(null);
@@ -54,24 +60,57 @@ export default function InstructoresPage() {
 
   // --- Data fetching ----------------------------------------------------
 
-  /** Fetch all instructors from Supabase, ordered by most-recent first. */
-  const fetchData = useCallback(async () => {
+  /** Fetch paginated instructors from Supabase, ordered by most-recent first. */
+  const fetchData = useCallback(async (page = 0, search = "") => {
     if (!perfil?.escuela_id) return;
+
+    const fetchId = ++fetchIdRef.current;
+    setLoading(true);
     const supabase = createClient();
-    const { data } = await supabase
+
+    // 1. Count query for pagination
+    let countQuery = supabase
+      .from("instructores")
+      .select("id", { count: "exact", head: true })
+      .eq("escuela_id", perfil.escuela_id);
+
+    if (search) {
+      countQuery = countQuery.or(
+        `nombre.ilike.%${search}%,apellidos.ilike.%${search}%,dni.ilike.%${search}%`
+      );
+    }
+
+    // 2. Paginated data query
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let dataQuery = supabase
       .from("instructores")
       .select("id, nombre, apellidos, dni, telefono, licencia, especialidad, especialidades, estado, color, created_at")
       .eq("escuela_id", perfil.escuela_id)
-      .order("created_at", { ascending: false });
-    setData((data as Instructor[]) || []);
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (search) {
+      dataQuery = dataQuery.or(
+        `nombre.ilike.%${search}%,apellidos.ilike.%${search}%,dni.ilike.%${search}%`
+      );
+    }
+
+    const [countRes, dataRes] = await Promise.all([countQuery, dataQuery]);
+
+    if (fetchId !== fetchIdRef.current) return;
+
+    setData((dataRes.data as Instructor[]) || []);
+    setTotalCount(countRes.count ?? 0);
     setLoading(false);
   }, [perfil?.escuela_id]);
 
-  // Re-fetch whenever the authenticated profile becomes available.
+  // Re-fetch whenever page, search, or profile changes.
   // Also load school's enabled categories.
   useEffect(() => {
     if (!perfil) return;
-    fetchData();
+    fetchData(currentPage, searchTerm);
 
     const loadCategorias = async () => {
       if (!perfil.escuela_id) return;
@@ -84,8 +123,18 @@ export default function InstructoresPage() {
       if (escuela?.categorias) setCategoriasEscuela(escuela.categorias);
     };
     loadCategorias();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perfil?.id]);
+  }, [fetchData, perfil, currentPage, searchTerm]);
+
+  /** Callback del DataTable server-side: cambio de página */
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
+
+  /** Callback del DataTable server-side: cambio de búsqueda */
+  const handleSearchChange = useCallback((term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(0);
+  }, []);
 
   // --- Modal helpers ----------------------------------------------------
 
@@ -135,7 +184,7 @@ export default function InstructoresPage() {
 
   const handleSave = async () => {
     if (!form.nombre || !form.apellidos || !form.dni || !form.telefono || !form.licencia) {
-      setError("Nombre, apellidos, DNI, teléfono y licencia son obligatorios.");
+      setError("Nombre, apellidos, cédula, teléfono y licencia son obligatorios.");
       return;
     }
     if (form.especialidades.length === 0) {
@@ -213,7 +262,7 @@ export default function InstructoresPage() {
 
       setSaving(false);
       setModalOpen(false);
-      fetchData();
+      fetchData(currentPage, searchTerm);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al guardar.";
       setError(message);
@@ -240,7 +289,7 @@ export default function InstructoresPage() {
       setSaving(false);
       setDeleteOpen(false);
       setDeleting(null);
-      fetchData();
+      fetchData(currentPage, searchTerm);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al eliminar.";
       setError(message);
@@ -255,7 +304,7 @@ export default function InstructoresPage() {
       key: "nombre" as keyof Instructor, label: "Nombre",
       render: (r: Instructor) => <span className="font-medium">{r.nombre} {r.apellidos}</span>
     },
-    { key: "dni" as keyof Instructor, label: "DNI" },
+    { key: "dni" as keyof Instructor, label: "Cédula" },
     { key: "telefono" as keyof Instructor, label: "Teléfono" },
     { key: "licencia" as keyof Instructor, label: "Licencia" },
     {
@@ -282,7 +331,7 @@ export default function InstructoresPage() {
     },
   ];
 
-  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
+  const inputCls = "apple-input";
 
   // --- Render -----------------------------------------------------------
 
@@ -301,7 +350,7 @@ export default function InstructoresPage() {
 
       {/* Data table */}
       <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
-        <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por nombre o DNI..." searchKeys={["nombre", "apellidos", "dni"]} onEdit={openEdit} onDelete={openDelete} />
+        <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por nombre o cédula..." serverSide totalCount={totalCount} currentPage={currentPage} onPageChange={handlePageChange} onSearchChange={handleSearchChange} pageSize={PAGE_SIZE} onEdit={openEdit} onDelete={openDelete} />
       </div>
 
       {/* Create / Edit modal */}
@@ -315,9 +364,9 @@ export default function InstructoresPage() {
             <div><label className="block text-xs text-[#86868b] mb-1">Apellidos *</label><input type="text" value={form.apellidos} onChange={e => setForm({ ...form, apellidos: e.target.value })} className={inputCls} /></div>
           </div>
 
-          {/* DNI + Telefono */}
+          {/* Cédula + Teléfono */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-xs text-[#86868b] mb-1">DNI *</label><input type="text" value={form.dni} onChange={e => setForm({ ...form, dni: e.target.value })} className={inputCls} /></div>
+            <div><label className="block text-xs text-[#86868b] mb-1">Cédula *</label><input type="text" value={form.dni} onChange={e => setForm({ ...form, dni: e.target.value })} className={inputCls} /></div>
             <div><label className="block text-xs text-[#86868b] mb-1">Teléfono *</label><input type="text" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} className={inputCls} /></div>
           </div>
 

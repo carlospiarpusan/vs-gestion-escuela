@@ -33,7 +33,6 @@ import {
   Users,
   UserCheck,
   Car,
-  Calendar,
   Clock,
   FileText,
   DollarSign,
@@ -42,8 +41,9 @@ import {
   MapPin,
   UserCog,
   CalendarRange,
-  ClipboardList,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 // --- Tipos ---
@@ -52,6 +52,8 @@ interface SidebarProps {
   rol: Rol | undefined;
   open: boolean;
   onClose: () => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 /** Definición de un ítem de navegación del sidebar */
@@ -100,13 +102,7 @@ const navItems: NavItem[] = [
     label: "Vehículos",
     href: "/dashboard/vehiculos",
     icon: <Car size={18} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
-  },
-  {
-    label: "Categorías",
-    href: "/dashboard/categorias",
-    icon: <Calendar size={18} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
   },
   {
     label: "Clases",
@@ -118,12 +114,6 @@ const navItems: NavItem[] = [
     label: "Horas",
     href: "/dashboard/horas",
     icon: <CalendarRange size={18} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
-  },
-  {
-    label: "Bitácora",
-    href: "/dashboard/bitacora",
-    icon: <ClipboardList size={18} />,
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
   },
   {
@@ -159,7 +149,7 @@ const navItems: NavItem[] = [
   },
 ];
 
-export default function Sidebar({ rol, open, onClose }: SidebarProps) {
+export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
 
   // Filtrar ítems según el rol del usuario
@@ -180,54 +170,88 @@ export default function Sidebar({ rol, open, onClose }: SidebarProps) {
 
   return (
     <>
-      {/* ========== Overlay oscuro en móvil ========== */}
-      {/* Se muestra detrás del sidebar cuando está abierto en pantallas pequeñas */}
       {open && (
         <div
-          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+          className="apple-overlay fixed inset-0 z-40 lg:hidden"
           onClick={onClose}
           aria-hidden="true"
         />
       )}
 
-      {/* ========== Sidebar ========== */}
       <aside
-        className={`fixed top-0 left-0 h-full w-60 bg-white dark:bg-[#1d1d1f] border-r border-gray-200/50 dark:border-gray-800/50 z-50 transition-transform duration-200 lg:translate-x-0 lg:static lg:z-auto ${open ? "translate-x-0" : "-translate-x-full"
-          }`}
+        className={`fixed top-0 left-0 z-50 h-full w-[17rem] px-3 py-3 transition-transform duration-300 ${open ? "translate-x-0" : "-translate-x-full"} ${collapsed ? "lg:hidden" : "lg:static lg:z-auto lg:h-screen lg:w-[18rem] lg:translate-x-0 lg:px-4 lg:py-4"}`}
         aria-label="Menú de navegación"
       >
-        {/* --- Header: Logo + botón cerrar (móvil) --- */}
-        <div className="h-12 flex items-center justify-between px-4 border-b border-gray-200/50 dark:border-gray-800/50">
-          <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-            AutoEscuela<span className="gradient-text">Pro</span>
-          </span>
-          <button
-            onClick={onClose}
-            className="lg:hidden p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-            aria-label="Cerrar menú"
-          >
-            <X size={16} className="text-[#86868b]" />
-          </button>
-        </div>
-
-        {/* --- Lista de navegación --- */}
-        <nav className="p-3 space-y-0.5 overflow-y-auto h-[calc(100%-3rem)]">
-          {filteredItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
+        <div className="apple-panel flex h-full flex-col overflow-hidden">
+          <div className="flex h-16 items-center justify-between px-5">
+            <div>
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-[#86868b]">Dashboard</p>
+              <span className="text-lg font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
+                AutoEscuela<span className="gradient-text">Pro</span>
+              </span>
+            </div>
+            <button
               onClick={onClose}
-              aria-current={isActive(item.href) ? "page" : undefined}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isActive(item.href)
-                ? "bg-[#0071e3] text-white"
-                : "text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-100 dark:hover:bg-gray-800"
-                }`}
+              className="apple-icon-button lg:hidden"
+              aria-label="Cerrar menú"
             >
-              {item.icon}
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+              <X size={16} />
+            </button>
+            <button
+              onClick={onToggleCollapse}
+              className="apple-icon-button hidden lg:flex"
+              aria-label="Ocultar menú"
+              title="Ocultar menú"
+            >
+              <PanelLeftClose size={16} />
+            </button>
+          </div>
+
+          <div className="px-4 pb-3">
+            <div className="apple-divider" />
+          </div>
+
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-3">
+            {filteredItems.map((item) => {
+              const active = isActive(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onClose}
+                  aria-current={active ? "page" : undefined}
+                  className={`group flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${
+                    active
+                      ? "bg-[#0071e3] text-white shadow-[0_18px_34px_rgba(0,113,227,0.28)]"
+                      : "text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-white/70 dark:hover:bg-white/5"
+                  }`}
+                >
+                  <span
+                    className={`flex h-9 w-9 items-center justify-center rounded-full transition-all ${
+                      active
+                        ? "bg-white/16 text-white"
+                        : "bg-black/[0.04] text-[#6e6e73] group-hover:bg-black/[0.06] dark:bg-white/[0.04] dark:text-[#aeaeb2] dark:group-hover:bg-white/[0.08]"
+                    }`}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="px-4 pb-4">
+            <div className="apple-panel-muted px-4 py-3">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#86868b]">
+                Apple Style
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[#6e6e73] dark:text-[#aeaeb2]">
+                Navegacion limpia, superficies transluidas y jerarquia visual mas clara.
+              </p>
+            </div>
+          </div>
+        </div>
       </aside>
     </>
   );

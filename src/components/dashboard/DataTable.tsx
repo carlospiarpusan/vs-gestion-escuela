@@ -6,20 +6,27 @@
  * Tabla con búsqueda, paginación y acciones (editar/eliminar).
  * Se usa en TODAS las páginas CRUD del dashboard.
  *
- * Características:
- * - Genérica: funciona con cualquier tipo T que tenga un campo `id`
- * - Búsqueda: filtra por los campos indicados en `searchKeys`
- * - Paginación: 10 registros por página (configurable)
- * - Acciones: botones editar/eliminar opcionales
- * - Columnas personalizables: cada columna puede tener un `render` custom
+ * Soporta dos modos de operación:
+ *
+ * 1. **Client-side** (por defecto): recibe todos los datos y pagina/filtra
+ *    en el navegador. Ideal para tablas pequeñas (< 500 registros).
+ *
+ * 2. **Server-side** (`serverSide=true`): delega paginación y búsqueda
+ *    al servidor (Supabase). Ideal para miles de registros.
+ *    Requiere: totalCount, onPageChange, onSearchChange.
  *
  * Props principales:
- * @prop columns    - Definición de columnas (key, label, render opcional)
- * @prop data       - Array de datos a mostrar
- * @prop searchKeys - Campos por los que se puede buscar
- * @prop onEdit     - Callback al pulsar editar (opcional)
- * @prop onDelete   - Callback al pulsar eliminar (opcional)
- * @prop pageSize   - Registros por página (default: 10)
+ * @prop columns          - Definición de columnas (key, label, render opcional)
+ * @prop data             - Array de datos a mostrar (página actual en server-side)
+ * @prop searchKeys       - Campos por los que se puede buscar (solo client-side)
+ * @prop onEdit           - Callback al pulsar editar (opcional)
+ * @prop onDelete         - Callback al pulsar eliminar (opcional)
+ * @prop pageSize         - Registros por página (default: 10)
+ * @prop serverSide       - Activa modo server-side
+ * @prop totalCount       - Total de registros en el servidor (server-side)
+ * @prop onPageChange     - Callback al cambiar de página (server-side)
+ * @prop onSearchChange   - Callback al cambiar búsqueda (server-side)
+ * @prop currentPage      - Página actual controlada externamente (server-side)
  *
  * Dependencias: lucide-react (iconos)
  * Usado por: alumnos, instructores, vehiculos, clases, examenes,
@@ -29,7 +36,7 @@
 
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Search, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 
 // --- Tipos ---
@@ -55,7 +62,20 @@ interface DataTableProps<T> {
   onDelete?: (row: T) => void;
   extraActions?: (row: T) => React.ReactNode;
   pageSize?: number;
+  /** Modo server-side: delega paginación y búsqueda al servidor */
+  serverSide?: boolean;
+  /** Total de registros en el servidor (requerido en server-side) */
+  totalCount?: number;
+  /** Callback al cambiar de página (requerido en server-side) */
+  onPageChange?: (page: number) => void;
+  /** Callback al cambiar búsqueda con debounce (requerido en server-side) */
+  onSearchChange?: (term: string) => void;
+  /** Página actual controlada externamente (server-side) */
+  currentPage?: number;
 }
+
+/** Milisegundos de debounce para búsqueda server-side */
+const SEARCH_DEBOUNCE_MS = 400;
 
 export default function DataTable<T extends { id: string | number }>({
   columns,
@@ -67,19 +87,22 @@ export default function DataTable<T extends { id: string | number }>({
   onDelete,
   extraActions,
   pageSize = 10,
+  serverSide = false,
+  totalCount = 0,
+  onPageChange,
+  onSearchChange,
+  currentPage: externalPage,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Volver a la primera página cuando los datos cambian
-  useEffect(() => { setPage(0); }, [data]);
+  // En modo server-side, la página viene del padre
+  const activePage = serverSide && externalPage != null ? externalPage : page;
 
-  /**
-   * Filtrar datos por término de búsqueda.
-   * Se usa useMemo para evitar recalcular en cada render
-   * cuando los datos o la búsqueda no han cambiado.
-   */
+  // --- Client-side: filtrar y paginar en memoria ---
   const filtered = useMemo(() => {
+    if (serverSide) return data; // en server-side, data ya viene filtrada
     if (!search) return data;
     const term = search.toLowerCase();
     return data.filter((row) =>
@@ -88,34 +111,101 @@ export default function DataTable<T extends { id: string | number }>({
         return val != null && String(val).toLowerCase().includes(term);
       })
     );
-  }, [data, search, searchKeys]);
+  }, [data, search, searchKeys, serverSide]);
 
-  // --- Cálculos de paginación ---
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paginated = filtered.slice(page * pageSize, (page + 1) * pageSize);
+  const totalItems = serverSide ? totalCount : filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(activePage, totalPages - 1);
 
-  /** Actualizar búsqueda y resetear a la primera página */
+  // En client-side, paginar en memoria; en server-side, data ya es la página
+  const paginated = serverSide
+    ? data
+    : filtered.slice(safePage * pageSize, (safePage + 1) * pageSize);
+
+  /** Búsqueda: client-side inmediata, server-side con debounce */
   const handleSearch = (val: string) => {
     setSearch(val);
-    setPage(0);
+
+    if (serverSide) {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        onSearchChange?.(val);
+      }, SEARCH_DEBOUNCE_MS);
+    } else {
+      setPage(0);
+    }
   };
 
-  // --- Estado: Cargando datos ---
+  // Limpiar debounce al desmontar
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  /** Cambiar de página */
+  const goToPage = (newPage: number) => {
+    if (serverSide) {
+      onPageChange?.(newPage);
+    } else {
+      setPage(newPage);
+    }
+  };
+
+  // --- Estado: Cargando datos (skeleton) ---
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="w-6 h-6 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+      <div>
+        <div className="relative mb-5">
+          <div className="h-10 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
+        </div>
+        <div className="apple-table-shell overflow-x-auto">
+          <table className="w-full min-w-max text-sm">
+            <thead>
+              <tr className="border-b border-gray-200/50 dark:border-gray-800/50">
+                {columns.map((col) => (
+                  <th key={String(col.key)} className="px-5 py-4 text-left">
+                    <div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                  </th>
+                ))}
+                {(onEdit || onDelete || extraActions) && (
+                  <th className="px-5 py-4 text-right">
+                    <div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-800 animate-pulse ml-auto" />
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: Math.min(pageSize, 5) }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-200/30 dark:border-gray-800/30">
+                  {columns.map((col) => (
+                    <td key={String(col.key)} className="px-5 py-4">
+                      <div className="h-4 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: `${60 + Math.random() * 40}%` }} />
+                    </td>
+                  ))}
+                  {(onEdit || onDelete || extraActions) && (
+                    <td className="px-5 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="h-6 w-6 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                        <div className="h-6 w-6 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
 
   return (
     <div>
-      {/* ========== Barra de búsqueda ========== */}
-      <div className="relative mb-4">
+      <div className="relative mb-5">
         <Search
           size={16}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]"
+          className="absolute left-4 top-1/2 -translate-y-1/2 text-[#86868b]"
         />
         <input
           type="text"
@@ -123,30 +213,27 @@ export default function DataTable<T extends { id: string | number }>({
           value={search}
           onChange={(e) => handleSearch(e.target.value)}
           aria-label={searchPlaceholder}
-          className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]"
+          className="apple-input pl-11 pr-4"
         />
       </div>
 
-      {/* ========== Tabla de datos ========== */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200/50 dark:border-gray-800/50">
-        <table className="w-full text-sm">
-          {/* Encabezados de columna */}
+      <div className="apple-table-shell overflow-x-auto">
+        <table className="w-full min-w-max text-sm">
           <thead>
-            <tr className="border-b border-gray-200/50 dark:border-gray-800/50 bg-gray-50/50 dark:bg-[#161616]">
+            <tr className="border-b border-gray-200/50 dark:border-gray-800/50">
               {columns.map((col) => (
                 <th
                   key={String(col.key)}
                   scope="col"
-                  className="px-4 py-3 text-left font-medium text-[#86868b] text-xs uppercase tracking-wider"
+                  className="px-5 py-4 text-left font-semibold text-[#86868b] text-[11px] uppercase tracking-[0.18em] whitespace-nowrap"
                 >
                   {col.label}
                 </th>
               ))}
-              {/* Columna de acciones (solo si hay callbacks) */}
               {(onEdit || onDelete || extraActions) && (
                 <th
                   scope="col"
-                  className="px-4 py-3 text-right font-medium text-[#86868b] text-xs uppercase tracking-wider"
+                  className="px-5 py-4 text-right font-semibold text-[#86868b] text-[11px] uppercase tracking-[0.18em] whitespace-nowrap"
                 >
                   Acciones
                 </th>
@@ -154,14 +241,12 @@ export default function DataTable<T extends { id: string | number }>({
             </tr>
           </thead>
 
-          {/* Filas de datos */}
           <tbody>
             {paginated.length === 0 ? (
-              /* Mensaje cuando no hay datos */
               <tr>
                 <td
                   colSpan={columns.length + (onEdit || onDelete || extraActions ? 1 : 0)}
-                  className="px-4 py-8 text-center text-[#86868b]"
+                  className="px-5 py-12 text-center text-[#86868b]"
                 >
                   {search ? "Sin resultados" : "No hay registros"}
                 </td>
@@ -170,28 +255,26 @@ export default function DataTable<T extends { id: string | number }>({
               paginated.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-gray-200/30 dark:border-gray-800/30 hover:bg-gray-50/50 dark:hover:bg-[#161616] transition-colors"
+                  className="border-b border-gray-200/30 dark:border-gray-800/30 hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors"
                 >
-                  {/* Celdas de cada columna */}
                   {columns.map((col) => (
                     <td
                       key={String(col.key)}
-                      className="px-4 py-3 text-[#1d1d1f] dark:text-[#f5f5f7]"
+                      className="px-5 py-4 align-top text-[#1d1d1f] dark:text-[#f5f5f7]"
                     >
                       {col.render
                         ? col.render(row)
                         : String((row as Record<string, unknown>)[String(col.key)] ?? "")}
                     </td>
                   ))}
-                  {/* Botones de acción (editar/eliminar/extra) */}
                   {(onEdit || onDelete || extraActions) && (
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {extraActions && extraActions(row)}
                         {onEdit && (
                           <button
                             onClick={() => onEdit(row)}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-[#86868b] hover:text-[#0071e3]"
+                            className="apple-icon-button hover:text-[#0071e3]"
                             aria-label="Editar registro"
                             title="Editar"
                           >
@@ -201,7 +284,7 @@ export default function DataTable<T extends { id: string | number }>({
                         {onDelete && (
                           <button
                             onClick={() => onDelete(row)}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-[#86868b] hover:text-red-500"
+                            className="apple-icon-button hover:text-red-500"
                             aria-label="Eliminar registro"
                             title="Eliminar"
                           >
@@ -220,28 +303,26 @@ export default function DataTable<T extends { id: string | number }>({
 
       {/* ========== Paginación ========== */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          {/* Contador de registros */}
-          <span className="text-xs text-[#86868b]">
-            {filtered.length} registro{filtered.length !== 1 ? "s" : ""}
+        <div className="mt-5 flex items-center justify-between">
+          <span className="text-xs font-medium text-[#86868b]">
+            {totalItems} registro{totalItems !== 1 ? "s" : ""}
           </span>
-          {/* Controles de navegación */}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setPage(Math.max(0, page - 1))}
-              disabled={page === 0}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition-colors"
+              onClick={() => goToPage(Math.max(0, safePage - 1))}
+              disabled={safePage === 0}
+              className="apple-icon-button disabled:opacity-30"
               aria-label="Página anterior"
             >
               <ChevronLeft size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
             </button>
-            <span className="text-xs text-[#86868b]">
-              {page + 1} / {totalPages}
+            <span className="rounded-full border border-[var(--surface-border)] px-3 py-1 text-xs font-medium text-[#86868b]">
+              {safePage + 1} / {totalPages}
             </span>
             <button
-              onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
-              disabled={page >= totalPages - 1}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition-colors"
+              onClick={() => goToPage(Math.min(totalPages - 1, safePage + 1))}
+              disabled={safePage >= totalPages - 1}
+              className="apple-icon-button disabled:opacity-30"
               aria-label="Página siguiente"
             >
               <ChevronRight size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />

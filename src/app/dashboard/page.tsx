@@ -469,13 +469,33 @@ function AdminDashboard() {
         const primerDiaMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
           .toISOString()
           .split("T")[0];
+        const primerDiaSiguienteMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1)
+          .toISOString()
+          .split("T")[0];
 
-        const [alumnosRes, clasesRes, examenesRes, ingresosRes] = await Promise.all([
-          supabase.from("alumnos").select("id", { count: "exact", head: true }).eq("estado", "activo"),
+        const [matriculasRes, alumnosLegacyRes, clasesRes, examenesRes, ingresosRes] = await Promise.all([
+          supabase
+            .from("matriculas_alumno")
+            .select("alumno_id")
+            .gte("fecha_inscripcion", primerDiaMes)
+            .lt("fecha_inscripcion", primerDiaSiguienteMes),
+          supabase
+            .from("alumnos")
+            .select("id")
+            .gte("fecha_inscripcion", primerDiaMes)
+            .lt("fecha_inscripcion", primerDiaSiguienteMes),
           supabase.from("clases").select("id", { count: "exact", head: true }).eq("fecha", hoy),
           supabase.from("examenes").select("id", { count: "exact", head: true }).eq("resultado", "pendiente"),
           supabase.from("ingresos").select("monto").gte("fecha", primerDiaMes).eq("estado", "cobrado"),
         ]);
+
+        const alumnosDelMes = new Set<string>();
+        for (const matricula of matriculasRes.data ?? []) {
+          if (matricula.alumno_id) alumnosDelMes.add(matricula.alumno_id);
+        }
+        for (const alumno of alumnosLegacyRes.data ?? []) {
+          alumnosDelMes.add(alumno.id);
+        }
 
         const totalIngresos =
           ingresosRes.data?.reduce((sum, i) => {
@@ -484,7 +504,7 @@ function AdminDashboard() {
           }, 0) ?? 0;
 
         setStats({
-          alumnos: alumnosRes.count ?? 0,
+          alumnos: alumnosDelMes.size,
           clasesHoy: clasesRes.count ?? 0,
           examenesPendientes: examenesRes.count ?? 0,
           ingresosMes: totalIngresos,
@@ -501,7 +521,7 @@ function AdminDashboard() {
   const nombre = perfil?.nombre || "Usuario";
 
   const statCards = [
-    { label: "Alumnos Activos", value: stats.alumnos.toString(), icon: <Users size={20} />, color: "#0071e3" },
+    { label: "Alumnos del Mes", value: stats.alumnos.toString(), icon: <Users size={20} />, color: "#0071e3" },
     { label: "Clases Hoy", value: stats.clasesHoy.toString(), icon: <Calendar size={20} />, color: "#28c840" },
     { label: "Exámenes Pendientes", value: stats.examenesPendientes.toString(), icon: <FileText size={20} />, color: "#ff9f0a" },
     {

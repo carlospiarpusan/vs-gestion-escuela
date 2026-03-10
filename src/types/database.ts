@@ -13,6 +13,7 @@ export type PlanEscuela = "gratuito" | "basico" | "profesional" | "enterprise";
 export type EstadoEscuela = "activa" | "inactiva" | "suspendida";
 export type EstadoSede = "activa" | "inactiva";
 export type EstadoAlumno = "activo" | "inactivo" | "graduado";
+export type EstadoMatricula = "activo" | "cerrado" | "cancelado";
 export type EstadoInstructor = "activo" | "inactivo";
 export type TipoPermiso = "AM" | "A1" | "A2" | "A" | "B" | "C" | "D";
 export type TipoVehiculo = "coche" | "moto" | "camion" | "autobus";
@@ -33,7 +34,7 @@ export type CategoriaIngreso =
   | "examen_practico" | "material" | "tasas_dgt" | "otros";
 export type TipoMantenimiento =
   | "cambio_aceite" | "gasolina" | "repuesto" | "mano_obra"
-  | "lavado" | "neumaticos" | "revision_general" | "otros";
+  | "lavado" | "neumaticos" | "reparacion" | "revision_general" | "otros";
 
 export interface Escuela {
   id: string;
@@ -90,6 +91,7 @@ export interface Alumno {
   escuela_id: string;
   sede_id: string;
   user_id: string;
+  numero_contrato: string | null;
   nombre: string;
   apellidos: string;
   dni: string;
@@ -105,6 +107,24 @@ export interface Alumno {
   valor_total: number | null;
   ciudad: string | null;
   departamento: string | null;
+  tiene_tramitador: boolean;
+  tramitador_nombre: string | null;
+  tramitador_valor: number | null;
+  created_at: string;
+}
+
+export interface MatriculaAlumno {
+  id: string;
+  escuela_id: string;
+  sede_id: string;
+  alumno_id: string;
+  created_by: string | null;
+  numero_contrato: string | null;
+  categorias: string[];
+  valor_total: number | null;
+  fecha_inscripcion: string | null;
+  estado: EstadoMatricula;
+  notas: string | null;
   tiene_tramitador: boolean;
   tramitador_nombre: string | null;
   tramitador_valor: number | null;
@@ -184,6 +204,7 @@ export interface Gasto {
   escuela_id: string;
   sede_id: string;
   user_id: string;
+  mantenimiento_id: string | null;
   categoria: CategoriaGasto;
   concepto: string;
   monto: number;
@@ -202,6 +223,7 @@ export interface Ingreso {
   sede_id: string;
   user_id: string;
   alumno_id: string | null;
+  matricula_id: string | null;
   categoria: CategoriaIngreso;
   concepto: string;
   monto: number;
@@ -253,5 +275,3 @@ export interface Pregunta {
   orden: number;
   created_at: string;
 }
-
-

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import Modal from "@/components/dashboard/Modal";
@@ -19,9 +19,8 @@ const emptyForm = {
   sede_id: "",
 };
 
-const inputCls =
-  "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
-const labelCls = "block text-xs text-[#86868b] mb-1";
+const inputCls = "apple-input";
+const labelCls = "apple-label";
 
 export default function AdministrativosPage() {
   const { perfil } = useAuth();
@@ -36,53 +35,61 @@ export default function AdministrativosPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   const canEdit =
     perfil?.rol === "super_admin" ||
     perfil?.rol === "admin_escuela" ||
     perfil?.rol === "admin_sede";
 
-  // Fetch administrativos + sedes desde Supabase
-  const fetchData = useCallback(async () => {
-    if (!perfil?.escuela_id) return;
-    const supabase = createClient();
-
-    const [adminsRes, sedesRes] = await Promise.all([
-      supabase
-        .from("perfiles")
-        .select("*")
-        .eq("rol", "administrativo")
-        .eq("escuela_id", perfil.escuela_id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("sedes")
-        .select("*")
-        .eq("escuela_id", perfil.escuela_id)
-        .eq("estado", "activa")
-        .order("es_principal", { ascending: false }),
-    ]);
-
-    const sedesData = (sedesRes.data as Sede[]) || [];
-    setSedes(sedesData);
-
-    const sedesMap = new Map(sedesData.map((s) => [s.id, s.nombre]));
-    const rows = ((adminsRes.data as Perfil[]) || []).map((p) => ({
-      ...p,
-      sede_nombre: p.sede_id ? sedesMap.get(p.sede_id) ?? "—" : "—",
-    }));
-
-    const filtered =
-      perfil.rol === "admin_sede" && perfil.sede_id
-        ? rows.filter((r) => r.sede_id === perfil.sede_id)
-        : rows;
-
-    setData(filtered);
-    setLoading(false);
-  }, [perfil]);
-
   useEffect(() => {
-    if (perfil) fetchData();
-  }, [perfil, fetchData]);
+    if (!perfil?.escuela_id) return;
+
+    let cancelled = false;
+
+    const loadData = async () => {
+      const supabase = createClient();
+
+      const [adminsRes, sedesRes] = await Promise.all([
+        supabase
+          .from("perfiles")
+          .select("*")
+          .eq("rol", "administrativo")
+          .eq("escuela_id", perfil.escuela_id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("sedes")
+          .select("*")
+          .eq("escuela_id", perfil.escuela_id)
+          .eq("estado", "activa")
+          .order("es_principal", { ascending: false }),
+      ]);
+
+      if (cancelled) return;
+
+      const sedesData = (sedesRes.data as Sede[]) || [];
+      const sedesMap = new Map(sedesData.map((sede) => [sede.id, sede.nombre]));
+      const rows = ((adminsRes.data as Perfil[]) || []).map((adminPerfil) => ({
+        ...adminPerfil,
+        sede_nombre: adminPerfil.sede_id ? sedesMap.get(adminPerfil.sede_id) ?? "—" : "—",
+      }));
+
+      const filtered =
+        perfil.rol === "admin_sede" && perfil.sede_id
+          ? rows.filter((row) => row.sede_id === perfil.sede_id)
+          : rows;
+
+      setSedes(sedesData);
+      setData(filtered);
+      setLoading(false);
+    };
+
+    void loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [perfil?.escuela_id, perfil?.rol, perfil?.sede_id, reloadKey]);
 
   const openCreate = () => {
     setEditing(null);
@@ -162,14 +169,14 @@ export default function AdministrativosPage() {
 
     setSaving(false);
     setModalOpen(false);
-    fetchData();
+    setReloadKey((value) => value + 1);
   };
 
   // Activar / desactivar
   const toggleActivo = async (row: AdminRow) => {
     const supabase = createClient();
     await supabase.from("perfiles").update({ activo: !row.activo }).eq("id", row.id);
-    fetchData();
+    setReloadKey((value) => value + 1);
   };
 
   // Eliminar perfil
@@ -181,7 +188,7 @@ export default function AdministrativosPage() {
     setSaving(false);
     setDeleteOpen(false);
     setDeleting(null);
-    fetchData();
+    setReloadKey((value) => value + 1);
   };
 
   const sedesDisponibles =
@@ -271,21 +278,21 @@ export default function AdministrativosPage() {
                           <button
                             onClick={() => openEdit(row)}
                             title="Editar"
-                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-[#86868b] hover:text-[#0071e3]"
+                            className="apple-icon-button hover:text-[#0071e3]"
                           >
                             <Pencil size={15} />
                           </button>
                           <button
                             onClick={() => toggleActivo(row)}
                             title={row.activo ? "Desactivar" : "Activar"}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+                            className="apple-icon-button hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
                           >
                             <Power size={15} />
                           </button>
                           <button
                             onClick={() => { setDeleting(row); setDeleteOpen(true); }}
                             title="Eliminar"
-                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-[#86868b] hover:text-red-500"
+                            className="apple-icon-button hover:text-red-500"
                           >
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />

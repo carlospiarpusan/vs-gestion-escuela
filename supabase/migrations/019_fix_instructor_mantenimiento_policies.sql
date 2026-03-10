@@ -1,5 +1,6 @@
--- Agregar tipo 'reparacion' al check constraint de mantenimiento_vehiculos
--- y normalizar las políticas RLS del instructor para evitar duplicados.
+-- Migración 019: corregir el estado actual de RLS para mantenimiento de instructores
+-- 017 ya pudo haberse aplicado con políticas duplicadas y demasiado permisivas.
+
 ALTER TABLE public.mantenimiento_vehiculos DROP CONSTRAINT IF EXISTS mantenimiento_vehiculos_tipo_check;
 ALTER TABLE public.mantenimiento_vehiculos ADD CONSTRAINT mantenimiento_vehiculos_tipo_check
   CHECK (tipo IN (
@@ -9,6 +10,7 @@ ALTER TABLE public.mantenimiento_vehiculos ADD CONSTRAINT mantenimiento_vehiculo
 
 DROP POLICY IF EXISTS "Instructores pueden crear mantenimiento" ON public.mantenimiento_vehiculos;
 DROP POLICY IF EXISTS "Instructores ven su propio mantenimiento" ON public.mantenimiento_vehiculos;
+
 DROP POLICY IF EXISTS "Instructor: ve mantenimiento de sus vehiculos" ON public.mantenimiento_vehiculos;
 CREATE POLICY "Instructor: ve mantenimiento de sus vehiculos"
   ON public.mantenimiento_vehiculos FOR SELECT USING (

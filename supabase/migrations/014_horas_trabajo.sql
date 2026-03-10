@@ -3,7 +3,7 @@
 --
 -- Registra las horas trabajadas por cada instructor en cada día.
 -- Una fila por combinación única (instructor_id, fecha).
--- Las páginas leen/escriben con upsert; al poner 0 horas se borra.
+-- Las páginas leen/escriben con upsert; 0 significa descanso.
 -- ================================================================
 
 CREATE TABLE IF NOT EXISTS public.horas_trabajo (
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.horas_trabajo (
   sede_id       uuid        NOT NULL REFERENCES public.sedes(id)        ON DELETE CASCADE,
   instructor_id uuid        NOT NULL REFERENCES public.instructores(id) ON DELETE CASCADE,
   fecha         date        NOT NULL,
-  horas         numeric(4,1) NOT NULL DEFAULT 0 CHECK (horas > 0 AND horas <= 24),
+  horas         numeric(4,1) NOT NULL DEFAULT 0 CHECK (horas >= 0 AND horas <= 24),
   created_at    timestamptz DEFAULT now(),
 
   UNIQUE (instructor_id, fecha)

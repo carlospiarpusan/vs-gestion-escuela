@@ -14,7 +14,7 @@
  */
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import DataTable from "@/components/dashboard/DataTable";
@@ -22,6 +22,8 @@ import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import type { Gasto, CategoriaGasto, MetodoPagoGasto } from "@/types/database";
 import { Plus } from "lucide-react";
+
+const PAGE_SIZE = 10;
 
 /** All available expense categories. */
 const categorias: CategoriaGasto[] = ["combustible", "mantenimiento_vehiculo", "alquiler", "servicios", "nominas", "seguros", "material_didactico", "marketing", "impuestos", "suministros", "reparaciones", "tramitador", "otros"];
@@ -42,6 +44,10 @@ export default function GastosPage() {
   const { perfil } = useAuth();
   const [data, setData] = useState<Gasto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
+  const fetchIdRef = useRef(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState<Gasto | null>(null);
@@ -49,19 +55,55 @@ export default function GastosPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [linkedNotice, setLinkedNotice] = useState("");
 
   /**
-   * Fetch all expenses from Supabase ordered by date descending.
+   * Fetch expenses from Supabase with server-side pagination and search.
    * Called on mount and after every successful create/update/delete.
    */
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (page = 0, search = "") => {
     if (!perfil?.escuela_id) return;
+    const fetchId = ++fetchIdRef.current;
+    setLoading(true);
     const supabase = createClient();
-    const { data } = await supabase
+
+    // --- Count total matching records ---
+    let countQuery = supabase
       .from("gastos")
-      .select("id, categoria, concepto, monto, metodo_pago, proveedor, numero_factura, fecha, recurrente, notas, created_at")
+      .select("id", { count: "exact", head: true })
+      .eq("escuela_id", perfil.escuela_id);
+
+    if (search) {
+      countQuery = countQuery.or(`concepto.ilike.%${search}%,proveedor.ilike.%${search}%,fecha.ilike.%${search}%`);
+    }
+
+    const { count } = await countQuery;
+
+    // Prevent race conditions — discard stale responses
+    if (fetchId !== fetchIdRef.current) return;
+
+    // --- Fetch paginated data ---
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let dataQuery = supabase
+      .from("gastos")
+      .select("id, mantenimiento_id, categoria, concepto, monto, metodo_pago, proveedor, numero_factura, fecha, recurrente, notas, created_at")
       .eq("escuela_id", perfil.escuela_id)
-      .order("fecha", { ascending: false });
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (search) {
+      dataQuery = dataQuery.or(`concepto.ilike.%${search}%,proveedor.ilike.%${search}%,fecha.ilike.%${search}%`);
+    }
+
+    const { data } = await dataQuery;
+
+    // Prevent race conditions — discard stale responses
+    if (fetchId !== fetchIdRef.current) return;
+
+    setTotalCount(count ?? 0);
     setData((data as Gasto[]) || []);
     setLoading(false);
   }, [perfil?.escuela_id]);
@@ -69,23 +111,44 @@ export default function GastosPage() {
   // Fetch data once the authenticated profile is available.
   useEffect(() => {
     if (perfil) {
-      fetchData();
+      fetchData(currentPage, searchTerm);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perfil?.id]);
+  }, [perfil?.id, currentPage, searchTerm]);
+
+  /** Handle page change from DataTable (server-side). */
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
+
+  /** Handle search change from DataTable (server-side). */
+  const handleSearchChange = useCallback((term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(0);
+  }, []);
 
   /** Open the modal in "create" mode with a blank form. */
-  const openCreate = () => { setEditing(null); setForm(emptyForm); setError(""); setModalOpen(true); };
+  const openCreate = () => { setEditing(null); setForm(emptyForm); setError(""); setLinkedNotice(""); setModalOpen(true); };
 
   /** Open the modal in "edit" mode, pre-filling the form with the selected row. */
   const openEdit = (row: Gasto) => {
+    if (row.mantenimiento_id) {
+      setLinkedNotice("Este gasto viene de bitácora/vehículos. Edítalo desde ese módulo.");
+      return;
+    }
     setEditing(row);
     setForm({ categoria: row.categoria, concepto: row.concepto, monto: row.monto.toString(), metodo_pago: row.metodo_pago, proveedor: row.proveedor || "", numero_factura: row.numero_factura || "", fecha: row.fecha, recurrente: row.recurrente, notas: row.notas || "" });
     setError(""); setModalOpen(true);
   };
 
   /** Open the delete-confirmation dialog for the given row. */
-  const openDelete = (row: Gasto) => { setDeleting(row); setDeleteOpen(true); };
+  const openDelete = (row: Gasto) => {
+    if (row.mantenimiento_id) {
+      setLinkedNotice("Este gasto está sincronizado con bitácora/vehículos. Elimínalo desde ese módulo.");
+      return;
+    }
+    setDeleting(row); setDeleteOpen(true);
+  };
 
   /**
    * Validate the form and persist the expense (create or update).
@@ -124,7 +187,7 @@ export default function GastosPage() {
       }
 
       // Success — close modal and refresh the table.
-      setSaving(false); setModalOpen(false); fetchData();
+      setSaving(false); setModalOpen(false); fetchData(currentPage, searchTerm);
     } catch (networkError: unknown) {
       // Handle unexpected network / runtime errors.
       const message = networkError instanceof Error ? networkError.message : "Error de red inesperado.";
@@ -148,7 +211,7 @@ export default function GastosPage() {
         return;
       }
       // Success — close dialog and refresh.
-      setSaving(false); setDeleteOpen(false); setDeleting(null); fetchData();
+      setSaving(false); setDeleteOpen(false); setDeleting(null); fetchData(currentPage, searchTerm);
     } catch (networkError: unknown) {
       const message = networkError instanceof Error ? networkError.message : "Error al eliminar el gasto.";
       setError(message);
@@ -159,7 +222,20 @@ export default function GastosPage() {
   /** Column definitions for the DataTable component. */
   const columns = [
     { key: "fecha" as keyof Gasto, label: "Fecha" },
-    { key: "concepto" as keyof Gasto, label: "Concepto", render: (r: Gasto) => <span className="font-medium">{r.concepto}</span> },
+    {
+      key: "concepto" as keyof Gasto,
+      label: "Concepto",
+      render: (r: Gasto) => (
+        <div className="space-y-1">
+          <span className="font-medium">{r.concepto}</span>
+          {r.mantenimiento_id && (
+            <span className="inline-flex rounded-full bg-[#0071e3]/10 px-2 py-0.5 text-[10px] font-semibold text-[#0071e3]">
+              Bitácora
+            </span>
+          )}
+        </div>
+      ),
+    },
     { key: "categoria" as keyof Gasto, label: "Categoría", render: (r: Gasto) => <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-gray-800 text-[#86868b] font-medium">{r.categoria.replace("_", " ")}</span> },
     { key: "monto" as keyof Gasto, label: "Monto", render: (r: Gasto) => <span className="font-medium text-red-500">${Number(r.monto).toLocaleString("es-CO")}</span> },
     { key: "metodo_pago" as keyof Gasto, label: "Método" },
@@ -167,7 +243,7 @@ export default function GastosPage() {
   ];
 
   /** Shared Tailwind classes for form inputs. */
-  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/30 focus:border-[#0071e3]";
+  const inputCls = "apple-input";
 
   return (
     <div>
@@ -180,9 +256,15 @@ export default function GastosPage() {
         <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors"><Plus size={16} /> Nuevo Gasto</button>
       </div>
 
+      {linkedNotice && (
+        <div className="mb-4 rounded-2xl border border-[#0071e3]/15 bg-[#0071e3]/8 px-4 py-3 text-sm text-[#0b63c7] dark:text-[#69a9ff]">
+          {linkedNotice}
+        </div>
+      )}
+
       {/* Data table card */}
       <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
-        <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por concepto..." searchKeys={["concepto", "proveedor", "fecha"]} onEdit={openEdit} onDelete={openDelete} />
+        <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por concepto..." onEdit={openEdit} onDelete={openDelete} serverSide totalCount={totalCount} currentPage={currentPage} onPageChange={handlePageChange} onSearchChange={handleSearchChange} pageSize={PAGE_SIZE} />
       </div>
 
       {/* Create / Edit modal */}

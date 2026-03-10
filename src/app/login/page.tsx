@@ -122,118 +122,103 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f5f7] dark:bg-[#000] px-4 sm:px-6 py-8 transition-colors duration-300">
-      {/* Enlace para volver al inicio */}
-      <div className="absolute top-4 left-4 sm:top-6 sm:left-6">
-        <Link href="/" className="text-sm text-[#0071e3] hover:underline">
+    <div className="apple-auth-shell flex items-center justify-center px-4 py-8 sm:px-6">
+      <div className="absolute left-4 top-4 z-20 sm:left-6 sm:top-6">
+        <Link href="/" className="apple-button-secondary text-xs font-medium">
           &larr; Inicio
         </Link>
       </div>
 
-      <div className="w-full max-w-sm animate-scale-in">
-        {/* ========== Logo y título ========== */}
-        <div className="text-center mb-6 sm:mb-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
-            AutoEscuela<span className="gradient-text">Pro</span>
-          </h1>
-          <p className="text-[#86868b] mt-2 text-sm">
-            Inicia sesión en tu cuenta
+      <div className="relative z-10 w-full max-w-md animate-scale-in">
+        <div className="apple-auth-card px-6 py-7 sm:px-7 sm:py-8">
+          <div className="mb-7 text-center">
+            <span className="apple-badge">Acceso seguro</span>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
+              AutoEscuela<span className="gradient-text">Pro</span>
+            </h1>
+            <p className="mt-2 text-sm text-[#86868b]">
+              Inicia sesión para ver tu panel, pagos y evaluaciones.
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-4 rounded-2xl border border-red-200/70 bg-red-50/80 p-3 text-center text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="identifier" className="apple-label">
+                Correo electrónico o número de cédula
+              </label>
+              <input
+                id="identifier"
+                type="text"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="tu@email.com o número de cédula"
+                required
+                autoComplete="username"
+                className="apple-input"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="apple-label">
+                Contraseña
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Tu contraseña"
+                  required
+                  autoComplete="current-password"
+                  className="apple-input pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[#86868b] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="apple-button-primary flex w-full justify-center py-3 text-sm font-medium disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Iniciando sesión...
+                </>
+              ) : (
+                "Iniciar Sesión"
+              )}
+            </button>
+          </form>
+
+          <div className="my-6 flex items-center gap-3">
+            <div className="apple-divider flex-1" />
+            <span className="text-xs text-[#86868b]">o</span>
+            <div className="apple-divider flex-1" />
+          </div>
+
+          <p className="text-center text-sm text-[#86868b]">
+            ¿No tienes cuenta?{" "}
+            <Link href="/registro" className="font-medium text-[#0071e3] hover:underline">
+              Crear cuenta
+            </Link>
           </p>
         </div>
-
-        {/* ========== Mensaje de error ========== */}
-        {error && (
-          <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm text-center">
-            {error}
-          </div>
-        )}
-
-        {/* ========== Formulario ========== */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Campo: Email */}
-          <div>
-            <label
-              htmlFor="identifier"
-              className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5"
-            >
-              Correo electrónico o número de cédula
-            </label>
-            <input
-              id="identifier"
-              type="text"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="tu@email.com o número de cédula"
-              required
-              autoComplete="username"
-              className="w-full px-4 py-3.5 sm:py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] text-base sm:text-sm placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all"
-            />
-          </div>
-
-          {/* Campo: Contraseña (con toggle de visibilidad) */}
-          <div>
-            <label
-              htmlFor="password"
-              className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5"
-            >
-              Contraseña
-            </label>
-            <div className="relative">
-              <input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Tu contraseña"
-                required
-                autoComplete="current-password"
-                className="w-full px-4 py-3.5 sm:py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-[#f5f5f7] text-base sm:text-sm placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all pr-12"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
-                aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
-
-          {/* Botón de envío */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#0071e3] text-white py-3.5 sm:py-3 rounded-xl text-base sm:text-sm font-medium hover:bg-[#0077ED] transition-all duration-300 hover:shadow-lg hover:shadow-[#0071e3]/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Iniciando sesión...
-              </>
-            ) : (
-              "Iniciar Sesión"
-            )}
-          </button>
-        </form>
-
-        {/* ========== Separador ========== */}
-        <div className="flex items-center gap-3 my-6">
-          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
-          <span className="text-xs text-[#86868b]">o</span>
-          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
-        </div>
-
-        {/* ========== Enlace a registro ========== */}
-        <p className="text-center text-sm text-[#86868b]">
-          ¿No tienes cuenta?{" "}
-          <Link
-            href="/registro"
-            className="text-[#0071e3] hover:underline font-medium"
-          >
-            Crear cuenta
-          </Link>
-        </p>
       </div>
     </div>
   );
