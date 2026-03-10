@@ -123,14 +123,10 @@ export default function VehiculosPage() {
   const [historialVehiculoId, setHistorialVehiculoId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isInstructor) {
-      setTab("bitacora");
-      return;
-    }
     if (searchParams.get("tab") === "bitacora") {
       setTab("bitacora");
     }
-  }, [isInstructor, searchParams]);
+  }, [searchParams]);
 
   // ── Fetch vehiculos ──────────────────────────────────
   const fetchVehiculos = useCallback(async () => {
@@ -166,17 +162,8 @@ export default function VehiculosPage() {
       .eq("escuela_id", perfil.escuela_id)
       .order("fecha", { ascending: false });
 
-    if (isInstructor) {
-      if (!instructorId) {
-        setMantenimientos([]);
-        setLoadingM(false);
-      } else {
-        mantenimientoQuery = mantenimientoQuery.eq("instructor_id", instructorId);
-      }
-    }
-
     const [mantRes, vehiculosRes, instructoresRes] = await Promise.all([
-      isInstructor && !instructorId ? Promise.resolve({ data: [] }) : mantenimientoQuery,
+      mantenimientoQuery,
       supabase.from("vehiculos").select("id, marca, modelo, matricula").eq("escuela_id", perfil.escuela_id),
       supabase.from("instructores").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id),
     ]);
@@ -443,26 +430,24 @@ export default function VehiculosPage() {
       </div>
 
       {/* Tabs */}
-      {canManageVehiculos && (
-        <div className="apple-segmented mb-4">
-          <button
-            onClick={() => setTab("vehiculos")}
-            className="apple-segmented-button"
-            data-active={tab === "vehiculos"}
-          >
-            <Car size={15} />
-            Vehículos
-          </button>
-          <button
-            onClick={() => setTab("bitacora")}
-            className="apple-segmented-button"
-            data-active={tab === "bitacora"}
-          >
-            <ClipboardList size={15} />
-            Bitácora
-          </button>
-        </div>
-      )}
+      <div className="apple-segmented mb-4">
+        <button
+          onClick={() => setTab("vehiculos")}
+          className="apple-segmented-button"
+          data-active={tab === "vehiculos"}
+        >
+          <Car size={15} />
+          Vehículos
+        </button>
+        <button
+          onClick={() => setTab("bitacora")}
+          className="apple-segmented-button"
+          data-active={tab === "bitacora"}
+        >
+          <ClipboardList size={15} />
+          Bitácora
+        </button>
+      </div>
 
       {/* Tabla Vehículos */}
       {tab === "vehiculos" && (
@@ -498,7 +483,10 @@ export default function VehiculosPage() {
             loading={loadingM}
             searchPlaceholder="Buscar por vehículo, descripción o fecha..."
             searchKeys={["descripcion", "fecha", "vehiculo_nombre"] as (keyof MantenimientoRow)[]}
-            onEdit={canManageVehiculos ? openEditM : undefined}
+            onEdit={(row: MantenimientoRow) => {
+              if (isInstructor && row.instructor_id !== currentInstructorId) return;
+              openEditM(row);
+            }}
             onDelete={canManageVehiculos ? openDeleteM : undefined}
           />
         </div>
