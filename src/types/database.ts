@@ -158,7 +158,7 @@ export interface Vehiculo {
   modelo: string;
   matricula: string;
   tipo: TipoVehiculo;
-  año: number | null;
+  anio: number | null;
   fecha_itv: string | null;
   seguro_vencimiento: string | null;
   estado: EstadoVehiculo;

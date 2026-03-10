@@ -277,7 +277,7 @@ create table public.vehiculos (
   modelo text not null,
   matricula text not null,
   tipo text not null default 'coche' check (tipo in ('coche', 'moto', 'camion', 'autobus')),
-  año integer,
+  anio integer,
   fecha_itv date,
   seguro_vencimiento date,
   estado text not null default 'disponible' check (estado in ('disponible', 'en_uso', 'mantenimiento', 'baja')),

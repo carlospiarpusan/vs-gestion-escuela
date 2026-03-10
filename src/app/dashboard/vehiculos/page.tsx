@@ -19,7 +19,7 @@ const estadosV: EstadoVehiculo[] = ["disponible", "en_uso", "mantenimiento", "ba
 
 const emptyVForm = {
   marca: "", modelo: "", matricula: "", tipo: "coche" as TipoVehiculo,
-  año: "", fecha_itv: "", seguro_vencimiento: "",
+  anio: "", fecha_itv: "", seguro_vencimiento: "",
   estado: "disponible" as EstadoVehiculo, kilometraje: "0", notas: "",
 };
 
@@ -201,7 +201,7 @@ export default function VehiculosPage() {
   const openCreateV = () => { setEditingV(null); setFormV(emptyVForm); setErrorV(""); setModalVOpen(true); };
   const openEditV = (row: Vehiculo) => {
     setEditingV(row);
-    setFormV({ marca: row.marca, modelo: row.modelo, matricula: row.matricula, tipo: row.tipo, año: row.año?.toString() || "", fecha_itv: row.fecha_itv || "", seguro_vencimiento: row.seguro_vencimiento || "", estado: row.estado, kilometraje: row.kilometraje.toString(), notas: row.notas || "" });
+    setFormV({ marca: row.marca, modelo: row.modelo, matricula: row.matricula, tipo: row.tipo, anio: row.anio?.toString() || "", fecha_itv: row.fecha_itv || "", seguro_vencimiento: row.seguro_vencimiento || "", estado: row.estado, kilometraje: row.kilometraje.toString(), notas: row.notas || "" });
     setErrorV(""); setModalVOpen(true);
   };
   const openDeleteV = (row: Vehiculo) => { setDeletingV(row); setDeleteVOpen(true); };
@@ -213,7 +213,7 @@ export default function VehiculosPage() {
       const supabase = createClient();
       const payload = {
         marca: formV.marca, modelo: formV.modelo, matricula: formV.matricula, tipo: formV.tipo,
-        año: formV.año ? parseInt(formV.año) : null, fecha_itv: formV.fecha_itv || null,
+        anio: formV.anio ? parseInt(formV.anio) : null, fecha_itv: formV.fecha_itv || null,
         seguro_vencimiento: formV.seguro_vencimiento || null, estado: formV.estado,
         kilometraje: parseInt(formV.kilometraje) || 0, notas: formV.notas || null,
       };
@@ -515,7 +515,7 @@ export default function VehiculosPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div><label className={labelCls}>Matrícula *</label><input type="text" value={formV.matricula} onChange={(e) => setFormV({ ...formV, matricula: e.target.value })} className={inputCls} /></div>
             <div><label className={labelCls}>Tipo</label><select value={formV.tipo} onChange={(e) => setFormV({ ...formV, tipo: e.target.value as TipoVehiculo })} className={inputCls}>{tipos.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
-            <div><label className={labelCls}>Año</label><input type="number" value={formV.año} onChange={(e) => setFormV({ ...formV, año: e.target.value })} className={inputCls} /></div>
+            <div><label className={labelCls}>Año</label><input type="number" value={formV.anio} onChange={(e) => setFormV({ ...formV, anio: e.target.value })} className={inputCls} /></div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div><label className={labelCls}>Kilometraje</label><input type="number" value={formV.kilometraje} onChange={(e) => setFormV({ ...formV, kilometraje: e.target.value })} className={inputCls} /></div>
