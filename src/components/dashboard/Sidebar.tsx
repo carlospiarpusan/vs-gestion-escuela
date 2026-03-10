@@ -241,16 +241,6 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
             })}
           </nav>
 
-          <div className="px-4 pb-4">
-            <div className="apple-panel-muted px-4 py-3">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#86868b]">
-                Apple Style
-              </p>
-              <p className="mt-1 text-xs leading-5 text-[#6e6e73] dark:text-[#aeaeb2]">
-                Navegacion limpia, superficies transluidas y jerarquia visual mas clara.
-              </p>
-            </div>
-          </div>
         </div>
       </aside>
     </>

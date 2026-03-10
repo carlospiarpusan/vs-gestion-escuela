@@ -136,12 +136,26 @@ export default function IngresosPage() {
         dataQuery = dataQuery.eq("metodo_pago", filtroMetodo);
       }
 
-      // Apply search term
+      // Apply search term (concepto or cédula del alumno)
       if (search) {
         const pattern = `%${search}%`;
-        const orFilter = `concepto.ilike.${pattern}`;
-        countQuery = countQuery.or(orFilter);
-        dataQuery = dataQuery.or(orFilter);
+        // Search matching alumni by dni (cédula)
+        const { data: matchedAlumnos } = await supabase
+          .from("alumnos")
+          .select("id")
+          .eq("escuela_id", perfil.escuela_id)
+          .ilike("dni", pattern);
+        const matchedIds = (matchedAlumnos ?? []).map((a) => a.id);
+
+        if (matchedIds.length > 0) {
+          const orFilter = `concepto.ilike.${pattern},alumno_id.in.(${matchedIds.join(",")})`;
+          countQuery = countQuery.or(orFilter);
+          dataQuery = dataQuery.or(orFilter);
+        } else {
+          const orFilter = `concepto.ilike.${pattern}`;
+          countQuery = countQuery.or(orFilter);
+          dataQuery = dataQuery.or(orFilter);
+        }
       }
 
       // Pagination
@@ -380,7 +394,13 @@ export default function IngresosPage() {
     {
       key: "concepto" as keyof IngresoRow,
       label: "Concepto",
-      render: (row: IngresoRow) => <span className="font-medium">{row.concepto}</span>,
+      render: (row: IngresoRow) => {
+        let texto = row.concepto;
+        if (row.alumno_nombre && row.alumno_nombre !== "—") {
+          texto = texto.replace(` — ${row.alumno_nombre}`, "").replace(` - ${row.alumno_nombre}`, "");
+        }
+        return <span className="font-medium">{texto}</span>;
+      },
     },
     {
       key: "alumno_nombre" as keyof IngresoRow,
@@ -517,7 +537,7 @@ export default function IngresosPage() {
           columns={columns}
           data={data}
           loading={loading}
-          searchPlaceholder="Buscar por concepto..."
+          searchPlaceholder="Buscar por concepto o cédula..."
           onEdit={openEdit}
           onDelete={openDelete}
           serverSide
