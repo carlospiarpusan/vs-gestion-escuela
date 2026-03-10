@@ -169,7 +169,7 @@ export default function DataTable<T extends { id: string | number }>({
                   </th>
                 ))}
                 {(onEdit || onDelete || extraActions) && (
-                  <th className="px-5 py-4 text-right">
+                  <th className="sticky right-0 bg-white/95 dark:bg-[#1d1d1f]/95 backdrop-blur-sm px-5 py-4 text-right">
                     <div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-800 animate-pulse ml-auto" />
                   </th>
                 )}
@@ -184,7 +184,7 @@ export default function DataTable<T extends { id: string | number }>({
                     </td>
                   ))}
                   {(onEdit || onDelete || extraActions) && (
-                    <td className="px-5 py-4 text-right">
+                    <td className="sticky right-0 bg-white/95 dark:bg-[#1d1d1f]/95 backdrop-blur-sm px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <div className="h-6 w-6 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
                         <div className="h-6 w-6 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
@@ -233,7 +233,7 @@ export default function DataTable<T extends { id: string | number }>({
               {(onEdit || onDelete || extraActions) && (
                 <th
                   scope="col"
-                  className="px-5 py-4 text-right font-semibold text-[#86868b] text-[11px] uppercase tracking-[0.18em] whitespace-nowrap"
+                  className="sticky right-0 bg-white/95 dark:bg-[#1d1d1f]/95 backdrop-blur-sm px-5 py-4 text-right font-semibold text-[#86868b] text-[11px] uppercase tracking-[0.18em] whitespace-nowrap"
                 >
                   Acciones
                 </th>
@@ -268,7 +268,7 @@ export default function DataTable<T extends { id: string | number }>({
                     </td>
                   ))}
                   {(onEdit || onDelete || extraActions) && (
-                    <td className="px-5 py-4 text-right">
+                    <td className="sticky right-0 bg-white/95 dark:bg-[#1d1d1f]/95 backdrop-blur-sm px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {extraActions && extraActions(row)}
                         {onEdit && (

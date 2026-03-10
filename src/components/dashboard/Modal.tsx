@@ -74,7 +74,7 @@ export default function Modal({
   return (
     <div
       ref={overlayRef}
-      className="apple-overlay fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      className="apple-overlay fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
@@ -83,7 +83,7 @@ export default function Modal({
       aria-labelledby="modal-title"
     >
       <div
-        className={`apple-panel w-full ${maxWidth} max-h-[92vh] flex flex-col overflow-hidden rounded-[2rem] animate-scale-in shadow-[var(--surface-shadow-strong)]`}
+        className={`apple-panel w-full ${maxWidth} max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden rounded-t-[2rem] sm:rounded-[2rem] animate-scale-in shadow-[var(--surface-shadow-strong)]`}
       >
         <div className="flex items-center justify-between px-5 sm:px-7 py-4 sm:py-5 shrink-0">
           <h3
