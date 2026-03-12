@@ -1,0 +1,162 @@
+import { NextResponse } from "next/server";
+import { authorizeApiRequest } from "@/lib/api-auth";
+import { getServerDbPool } from "@/lib/server-db";
+import type { Rol, TipoMantenimiento } from "@/types/database";
+
+const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"];
+
+type MantenimientoRow = {
+  id: string;
+  escuela_id: string;
+  sede_id: string;
+  vehiculo_id: string;
+  instructor_id: string | null;
+  user_id: string;
+  tipo: TipoMantenimiento;
+  descripcion: string;
+  monto: number | string;
+  kilometraje_actual: number | string | null;
+  litros: number | string | null;
+  precio_por_litro: number | string | null;
+  proveedor: string | null;
+  numero_factura: string | null;
+  foto_url: string | null;
+  fecha: string;
+  notas: string | null;
+  created_at: string;
+  vehiculo_nombre: string | null;
+  instructor_nombre: string | null;
+};
+
+type CountRow = {
+  total: number | string | null;
+};
+
+function parseInteger(value: string | null, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
+function toNumber(value: unknown) {
+  return Number(value || 0);
+}
+
+export async function GET(request: Request) {
+  const auth = await authorizeApiRequest(ALLOWED_ROLES);
+  if (!auth.ok) return auth.response;
+
+  const { perfil } = auth;
+  const url = new URL(request.url);
+  const search = (url.searchParams.get("q") ?? "").trim();
+  const vehiculoId = (url.searchParams.get("vehiculo_id") ?? "").trim();
+  const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
+  const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 250);
+  const escuelaId = perfil.rol === "super_admin"
+    ? (url.searchParams.get("escuela_id") ?? perfil.escuela_id)
+    : perfil.escuela_id;
+
+  if (!escuelaId) {
+    return NextResponse.json({ totalCount: 0, rows: [] });
+  }
+
+  let currentInstructorId: string | null = null;
+  const pool = getServerDbPool();
+
+  if (perfil.rol === "instructor") {
+    const instructorRes = await pool.query<{ id: string }>(
+      `
+        select id
+        from public.instructores
+        where user_id = $1
+          and escuela_id = $2
+        limit 1
+      `,
+      [perfil.id, escuelaId]
+    );
+    currentInstructorId = instructorRes.rows[0]?.id ?? null;
+
+    if (!currentInstructorId) {
+      return NextResponse.json({ totalCount: 0, rows: [] });
+    }
+  }
+
+  const values: Array<string | number> = [];
+  const addValue = (value: string | number) => {
+    values.push(value);
+    return `$${values.length}`;
+  };
+
+  const where: string[] = [];
+  where.push(`m.escuela_id = ${addValue(escuelaId)}`);
+
+  if (vehiculoId) {
+    where.push(`m.vehiculo_id = ${addValue(vehiculoId)}`);
+  }
+
+  if (currentInstructorId) {
+    where.push(`m.instructor_id = ${addValue(currentInstructorId)}`);
+  }
+
+  if (search) {
+    const ref = addValue(`%${search}%`);
+    where.push(`(
+      m.descripcion ILIKE ${ref}
+      OR m.fecha::text ILIKE ${ref}
+      OR coalesce(m.proveedor, '') ILIKE ${ref}
+      OR coalesce(m.numero_factura, '') ILIKE ${ref}
+      OR m.tipo::text ILIKE ${ref}
+      OR coalesce(v.marca, '') ILIKE ${ref}
+      OR coalesce(v.modelo, '') ILIKE ${ref}
+      OR coalesce(v.matricula, '') ILIKE ${ref}
+      OR coalesce(i.nombre, '') ILIKE ${ref}
+      OR coalesce(i.apellidos, '') ILIKE ${ref}
+    )`);
+  }
+
+  const whereSql = where.join(" AND ");
+  const offset = page * pageSize;
+  const limitRef = `$${values.length + 1}`;
+  const offsetRef = `$${values.length + 2}`;
+
+  const [countRes, rowsRes] = await Promise.all([
+    pool.query<CountRow>(
+      `
+        select count(*)::int as total
+        from public.mantenimiento_vehiculos m
+        left join public.vehiculos v on v.id = m.vehiculo_id
+        left join public.instructores i on i.id = m.instructor_id
+        where ${whereSql}
+      `,
+      values
+    ),
+    pool.query<MantenimientoRow>(
+      `
+        select
+          m.*,
+          trim(concat_ws(' ', v.marca, v.modelo, '(' || v.matricula || ')')) as vehiculo_nombre,
+          nullif(trim(concat_ws(' ', i.nombre, i.apellidos)), '') as instructor_nombre
+        from public.mantenimiento_vehiculos m
+        left join public.vehiculos v on v.id = m.vehiculo_id
+        left join public.instructores i on i.id = m.instructor_id
+        where ${whereSql}
+        order by m.fecha desc, m.created_at desc
+        limit ${limitRef} offset ${offsetRef}
+      `,
+      [...values, pageSize, offset]
+    ),
+  ]);
+
+  return NextResponse.json({
+    totalCount: Number(countRes.rows[0]?.total || 0),
+    rows: rowsRes.rows.map((row) => ({
+      ...row,
+      monto: toNumber(row.monto),
+      kilometraje_actual: row.kilometraje_actual == null ? null : toNumber(row.kilometraje_actual),
+      litros: row.litros == null ? null : toNumber(row.litros),
+      precio_por_litro: row.precio_por_litro == null ? null : toNumber(row.precio_por_litro),
+      vehiculo_nombre: row.vehiculo_nombre || "—",
+      instructor_nombre: row.instructor_nombre || "—",
+    })),
+  });
+}

@@ -42,13 +42,21 @@ export default class ErrorBoundary extends Component<Props, State> {
           <p className="mb-5 text-xs text-[#86868b]/60 text-center max-w-md font-mono">
             {this.state.error?.message || "Error desconocido"}
           </p>
-          <button
-            onClick={() => this.setState({ hasError: false, error: null })}
-            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-[#0071e3] text-white hover:bg-[#0077ED] transition-colors"
-          >
-            <RefreshCw size={14} />
-            Reintentar
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="apple-button-primary text-sm"
+            >
+              <RefreshCw size={14} />
+              Reintentar sección
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="apple-button-secondary text-sm"
+            >
+              Recargar página
+            </button>
+          </div>
         </div>
       );
     }

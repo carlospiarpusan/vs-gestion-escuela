@@ -68,6 +68,16 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'matriculas_alumno' AND column_name = 'updated_by') THEN
     ALTER TABLE matriculas_alumno ADD COLUMN updated_by uuid REFERENCES auth.users(id);
   END IF;
+
+  -- facturas_correo_integraciones
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'facturas_correo_integraciones')
+    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'facturas_correo_integraciones' AND column_name = 'updated_at') THEN
+    ALTER TABLE facturas_correo_integraciones ADD COLUMN updated_at timestamptz DEFAULT now();
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'facturas_correo_integraciones')
+    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'facturas_correo_integraciones' AND column_name = 'updated_by') THEN
+    ALTER TABLE facturas_correo_integraciones ADD COLUMN updated_by uuid REFERENCES auth.users(id);
+  END IF;
 END $$;
 
 -- Create triggers for auto-updating updated_at
@@ -75,7 +85,7 @@ DO $$
 DECLARE
   tbl TEXT;
 BEGIN
-  FOR tbl IN SELECT unnest(ARRAY['alumnos', 'instructores', 'vehiculos', 'ingresos', 'gastos', 'clases', 'matriculas_alumno'])
+  FOR tbl IN SELECT unnest(ARRAY['alumnos', 'instructores', 'vehiculos', 'ingresos', 'gastos', 'clases', 'matriculas_alumno', 'facturas_correo_integraciones'])
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS set_updated_at ON %I; CREATE TRIGGER set_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();',

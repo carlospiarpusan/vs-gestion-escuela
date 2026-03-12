@@ -17,6 +17,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /**
+   * Optimización de compilación y despliegue.
+   * "standalone" reduce drásticamente el tamaño del bundle para Vercel o contenedores Docker.
+   */
+  output: "standalone",
+  /**
    * Headers de seguridad HTTP.
    * Se aplican automáticamente a todas las respuestas del servidor.
    */

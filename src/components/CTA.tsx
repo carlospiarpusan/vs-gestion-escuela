@@ -5,34 +5,37 @@ import { motion } from "framer-motion";
 
 export default function CTA() {
   return (
-    <section className="py-16 sm:py-24 md:py-32 bg-gray-50 dark:bg-[#000000] border-t border-gray-100 dark:border-gray-900">
-      <div className="max-w-[980px] mx-auto px-6 text-center">
+    <section className="border-t border-gray-100 bg-gray-50 py-16 dark:border-gray-900 dark:bg-[#000000] sm:py-24 md:py-32">
+      <div className="mx-auto max-w-[980px] px-6 text-left">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           whileInView={{ opacity: 1, scale: 1 }}
           viewport={{ once: true }}
           transition={{ duration: 0.8, ease: "easeOut" }}
+          className="apple-panel overflow-hidden p-8 sm:p-10"
         >
-          <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-foreground mb-6">
-            AutoEscuelaPro.
+          <span className="apple-badge">Listo para ordenar tu operación</span>
+          <h2 className="mt-5 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-6xl">
+            Tu escuela puede verse así de organizada desde esta semana.
           </h2>
-          <p className="text-xl sm:text-2xl text-gray-500 max-w-2xl mx-auto mb-10">
-            La herramienta que tu autoescuela necesita.
+          <p className="mt-5 max-w-2xl text-base leading-8 text-gray-500 sm:text-xl">
+            Si tu equipo todavía reparte la operación entre cuadernos, WhatsApp y hojas de cálculo,
+            este es el momento de centralizarlo en un solo sistema.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+          <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <Link
               href="/registro"
-              className="w-full sm:w-auto bg-blue-apple text-white text-[15px] sm:text-[17px] px-8 py-3.5 sm:py-3 rounded-full hover:bg-blue-hover transition-all hover:scale-[1.02] text-center"
+              className="apple-button-primary min-h-[48px] justify-center px-6 text-sm font-semibold sm:w-auto"
             >
-              Empezar ahora
+              Probar demo gratuita
             </Link>
-            <Link
-              href="/login"
-              className="w-full sm:w-auto text-blue-apple text-[15px] sm:text-[17px] px-8 py-3.5 sm:py-3 rounded-full hover:bg-blue-apple/10 transition-colors text-center font-medium"
+            <a
+              href="#contacto"
+              className="apple-button-secondary min-h-[48px] justify-center px-6 text-sm font-semibold sm:w-auto"
             >
-              Iniciar Sesión
-            </Link>
+              Hablar con soporte
+            </a>
           </div>
         </motion.div>
       </div>

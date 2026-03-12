@@ -1,537 +1,1060 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
-import Modal from "@/components/dashboard/Modal";
-import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
-import type { Examen, Alumno, Evaluacion, Pregunta } from "@/types/database";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import {
-  ClipboardCheck, CheckCircle, XCircle, Clock, TrendingUp,
-  Plus, Pencil, Trash2, ChevronDown, ChevronUp, BarChart2, BookOpen,
+  CaleAnalyticsAdminView,
+  CaleBankManagerView,
+} from "@/components/dashboard/examenes/CaleAdminViews";
+import type { CategoriaExamen, Examen, PreguntaExamen, RespuestaExamen } from "@/types/database";
+import {
+  AlertCircle,
+  BookOpenCheck,
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  PlayCircle,
+  RefreshCw,
+  ShieldCheck,
+  Target,
+  XCircle,
 } from "lucide-react";
+import {
+  CALE_BANK_SOURCE,
+  CALE_EXAM_NOTES_PREFIX,
+  CALE_PASSING_PERCENTAGE,
+  CALE_QUESTION_COUNT_OPTIONS,
+  formatElapsedTime,
+  normalizeCaleAnswer,
+  parseCaleExamNotes,
+  type CaleExamNotes,
+  type RespuestaCale,
+} from "@/lib/cale";
 
-// ─── Tipos locales ───────────────────────────────────────────────────────────
-type ExamenConAlumno = Examen & { alumno_nombre: string };
-type PreguntaConEvaluacion = Pregunta & { evaluacion_id: string };
+type CategoriaResumen = CategoriaExamen & {
+  questionCount: number;
+};
 
-// ─── Valores vacíos ───────────────────────────────────────────────────────────
-const emptyEval = { titulo: "", descripcion: "", categoria: "", activa: true };
-const emptyPregunta = { texto: "", opciones: ["", "", "", ""], respuesta_correcta: 0 };
+type IntentoCale = Examen & {
+  alumno_nombre: string;
+  meta: CaleExamNotes;
+};
 
-const LETRAS = ["A", "B", "C", "D"];
+type PracticeQuestion = Pick<
+  PreguntaExamen,
+  "id" | "categoria_id" | "pregunta" | "imagen_url" | "opcion_a" | "opcion_b" | "opcion_c" | "opcion_d"
+> & {
+  categoria_nombre: string;
+};
 
-const inputCls = "apple-input";
-const labelCls = "apple-label";
+type OptionedQuestion = Pick<PreguntaExamen, "opcion_a" | "opcion_b" | "opcion_c" | "opcion_d">;
 
-// ─── Componente principal ────────────────────────────────────────────────────
+type PracticeResult = PracticeQuestion & {
+  selectedAnswer: RespuestaCale | null;
+  correctAnswer: RespuestaCale | null;
+  isCorrect: boolean;
+  explicacion: string | null;
+  fundamento_legal: string | null;
+};
+
+type PracticeSummary = {
+  source: string;
+  result: "aprobado" | "suspendido";
+  passingPercentage: number;
+  questionCount: number;
+  answeredCount: number;
+  correctCount: number;
+  incorrectCount: number;
+  percentage: number;
+  elapsedSeconds: number;
+  savedAt: string;
+};
+
+type PracticeResultPayload = {
+  examId: string;
+  summary: PracticeSummary;
+  results: PracticeResult[];
+};
+
+type StoredPracticeResponse = Pick<
+  RespuestaExamen,
+  | "pregunta_id"
+  | "orden_pregunta"
+  | "respuesta_alumno"
+  | "respuesta_omitida"
+  | "es_correcta"
+  | "categoria_nombre"
+  | "pregunta_texto"
+  | "imagen_url"
+  | "opcion_a"
+  | "opcion_b"
+  | "opcion_c"
+  | "opcion_d"
+  | "respuesta_correcta"
+  | "explicacion"
+  | "fundamento_legal"
+>;
+
+function isIntentoCale(value: IntentoCale | null): value is IntentoCale {
+  return Boolean(value);
+}
+
+function getOptionText(question: OptionedQuestion, option: RespuestaCale) {
+  switch (option) {
+    case "a":
+      return question.opcion_a;
+    case "b":
+      return question.opcion_b;
+    case "c":
+      return question.opcion_c;
+    case "d":
+      return question.opcion_d || "";
+    default:
+      return "";
+  }
+}
+
+function getAnswerBadge(option: RespuestaCale) {
+  return option.toUpperCase();
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Fecha no disponible"
+    : new Intl.DateTimeFormat("es-CO", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+}
+
+function coalesceOptionText(value: string | null | undefined) {
+  return typeof value === "string" ? value : "";
+}
+
+function buildStoredPracticeResult(
+  exam: Examen,
+  rows: StoredPracticeResponse[]
+): PracticeResultPayload | null {
+  const meta = parseCaleExamNotes(exam.notas);
+  if (!meta) return null;
+
+  const orderedRows = [...rows].sort((left, right) => {
+    const leftOrder = left.orden_pregunta ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = right.orden_pregunta ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return left.pregunta_id.localeCompare(right.pregunta_id);
+  });
+
+  const results: PracticeResult[] = orderedRows.map((row) => ({
+    id: row.pregunta_id,
+    categoria_id: null,
+    categoria_nombre: row.categoria_nombre || "General",
+    pregunta: row.pregunta_texto || "Pregunta no disponible",
+    imagen_url: row.imagen_url,
+    opcion_a: coalesceOptionText(row.opcion_a),
+    opcion_b: coalesceOptionText(row.opcion_b),
+    opcion_c: coalesceOptionText(row.opcion_c),
+    opcion_d: row.opcion_d,
+    selectedAnswer: normalizeCaleAnswer(row.respuesta_alumno),
+    correctAnswer: normalizeCaleAnswer(row.respuesta_correcta),
+    isCorrect: row.es_correcta,
+    explicacion: row.explicacion,
+    fundamento_legal: row.fundamento_legal,
+  }));
+
+  const omittedCount = orderedRows.filter((item) => item.respuesta_omitida).length;
+  const wrongAnsweredCount = orderedRows.length - omittedCount;
+
+  return {
+    examId: exam.id,
+    summary: {
+      source: meta.source,
+      result: exam.resultado === "aprobado" ? "aprobado" : "suspendido",
+      passingPercentage: CALE_PASSING_PERCENTAGE,
+      questionCount: meta.questionCount,
+      answeredCount: Math.min(meta.questionCount, meta.correctCount + wrongAnsweredCount),
+      correctCount: meta.correctCount,
+      incorrectCount: Math.max(meta.questionCount - meta.correctCount, 0),
+      percentage: meta.percentage,
+      elapsedSeconds: meta.elapsedSeconds,
+      savedAt: meta.submittedAt,
+    },
+    results,
+  };
+}
+
+async function fetchCaleCategoriesWithCounts(): Promise<CategoriaResumen[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("categorias_examen")
+    .select("*")
+    .eq("fuente", CALE_BANK_SOURCE)
+    .order("orden");
+
+  if (error) throw error;
+
+  const categories = ((data as CategoriaExamen[]) || []).filter((item) => item.fuente === CALE_BANK_SOURCE);
+  const withCounts = await Promise.all(
+    categories.map(async (category) => {
+      const { count, error: countError } = await supabase
+        .from("preguntas_examen")
+        .select("id", { count: "exact", head: true })
+        .eq("fuente", CALE_BANK_SOURCE)
+        .eq("activa", true)
+        .eq("categoria_id", category.id);
+
+      if (countError) throw countError;
+
+      return {
+        ...category,
+        questionCount: count ?? 0,
+      };
+    })
+  );
+
+  return withCounts;
+}
+
 export default function ExamenesPage() {
   const { perfil } = useAuth();
-  const isSuperAdmin = perfil?.rol === "super_admin";
-  const [tab, setTab] = useState<"analiticas" | "evaluaciones">("analiticas");
+  const searchParams = useSearchParams();
+  const isAlumno = perfil?.rol === "alumno";
+  const adminSection = useMemo(
+    () => (searchParams.get("section") === "banco" ? "banco" : "analiticas"),
+    [searchParams]
+  );
 
   return (
     <div className="space-y-5">
-      {/* Cabecera + tabs */}
-      <div>
-        <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Exámenes</h2>
-        {isSuperAdmin && (
-          <div className="apple-segmented mt-4">
-            {(["analiticas", "evaluaciones"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className="apple-segmented-button"
-                data-active={tab === t}
-              >
-                {t === "analiticas" ? <BarChart2 size={14} /> : <BookOpen size={14} />}
-                {t === "analiticas" ? "Analíticas" : "Evaluaciones"}
-              </button>
-            ))}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+            Evaluación CALE
+          </h2>
+          <p className="mt-1 text-sm text-[#86868b]">
+            {isAlumno
+              ? "Entrena con simulacros reales, revisa explicaciones y mejora antes del examen."
+              : "Controla el banco CALE activo y sigue el rendimiento de los simulacros con analítica para alto volumen."}
+          </p>
+        </div>
+      </div>
+
+      {isAlumno ? (
+        <AlumnoEntrenamientoView />
+      ) : adminSection === "analiticas" ? (
+        <AnaliticsView />
+      ) : (
+        <BancoCaleView />
+      )}
+    </div>
+  );
+}
+
+function AnaliticsView() {
+  return <CaleAnalyticsAdminView />;
+}
+
+function BancoCaleView() {
+  return <CaleBankManagerView />;
+}
+
+function AlumnoEntrenamientoView() {
+  const [categories, setCategories] = useState<CategoriaResumen[]>([]);
+  const [history, setHistory] = useState<IntentoCale[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("all");
+  const [questionCount, setQuestionCount] = useState<(typeof CALE_QUESTION_COUNT_OPTIONS)[number]>(20);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [sessionQuestions, setSessionQuestions] = useState<PracticeQuestion[]>([]);
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, RespuestaCale>>({});
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<PracticeResultPayload | null>(null);
+  const [reviewingExamId, setReviewingExamId] = useState<string | null>(null);
+
+  const currentQuestion = sessionQuestions[currentIndex] || null;
+  const answeredCount = sessionQuestions.filter((question) => Boolean(answers[question.id])).length;
+  const unansweredCount = Math.max(sessionQuestions.length - answeredCount, 0);
+  const inSession = sessionQuestions.length > 0 && sessionStartedAt !== null;
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      try {
+        const [categoryData, historyData] = await Promise.all([
+          fetchCaleCategoriesWithCounts(),
+          fetchMyCaleHistory(),
+        ]);
+
+        if (!active) return;
+        setCategories(categoryData);
+        setHistory(historyData);
+        setError("");
+      } catch (loadError) {
+        console.error("[ExamenesPage] Error preparando práctica CALE:", loadError);
+        if (active) setError("No se pudo preparar la práctica CALE.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!inSession || !sessionStartedAt) return undefined;
+
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - sessionStartedAt) / 1000));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [inSession, sessionStartedAt]);
+
+  const startPractice = async () => {
+    setError("");
+
+    try {
+      const params = new URLSearchParams({
+        count: String(questionCount),
+      });
+      if (selectedCategoryId !== "all") {
+        params.set("categoryId", selectedCategoryId);
+      }
+
+      const response = await fetch(`/api/examenes/cale/practica?${params.toString()}`, {
+        method: "GET",
+        credentials: "include",
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        questions?: PracticeQuestion[];
+      };
+
+      if (!response.ok || !payload.questions) {
+        throw new Error(payload.error || "No se pudo iniciar la práctica.");
+      }
+
+      setSessionQuestions(payload.questions);
+      setSessionStartedAt(Date.now());
+      setCurrentIndex(0);
+      setAnswers({});
+      setElapsedSeconds(0);
+      setResult(null);
+    } catch (startError) {
+      console.error("[ExamenesPage] Error iniciando práctica:", startError);
+      setError(startError instanceof Error ? startError.message : "No se pudo iniciar la práctica.");
+    }
+  };
+
+  const finishPractice = async () => {
+    if (!inSession) return;
+
+    if (answeredCount === 0) {
+      setError("Responde al menos una pregunta antes de enviar el simulacro.");
+      return;
+    }
+
+    if (unansweredCount > 0) {
+      const confirmed = window.confirm(
+        `Aún tienes ${unansweredCount} pregunta${unansweredCount !== 1 ? "s" : ""} sin responder. Si continúas, se marcarán como incorrectas.`
+      );
+      if (!confirmed) return;
+    }
+
+    setSubmitting(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/examenes/cale/practica", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          questionIds: sessionQuestions.map((item) => item.id),
+          answers,
+          elapsedSeconds,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      } & Partial<PracticeResultPayload>;
+
+      if (!response.ok || !payload.summary || !payload.results || !payload.examId) {
+        throw new Error(payload.error || "No se pudo calificar el simulacro.");
+      }
+
+      setResult(payload as PracticeResultPayload);
+      setSessionQuestions([]);
+      setSessionStartedAt(null);
+      setCurrentIndex(0);
+      setAnswers({});
+      setElapsedSeconds(0);
+      setHistory(await fetchMyCaleHistory());
+    } catch (submitError) {
+      console.error("[ExamenesPage] Error enviando práctica:", submitError);
+      setError(submitError instanceof Error ? submitError.message : "No se pudo calificar el simulacro.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openStoredReview = async (examId: string) => {
+    setReviewingExamId(examId);
+    setError("");
+
+    try {
+      const review = await fetchCaleExamReview(examId);
+
+      if (!review) {
+        throw new Error("No se pudo recuperar la revisión guardada de este simulacro.");
+      }
+
+      setResult(review);
+      setSessionQuestions([]);
+      setSessionStartedAt(null);
+      setCurrentIndex(0);
+      setAnswers({});
+      setElapsedSeconds(0);
+    } catch (reviewError) {
+      console.error("[ExamenesPage] Error cargando revisión guardada:", reviewError);
+      setError(reviewError instanceof Error ? reviewError.message : "No se pudo cargar la revisión del simulacro.");
+    } finally {
+      setReviewingExamId(null);
+    }
+  };
+
+  if (loading) return <Spinner />;
+
+  if (error && !inSession && !result && categories.length === 0) {
+    return <ErrorState message={error} />;
+  }
+
+  if (categories.length === 0) {
+    return (
+      <EmptyState
+        icon={<AlertCircle size={18} className="text-[#0071e3]" />}
+        title="El banco CALE aún no está disponible"
+        description="En cuanto el administrador cargue las preguntas activas, podrás iniciar tus simulacros desde aquí."
+      />
+    );
+  }
+
+  if (!inSession && !result) {
+    return (
+      <div className="space-y-5">
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+            {error}
           </div>
         )}
-      </div>
 
-      {tab === "analiticas" ? (
-        <AnaliticsView perfil={perfil} />
-      ) : (
-        <EvaluacionesView />
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ANALÍTICAS
-// ═══════════════════════════════════════════════════════════════════════════════
-function AnaliticsView({ perfil }: { perfil: { id: string } | null }) {
-  const [examenes, setExamenes] = useState<ExamenConAlumno[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchData = useCallback(async () => {
-    const supabase = createClient();
-    const [exRes, alRes] = await Promise.all([
-      supabase.from("examenes").select("*").order("fecha", { ascending: false }),
-      supabase.from("alumnos").select("id, nombre, apellidos"),
-    ]);
-    const map = new Map(
-      ((alRes.data || []) as Pick<Alumno, "id" | "nombre" | "apellidos">[]).map((a) => [
-        a.id, `${a.nombre} ${a.apellidos}`,
-      ])
-    );
-    setExamenes(
-      ((exRes.data as Examen[]) || []).map((e) => ({
-        ...e, alumno_nombre: map.get(e.alumno_id) || "—",
-      }))
-    );
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { if (perfil) fetchData(); }, [perfil?.id]); // eslint-disable-line
-
-  const total = examenes.length;
-  const aprobados = examenes.filter((e) => e.resultado === "aprobado").length;
-  const suspendidos = examenes.filter((e) => e.resultado === "suspendido").length;
-  const pendientes = examenes.filter((e) => e.resultado === "pendiente").length;
-  const tasaAprobacion = total > 0 ? Math.round((aprobados / total) * 100) : 0;
-  const teoricos = examenes.filter((e) => e.tipo === "teorico");
-  const practicos = examenes.filter((e) => e.tipo === "practico");
-
-  const resumenMap = new Map<string, { nombre: string; apr: number; sus: number; tot: number }>();
-  examenes.forEach((e) => {
-    const r = resumenMap.get(e.alumno_id) || { nombre: e.alumno_nombre, apr: 0, sus: 0, tot: 0 };
-    r.tot++;
-    if (e.resultado === "aprobado") r.apr++;
-    if (e.resultado === "suspendido") r.sus++;
-    resumenMap.set(e.alumno_id, r);
-  });
-  const resumen = Array.from(resumenMap.values()).sort((a, b) => b.tot - a.tot);
-
-  const resultadoColor: Record<string, string> = {
-    aprobado: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-    suspendido: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-    pendiente: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-  };
-
-  if (loading) return <Spinner />;
-
-  return (
-    <div className="space-y-5">
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Total exámenes", value: total, icon: <ClipboardCheck size={18} />, color: "text-[#0071e3] bg-[#0071e3]/10" },
-          { label: "Aprobados", value: aprobados, icon: <CheckCircle size={18} />, color: "text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400" },
-          { label: "Suspendidos", value: suspendidos, icon: <XCircle size={18} />, color: "text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400" },
-          { label: "Pendientes", value: pendientes, icon: <Clock size={18} />, color: "text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-400" },
-        ].map((s) => (
-          <div key={s.label} className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-5">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${s.color}`}>{s.icon}</div>
-            <p className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{s.value}</p>
-            <p className="text-xs text-[#86868b] mt-0.5">{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Tasa + Por tipo */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingUp size={16} className="text-[#0071e3]" />
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tasa de aprobación</p>
-          </div>
-          <p className="text-4xl font-bold text-[#0071e3] mb-3">{tasaAprobacion}%</p>
-          <div className="w-full h-2 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-            <div className="h-full rounded-full bg-[#0071e3] transition-all" style={{ width: `${tasaAprobacion}%` }} />
-          </div>
-          <div className="flex justify-between text-xs text-[#86868b] mt-2">
-            <span>{aprobados} aprobados</span><span>{suspendidos} suspendidos</span>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-5">
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Por tipo de examen</p>
-          <div className="space-y-4">
-            {[
-              { label: "Teórico", arr: teoricos },
-              { label: "Práctico", arr: practicos },
-            ].map(({ label, arr }) => {
-              const apr = arr.filter((e) => e.resultado === "aprobado").length;
-              const pct = arr.length > 0 ? Math.round((apr / arr.length) * 100) : 0;
-              return (
-                <div key={label}>
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{label}</span>
-                    <span className="text-[#86868b]">{apr}/{arr.length} · {pct}%</span>
-                  </div>
-                  <div className="w-full h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-                    <div className="h-full rounded-full bg-[#0071e3]" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Por alumno + Últimos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-5">
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Resultado por alumno</p>
-          {resumen.length === 0 ? (
-            <p className="text-sm text-[#86868b] text-center py-4">Sin datos</p>
-          ) : (
-            <div className="space-y-1 max-h-72 overflow-y-auto">
-              {resumen.map((a, i) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{a.nombre}</p>
-                    <p className="text-xs text-[#86868b]">{a.tot} examen{a.tot !== 1 ? "es" : ""}</p>
-                  </div>
-                  <div className="flex gap-1.5">
-                    {a.apr > 0 && <span className="px-2 py-0.5 text-[10px] rounded-full font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">{a.apr} ✓</span>}
-                    {a.sus > 0 && <span className="px-2 py-0.5 text-[10px] rounded-full font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">{a.sus} ✗</span>}
-                  </div>
-                </div>
-              ))}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="apple-panel-muted p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <PlayCircle size={16} className="text-[#0071e3]" />
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Configura tu simulacro
+              </p>
             </div>
-          )}
-        </div>
 
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-5">
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Últimos exámenes</p>
-          {examenes.length === 0 ? (
-            <p className="text-sm text-[#86868b] text-center py-4">Sin exámenes registrados</p>
-          ) : (
-            <div className="space-y-1">
-              {examenes.slice(0, 5).map((e) => (
-                <div key={e.id} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{e.alumno_nombre}</p>
-                    <p className="text-xs text-[#86868b]">{e.tipo === "teorico" ? "Teórico" : "Práctico"} · {e.fecha}</p>
-                  </div>
-                  <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold capitalize ${resultadoColor[e.resultado]}`}>{e.resultado}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// EVALUACIONES
-// ═══════════════════════════════════════════════════════════════════════════════
-function EvaluacionesView() {
-  const [evaluaciones, setEvaluaciones] = useState<Evaluacion[]>([]);
-  const [preguntas, setPreguntas] = useState<PreguntaConEvaluacion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expandida, setExpandida] = useState<string | null>(null);
-
-  // Modales evaluación
-  const [modalEval, setModalEval] = useState(false);
-  const [editingEval, setEditingEval] = useState<Evaluacion | null>(null);
-  const [formEval, setFormEval] = useState(emptyEval);
-  const [savingEval, setSavingEval] = useState(false);
-  const [errorEval, setErrorEval] = useState("");
-  const [deleteEvalOpen, setDeleteEvalOpen] = useState(false);
-  const [deletingEval, setDeletingEval] = useState<Evaluacion | null>(null);
-
-  // Modales pregunta
-  const [modalPregunta, setModalPregunta] = useState(false);
-  const [editingPregunta, setEditingPregunta] = useState<Pregunta | null>(null);
-  const [preguntaEvalId, setPreguntaEvalId] = useState<string>("");
-  const [formPregunta, setFormPregunta] = useState(emptyPregunta);
-  const [savingPregunta, setSavingPregunta] = useState(false);
-  const [errorPregunta, setErrorPregunta] = useState("");
-  const [deletePreguntaOpen, setDeletePreguntaOpen] = useState(false);
-  const [deletingPregunta, setDeletingPregunta] = useState<Pregunta | null>(null);
-
-  const fetchAll = useCallback(async () => {
-    const supabase = createClient();
-    const [evRes, prRes] = await Promise.all([
-      supabase.from("evaluaciones").select("*").order("created_at", { ascending: false }),
-      supabase.from("preguntas").select("*").order("orden"),
-    ]);
-    setEvaluaciones((evRes.data as Evaluacion[]) || []);
-    setPreguntas((prRes.data as PreguntaConEvaluacion[]) || []);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchAll(); }, []); // eslint-disable-line
-
-  // ── Evaluación CRUD ──────────────────────────────────────────────────────
-  const openCreateEval = () => {
-    setEditingEval(null); setFormEval(emptyEval); setErrorEval(""); setModalEval(true);
-  };
-  const openEditEval = (ev: Evaluacion) => {
-    setEditingEval(ev);
-    setFormEval({ titulo: ev.titulo, descripcion: ev.descripcion || "", categoria: ev.categoria || "", activa: ev.activa });
-    setErrorEval(""); setModalEval(true);
-  };
-  const handleSaveEval = async () => {
-    if (!formEval.titulo.trim()) { setErrorEval("El título es obligatorio."); return; }
-    setSavingEval(true); setErrorEval("");
-    const supabase = createClient();
-    const payload = { titulo: formEval.titulo, descripcion: formEval.descripcion || null, categoria: formEval.categoria || null, activa: formEval.activa };
-    const { error } = editingEval
-      ? await supabase.from("evaluaciones").update(payload).eq("id", editingEval.id)
-      : await supabase.from("evaluaciones").insert([payload]);
-    if (error) setErrorEval(error.message);
-    else { setModalEval(false); fetchAll(); }
-    setSavingEval(false);
-  };
-  const handleDeleteEval = async () => {
-    if (!deletingEval) return;
-    const supabase = createClient();
-    await supabase.from("evaluaciones").delete().eq("id", deletingEval.id);
-    setDeleteEvalOpen(false); setDeletingEval(null); fetchAll();
-  };
-
-  // ── Pregunta CRUD ────────────────────────────────────────────────────────
-  const openCreatePregunta = (evalId: string) => {
-    setEditingPregunta(null); setPreguntaEvalId(evalId);
-    setFormPregunta(emptyPregunta); setErrorPregunta(""); setModalPregunta(true);
-  };
-  const openEditPregunta = (p: Pregunta) => {
-    setEditingPregunta(p); setPreguntaEvalId(p.evaluacion_id);
-    setFormPregunta({ texto: p.texto, opciones: [...p.opciones], respuesta_correcta: p.respuesta_correcta });
-    setErrorPregunta(""); setModalPregunta(true);
-  };
-  const handleSavePregunta = async () => {
-    if (!formPregunta.texto.trim()) { setErrorPregunta("La pregunta es obligatoria."); return; }
-    if (formPregunta.opciones.some((o) => !o.trim())) { setErrorPregunta("Completa todas las opciones."); return; }
-    setSavingPregunta(true); setErrorPregunta("");
-    const supabase = createClient();
-    const payload = {
-      evaluacion_id: preguntaEvalId,
-      texto: formPregunta.texto,
-      opciones: formPregunta.opciones,
-      respuesta_correcta: formPregunta.respuesta_correcta,
-      orden: editingPregunta?.orden ?? preguntas.filter((p) => p.evaluacion_id === preguntaEvalId).length,
-    };
-    const { error } = editingPregunta
-      ? await supabase.from("preguntas").update(payload).eq("id", editingPregunta.id)
-      : await supabase.from("preguntas").insert([payload]);
-    if (error) setErrorPregunta(error.message);
-    else { setModalPregunta(false); fetchAll(); }
-    setSavingPregunta(false);
-  };
-  const handleDeletePregunta = async () => {
-    if (!deletingPregunta) return;
-    await createClient().from("preguntas").delete().eq("id", deletingPregunta.id);
-    setDeletePreguntaOpen(false); setDeletingPregunta(null); fetchAll();
-  };
-
-  if (loading) return <Spinner />;
-
-  return (
-    <div>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
-        <p className="text-sm text-[#86868b]">
-          {evaluaciones.length} evaluación{evaluaciones.length !== 1 ? "es" : ""} creada{evaluaciones.length !== 1 ? "s" : ""}
-        </p>
-        <button onClick={openCreateEval}
-          className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors">
-          <Plus size={15} /> Nueva Evaluación
-        </button>
-      </div>
-
-      {evaluaciones.length === 0 && (
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-10 text-center">
-          <p className="text-[#86868b] text-sm">No hay evaluaciones. Crea la primera.</p>
-        </div>
-      )}
-
-      {/* Lista de evaluaciones */}
-      <div className="space-y-3">
-        {evaluaciones.map((ev) => {
-          const preguntasEv = preguntas.filter((p) => p.evaluacion_id === ev.id);
-          const abierta = expandida === ev.id;
-          return (
-            <div key={ev.id} className="apple-panel-muted overflow-hidden">
-              {/* Cabecera de la evaluación */}
-              <div className="flex items-center justify-between px-5 py-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <button onClick={() => setExpandida(abierta ? null : ev.id)}
-                    className="apple-icon-button h-8 w-8 flex-shrink-0">
-                    {abierta ? <ChevronUp size={16} className="text-[#86868b]" /> : <ChevronDown size={16} className="text-[#86868b]" />}
+            <div className="space-y-5">
+              <div>
+                <p className="mb-2 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  Núcleo a practicar
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setSelectedCategoryId("all")}
+                    className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+                      selectedCategoryId === "all"
+                        ? "bg-[#0071e3] text-white"
+                        : "bg-white text-[#1d1d1f] hover:bg-gray-100 dark:bg-[#111] dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+                    }`}
+                  >
+                    Simulacro mixto
                   </button>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{ev.titulo}</p>
-                      {ev.categoria && (
-                        <span className="px-1.5 py-0.5 text-[10px] rounded-md bg-[#0071e3]/10 text-[#0071e3] font-semibold">{ev.categoria}</span>
-                      )}
-                      <span className={`px-1.5 py-0.5 text-[10px] rounded-md font-semibold ${ev.activa ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800"}`}>
-                        {ev.activa ? "Activa" : "Inactiva"}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#86868b] mt-0.5">{preguntasEv.length} pregunta{preguntasEv.length !== 1 ? "s" : ""}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0 ml-3">
-                  <button onClick={() => openEditEval(ev)}
-                    className="apple-icon-button hover:text-[#0071e3]">
-                    <Pencil size={14} />
-                  </button>
-                  <button onClick={() => { setDeletingEval(ev); setDeleteEvalOpen(true); }}
-                    className="apple-icon-button hover:text-red-500">
-                    <Trash2 size={14} />
-                  </button>
+                  {categories.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => setSelectedCategoryId(item.id)}
+                      className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+                        selectedCategoryId === item.id
+                          ? "bg-[#0071e3] text-white"
+                          : "bg-white text-[#1d1d1f] hover:bg-gray-100 dark:bg-[#111] dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+                      }`}
+                    >
+                      {item.nombre}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Preguntas expandidas */}
-              {abierta && (
-                <div className="border-t border-gray-100 dark:border-gray-800 px-5 pb-4 pt-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b]">Preguntas</p>
-                    <button onClick={() => openCreatePregunta(ev.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-[#0071e3]/10 text-[#0071e3] hover:bg-[#0071e3]/20 font-medium transition-colors">
-                      <Plus size={12} /> Agregar pregunta
+              <div>
+                <p className="mb-2 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  Cantidad de preguntas
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {CALE_QUESTION_COUNT_OPTIONS.map((count) => (
+                    <button
+                      key={count}
+                      onClick={() => setQuestionCount(count)}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                        questionCount === count
+                          ? "bg-[#1d1d1f] text-white dark:bg-[#f5f5f7] dark:text-[#1d1d1f]"
+                          : "bg-white text-[#1d1d1f] hover:bg-gray-100 dark:bg-[#111] dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+                      }`}
+                    >
+                      {count} preguntas
                     </button>
-                  </div>
+                  ))}
+                </div>
+              </div>
 
-                  {preguntasEv.length === 0 ? (
-                    <p className="text-xs text-[#86868b] py-3 text-center">Sin preguntas. Agrega la primera.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {preguntasEv.map((p, idx) => (
-                        <div key={p.id} className="flex items-start justify-between gap-3 p-3 rounded-xl bg-[#f5f5f7] dark:bg-[#0a0a0a]">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
-                              <span className="text-[#86868b] mr-1">{idx + 1}.</span>{p.texto}
-                            </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                              {p.opciones.map((op, i) => (
-                                <p key={i} className={`text-[11px] px-2 py-0.5 rounded-md ${i === p.respuesta_correcta ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-semibold" : "text-[#86868b]"}`}>
-                                  {LETRAS[i]}. {op}
-                                </p>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="flex gap-1 flex-shrink-0">
-                            <button onClick={() => openEditPregunta(p)}
-                              className="p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-[#86868b] hover:text-[#0071e3] transition-colors">
-                              <Pencil size={13} />
-                            </button>
-                            <button onClick={() => { setDeletingPregunta(p); setDeletePreguntaOpen(true); }}
-                              className="p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-[#86868b] hover:text-red-500 transition-colors">
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <InfoPill
+                  label="Banco activo"
+                  value={`${categories.reduce((accumulator, item) => accumulator + item.questionCount, 0)} preguntas`}
+                />
+                <InfoPill
+                  label="Objetivo sugerido"
+                  value={`${CALE_PASSING_PERCENTAGE}% o más`}
+                />
+                <InfoPill
+                  label="Explicaciones"
+                  value="Incluidas al final"
+                />
+              </div>
+
+              <button
+                onClick={startPractice}
+                className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] bg-[#0071e3] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
+              >
+                <PlayCircle size={16} />
+                Iniciar simulacro
+              </button>
+            </div>
+          </div>
+
+          <div className="apple-panel-muted p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <ShieldCheck size={16} className="text-[#0071e3]" />
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  Tu historial guardado
+                </p>
+              </div>
+
+            {history.length === 0 ? (
+              <p className="rounded-2xl bg-white/80 px-4 py-6 text-sm text-[#86868b] dark:bg-[#0a0a0a]">
+                Todavía no has presentado simulacros CALE. Empieza con uno de 10 o 20 preguntas para medir tu nivel.
+              </p>
+            ) : (
+              <div className="max-h-[32rem] space-y-2 overflow-y-auto pr-1">
+                {history.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-[#0a0a0a]"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                          {item.meta.percentage}% de acierto
+                        </p>
+                        <p className="text-xs text-[#86868b]">
+                          {item.meta.questionCount} preguntas · {formatElapsedTime(item.meta.elapsedSeconds)} · {formatDateTime(item.meta.submittedAt)}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          item.meta.percentage >= CALE_PASSING_PERCENTAGE
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                            : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                        }`}
+                      >
+                        {item.meta.percentage >= CALE_PASSING_PERCENTAGE ? "Listo" : "Sigue"}
+                      </span>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() => void openStoredReview(item.id)}
+                        disabled={reviewingExamId === item.id}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 px-3 py-2 text-xs font-semibold text-[#1d1d1f] transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+                      >
+                        {reviewingExamId === item.id ? <RefreshCw size={14} className="animate-spin" /> : <BookOpenCheck size={14} />}
+                        Ver revisión
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+    );
+  }
 
-      {/* ── Modal Evaluación ── */}
-      <Modal open={modalEval} onClose={() => setModalEval(false)} title={editingEval ? "Editar Evaluación" : "Nueva Evaluación"} maxWidth="max-w-md">
-        <div className="space-y-4">
-          {errorEval && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{errorEval}</p>}
-          <div>
-            <label className={labelCls}>Título *</label>
-            <input type="text" value={formEval.titulo} onChange={(e) => setFormEval({ ...formEval, titulo: e.target.value })} placeholder="Examen teórico categoría B1" className={inputCls} />
+  if (inSession && currentQuestion) {
+    return (
+      <div className="space-y-5">
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+            {error}
           </div>
-          <div>
-            <label className={labelCls}>Descripción</label>
-            <textarea value={formEval.descripcion} onChange={(e) => setFormEval({ ...formEval, descripcion: e.target.value })} rows={2} className={`${inputCls} resize-none`} />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>Categoría</label>
-              <input type="text" value={formEval.categoria} onChange={(e) => setFormEval({ ...formEval, categoria: e.target.value })} placeholder="A1, B1, C1..." className={inputCls} />
+        )}
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_0.34fr]">
+          <div className="apple-panel-muted p-5">
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  Pregunta {currentIndex + 1} de {sessionQuestions.length}
+                </p>
+                <p className="text-xs text-[#86868b]">
+                  {currentQuestion.categoria_nombre}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-[#1d1d1f] dark:bg-gray-800 dark:text-[#f5f5f7]">
+                  {answeredCount} respondidas
+                </span>
+                <span className="rounded-full bg-[#0071e3]/10 px-3 py-1 text-xs font-semibold text-[#0071e3]">
+                  {formatElapsedTime(elapsedSeconds)}
+                </span>
+              </div>
             </div>
-            <div>
-              <label className={labelCls}>Estado</label>
-              <select value={formEval.activa ? "activa" : "inactiva"} onChange={(e) => setFormEval({ ...formEval, activa: e.target.value === "activa" })} className={inputCls}>
-                <option value="activa">Activa</option>
-                <option value="inactiva">Inactiva</option>
-              </select>
+
+            <div className="mb-5 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+              <div
+                className="h-full rounded-full bg-[#0071e3]"
+                style={{ width: `${Math.round(((currentIndex + 1) / sessionQuestions.length) * 100)}%` }}
+              />
+            </div>
+
+            <p className="mb-4 text-lg font-medium leading-7 text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {currentQuestion.pregunta}
+            </p>
+
+            {currentQuestion.imagen_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={currentQuestion.imagen_url}
+                alt="Imagen de apoyo para la pregunta"
+                className="mb-5 h-56 w-full rounded-[1.5rem] object-contain bg-[#f5f5f7] p-4 dark:bg-[#111]"
+              />
+            )}
+
+            <div className="grid grid-cols-1 gap-3">
+              {(["a", "b", "c", "d"] as RespuestaCale[]).map((option) => {
+                const optionText = getOptionText(currentQuestion, option);
+                if (!optionText) return null;
+                const isSelected = answers[currentQuestion.id] === option;
+
+                return (
+                  <button
+                    key={option}
+                    onClick={() =>
+                      setAnswers((current) => ({
+                        ...current,
+                        [currentQuestion.id]: option,
+                      }))
+                    }
+                    className={`rounded-[1.5rem] border px-4 py-3 text-left text-sm transition-colors ${
+                      isSelected
+                        ? "border-[#0071e3] bg-[#0071e3]/8 text-[#1d1d1f] dark:text-[#f5f5f7]"
+                        : "border-gray-200 bg-white text-[#1d1d1f] hover:border-[#0071e3]/50 hover:bg-[#0071e3]/4 dark:border-gray-800 dark:bg-[#111] dark:text-[#f5f5f7]"
+                    }`}
+                  >
+                    <span className="mr-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.04] text-xs font-bold dark:bg-white/[0.06]">
+                      {getAnswerBadge(option)}
+                    </span>
+                    {optionText}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex flex-col gap-3 border-t border-gray-100 pt-5 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentIndex((current) => Math.max(0, current - 1))}
+                  disabled={currentIndex === 0}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+                >
+                  <ChevronLeft size={16} />
+                  Anterior
+                </button>
+                <button
+                  onClick={() => setCurrentIndex((current) => Math.min(sessionQuestions.length - 1, current + 1))}
+                  disabled={currentIndex + 1 >= sessionQuestions.length}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+                >
+                  Siguiente
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              <button
+                onClick={finishPractice}
+                disabled={submitting}
+                className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] bg-[#0071e3] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {submitting ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                {submitting ? "Calificando..." : "Finalizar simulacro"}
+              </button>
             </div>
           </div>
-          <div className="flex gap-3 justify-end pt-1">
-            <button onClick={() => setModalEval(false)} className="px-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancelar</button>
-            <button onClick={handleSaveEval} disabled={savingEval} className="px-4 py-2 text-sm rounded-lg bg-[#0071e3] text-white hover:bg-[#0077ED] transition-colors disabled:opacity-50">
-              {savingEval ? "Guardando..." : editingEval ? "Guardar Cambios" : "Crear Evaluación"}
+
+          <div className="apple-panel-muted p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <Target size={16} className="text-[#0071e3]" />
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Navegación rápida
+              </p>
+            </div>
+            <div className="grid grid-cols-5 gap-2">
+              {sessionQuestions.map((question, index) => {
+                const isCurrent = index === currentIndex;
+                const isAnswered = Boolean(answers[question.id]);
+                return (
+                  <button
+                    key={question.id}
+                    onClick={() => setCurrentIndex(index)}
+                    className={`h-11 rounded-2xl text-sm font-semibold transition-colors ${
+                      isCurrent
+                        ? "bg-[#0071e3] text-white"
+                        : isAnswered
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                          : "bg-white text-[#1d1d1f] hover:bg-gray-100 dark:bg-[#111] dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+                    }`}
+                  >
+                    {index + 1}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 space-y-2 text-xs text-[#86868b]">
+              <p>Respondidas: {answeredCount}</p>
+              <p>Pendientes: {unansweredCount}</p>
+              <p>Meta recomendada: {CALE_PASSING_PERCENTAGE}% o más.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (result) {
+    return (
+      <div className="space-y-5">
+        <div className="apple-panel-muted p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Resultado del simulacro
+              </p>
+              <p className="mt-1 text-xs text-[#86868b]">
+                Guardado el {formatDateTime(result.summary.savedAt)}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-sm font-semibold text-[#0071e3]">
+                {result.summary.percentage}% de acierto
+              </span>
+              <span
+                className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
+                  result.summary.result === "aprobado"
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                }`}
+              >
+                {result.summary.result === "aprobado" ? "Objetivo alcanzado" : "Sigue practicando"}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-4 xl:grid-cols-4">
+            <StatCard
+              icon={<CheckCircle size={18} />}
+              label="Correctas"
+              value={String(result.summary.correctCount)}
+              tone="text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300"
+            />
+            <StatCard
+              icon={<XCircle size={18} />}
+              label="Incorrectas"
+              value={String(result.summary.incorrectCount)}
+              tone="text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-300"
+            />
+            <StatCard
+              icon={<Target size={18} />}
+              label="Respondidas"
+              value={String(result.summary.answeredCount)}
+              tone="text-[#0071e3] bg-[#0071e3]/10"
+            />
+            <StatCard
+              icon={<Clock3 size={18} />}
+              label="Tiempo"
+              value={formatElapsedTime(result.summary.elapsedSeconds)}
+              tone="text-violet-600 bg-violet-100 dark:bg-violet-900/30 dark:text-violet-300"
+            />
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={startPractice}
+              className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] bg-[#0071e3] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
+            >
+              <RefreshCw size={16} />
+              Hacer otro simulacro
+            </button>
+            <button
+              onClick={() => setResult(null)}
+              className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] border border-gray-200 px-5 py-3 text-sm font-semibold text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+            >
+              Volver al inicio
             </button>
           </div>
         </div>
-      </Modal>
 
-      {/* ── Modal Pregunta ── */}
-      <Modal open={modalPregunta} onClose={() => setModalPregunta(false)} title={editingPregunta ? "Editar Pregunta" : "Nueva Pregunta"} maxWidth="max-w-lg">
-        <div className="space-y-4">
-          {errorPregunta && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{errorPregunta}</p>}
-          <div>
-            <label className={labelCls}>Pregunta *</label>
-            <textarea value={formPregunta.texto} onChange={(e) => setFormPregunta({ ...formPregunta, texto: e.target.value })} rows={2} placeholder="Escribe la pregunta..." className={`${inputCls} resize-none`} />
-          </div>
-          <div>
-            <label className={labelCls}>Opciones de respuesta *</label>
-            <div className="space-y-2 mt-1">
-              {formPregunta.opciones.map((op, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold flex-shrink-0 ${i === formPregunta.respuesta_correcta ? "bg-green-500 text-white" : "bg-gray-100 dark:bg-gray-800 text-[#86868b]"}`}>
-                    {LETRAS[i]}
-                  </span>
-                  <input
-                    type="text"
-                    value={op}
-                    onChange={(e) => {
-                      const ops = [...formPregunta.opciones];
-                      ops[i] = e.target.value;
-                      setFormPregunta({ ...formPregunta, opciones: ops });
-                    }}
-                    placeholder={`Opción ${LETRAS[i]}`}
-                    className={inputCls}
-                  />
-                  <input
-                    type="radio"
-                    name="respuesta_correcta"
-                    checked={formPregunta.respuesta_correcta === i}
-                    onChange={() => setFormPregunta({ ...formPregunta, respuesta_correcta: i })}
-                    className="w-4 h-4 accent-green-500 flex-shrink-0"
-                    title="Marcar como correcta"
-                  />
-                </div>
-              ))}
-              <p className="text-[10px] text-[#86868b] pl-8">Selecciona el radio (●) para marcar la respuesta correcta</p>
+        <div className="space-y-3">
+          {result.results.length === 0 && result.summary.incorrectCount === 0 && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
+              Este simulacro no tuvo errores. Por eso no hay preguntas falladas guardadas para revisar.
             </div>
-          </div>
-          <div className="flex gap-3 justify-end pt-1">
-            <button onClick={() => setModalPregunta(false)} className="px-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancelar</button>
-            <button onClick={handleSavePregunta} disabled={savingPregunta} className="px-4 py-2 text-sm rounded-lg bg-[#0071e3] text-white hover:bg-[#0077ED] transition-colors disabled:opacity-50">
-              {savingPregunta ? "Guardando..." : editingPregunta ? "Guardar Cambios" : "Agregar Pregunta"}
-            </button>
-          </div>
-        </div>
-      </Modal>
+          )}
 
-      {/* Confirms eliminar */}
-      <DeleteConfirm open={deleteEvalOpen} onClose={() => setDeleteEvalOpen(false)} onConfirm={handleDeleteEval} loading={false}
-        message={`¿Eliminar la evaluación "${deletingEval?.titulo}"? Se eliminarán todas sus preguntas.`} />
-      <DeleteConfirm open={deletePreguntaOpen} onClose={() => setDeletePreguntaOpen(false)} onConfirm={handleDeletePregunta} loading={false}
-        message="¿Eliminar esta pregunta?" />
+          {result.results.length === 0 && result.summary.incorrectCount > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+              Este intento ya tenía el resultado final guardado, pero no conservaba el detalle de preguntas falladas. Desde ahora los nuevos simulacros sí guardarán cada error con su respuesta correcta y explicación.
+            </div>
+          )}
+
+          {result.results.length > 0 && result.results.length < result.summary.questionCount && (
+            <div className="rounded-2xl border border-[#0071e3]/20 bg-[#0071e3]/5 px-4 py-4 text-sm text-[#005bb5] dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10 dark:text-[#6cb6ff]">
+              Se muestran únicamente las preguntas respondidas mal o dejadas sin responder.
+            </div>
+          )}
+
+          {result.results.map((question, index) => (
+            <div key={question.id} className="apple-panel-muted p-5">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-[#0071e3]/10 px-2.5 py-1 text-xs font-semibold text-[#0071e3]">
+                  {index + 1}. {question.categoria_nombre}
+                </span>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    question.isCorrect
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                  }`}
+                >
+                  {question.isCorrect ? "Correcta" : "Incorrecta"}
+                </span>
+              </div>
+
+              <p className="mb-4 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                {question.pregunta}
+              </p>
+
+              {question.imagen_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={question.imagen_url}
+                  alt="Imagen de apoyo de la pregunta"
+                  className="mb-4 h-48 w-full rounded-[1.5rem] object-contain bg-[#f5f5f7] p-4 dark:bg-[#111]"
+                />
+              )}
+
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                {(["a", "b", "c", "d"] as RespuestaCale[]).map((option) => {
+                  const optionText = getOptionText(question, option);
+                  if (!optionText) return null;
+
+                  const isCorrect = question.correctAnswer === option;
+                  const isSelected = question.selectedAnswer === option;
+
+                  return (
+                    <div
+                      key={option}
+                      className={`rounded-2xl border px-3 py-2 text-sm ${
+                        isCorrect
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300"
+                          : isSelected
+                            ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300"
+                            : "border-gray-200 bg-white text-[#1d1d1f] dark:border-gray-800 dark:bg-[#111] dark:text-[#f5f5f7]"
+                      }`}
+                    >
+                      <span className="mr-2 font-semibold">{getAnswerBadge(option)}.</span>
+                      {optionText}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <p className="text-sm text-[#3a3a3c] dark:text-[#d2d2d7]">
+                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tu respuesta:</span>{" "}
+                  {question.selectedAnswer ? getAnswerBadge(question.selectedAnswer) : "Sin respuesta"}
+                </p>
+                <p className="text-sm text-[#3a3a3c] dark:text-[#d2d2d7]">
+                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Respuesta correcta:</span>{" "}
+                  {question.correctAnswer ? getAnswerBadge(question.correctAnswer) : "No disponible"}
+                </p>
+                <p className="text-sm text-[#3a3a3c] dark:text-[#d2d2d7]">
+                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Explicación:</span>{" "}
+                  {question.explicacion || "No hay explicación adicional para esta pregunta."}
+                </p>
+                {question.fundamento_legal && (
+                  <p className="text-xs text-[#86868b]">
+                    <span className="font-semibold">Fundamento legal:</span> {question.fundamento_legal}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return <Spinner />;
+}
+
+async function fetchCaleExamReview(examId: string): Promise<PracticeResultPayload | null> {
+  const supabase = createClient();
+  const [examRes, responsesRes] = await Promise.all([
+    supabase.from("examenes").select("*").eq("id", examId).maybeSingle(),
+    supabase
+      .from("respuestas_examen")
+      .select(
+        "pregunta_id, orden_pregunta, respuesta_alumno, respuesta_omitida, es_correcta, categoria_nombre, pregunta_texto, imagen_url, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta, explicacion, fundamento_legal"
+      )
+      .eq("examen_id", examId)
+      .order("orden_pregunta", { ascending: true })
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (examRes.error) throw examRes.error;
+  if (responsesRes.error) throw responsesRes.error;
+
+  if (!examRes.data) return null;
+
+  const review = buildStoredPracticeResult(
+    examRes.data as Examen,
+    (responsesRes.data as StoredPracticeResponse[]) || []
+  );
+
+  return review;
+}
+
+async function fetchMyCaleHistory(): Promise<IntentoCale[]> {
+  const supabase = createClient();
+  const data = await fetchAllSupabaseRows<Examen>((from, to) =>
+    supabase
+      .from("examenes")
+      .select("*")
+      .like("notas", `${CALE_EXAM_NOTES_PREFIX}%`)
+      .order("created_at", { ascending: false })
+      .range(from, to)
+      .then(({ data: rows, error }) => ({
+        data: (rows as Examen[]) ?? [],
+        error,
+      }))
+  );
+
+  return ((data as Examen[]) || [])
+    .map((exam): IntentoCale | null => {
+      const meta = parseCaleExamNotes(exam.notas);
+      if (!meta) return null;
+
+      return {
+        ...exam,
+        alumno_nombre: "",
+        meta,
+      };
+    })
+    .filter(isIntentoCale);
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-[1.75rem] bg-white p-4 shadow-sm dark:bg-[#1d1d1f]">
+      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-2xl ${tone}`}>
+        {icon}
+      </div>
+      <p className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{value}</p>
+      <p className="text-xs text-[#86868b]">{label}</p>
     </div>
   );
 }
 
-// ─── Spinner ─────────────────────────────────────────────────────────────────
-function Spinner() {
+function InfoPill({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-center h-40">
-      <div className="w-6 h-6 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+    <div className="rounded-[1.5rem] bg-white/80 px-4 py-3 dark:bg-[#0a0a0a]">
+      <p className="text-xs uppercase tracking-[0.18em] text-[#86868b]">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{value}</p>
+    </div>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="apple-panel-muted p-10 text-center">
+      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0071e3]/10">
+        {icon}
+      </div>
+      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{title}</p>
+      <p className="mx-auto mt-2 max-w-xl text-sm text-[#86868b]">{description}</p>
+    </div>
+  );
+}
+
+function ErrorState({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+      {message}
+    </div>
+  );
+}
+
+function Spinner({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={`flex items-center justify-center ${compact ? "h-20" : "h-40"}`}>
+      <div className="h-7 w-7 animate-spin rounded-full border-2 border-[#0071e3] border-t-transparent" />
     </div>
   );
 }

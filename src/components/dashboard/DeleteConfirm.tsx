@@ -35,6 +35,8 @@ interface DeleteConfirmProps {
   message?: string;
   /** Contenido rico (JSX) que reemplaza a message si se provee */
   description?: React.ReactNode;
+  /** Mensaje de error para mostrar si la eliminación falla */
+  error?: string;
 }
 
 export default function DeleteConfirm({
@@ -45,9 +47,17 @@ export default function DeleteConfirm({
   title = "Eliminar registro",
   message = "¿Estás seguro de que quieres eliminar este registro? Esta acción no se puede deshacer.",
   description,
+  error,
 }: DeleteConfirmProps) {
   return (
     <Modal open={open} onClose={onClose} title={title} maxWidth="max-w-sm">
+      {/* Mensajes de error si la acción falla */}
+      {error && (
+        <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
       {/* Mensaje de advertencia */}
       <div className="text-sm text-[#86868b] mb-6">
         {description ?? <p>{message}</p>}

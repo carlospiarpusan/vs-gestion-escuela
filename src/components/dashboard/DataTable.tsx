@@ -36,8 +36,9 @@
 
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
-import { Search, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Search, ChevronLeft, ChevronRight, Pencil, Trash2, X } from "lucide-react";
+import TableScrollArea from "@/components/dashboard/TableScrollArea";
 
 // --- Tipos ---
 
@@ -68,14 +69,13 @@ interface DataTableProps<T> {
   totalCount?: number;
   /** Callback al cambiar de página (requerido en server-side) */
   onPageChange?: (page: number) => void;
-  /** Callback al cambiar búsqueda con debounce (requerido en server-side) */
+  /** Callback al cambiar búsqueda confirmada (requerido en server-side) */
   onSearchChange?: (term: string) => void;
   /** Página actual controlada externamente (server-side) */
   currentPage?: number;
+  /** Valor de búsqueda controlado externamente (opcional) */
+  searchTerm?: string;
 }
-
-/** Milisegundos de debounce para búsqueda server-side */
-const SEARCH_DEBOUNCE_MS = 400;
 
 export default function DataTable<T extends { id: string | number }>({
   columns,
@@ -92,10 +92,11 @@ export default function DataTable<T extends { id: string | number }>({
   onPageChange,
   onSearchChange,
   currentPage: externalPage,
+  searchTerm: externalSearchTerm,
 }: DataTableProps<T>) {
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState(externalSearchTerm ?? "");
+  const [appliedSearch, setAppliedSearch] = useState((externalSearchTerm ?? "").trim());
   const [page, setPage] = useState(0);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // En modo server-side, la página viene del padre
   const activePage = serverSide && externalPage != null ? externalPage : page;
@@ -103,15 +104,15 @@ export default function DataTable<T extends { id: string | number }>({
   // --- Client-side: filtrar y paginar en memoria ---
   const filtered = useMemo(() => {
     if (serverSide) return data; // en server-side, data ya viene filtrada
-    if (!search) return data;
-    const term = search.toLowerCase();
+    if (!appliedSearch) return data;
+    const term = appliedSearch.toLowerCase();
     return data.filter((row) =>
       searchKeys.some((key) => {
         const val = row[key];
         return val != null && String(val).toLowerCase().includes(term);
       })
     );
-  }, [data, search, searchKeys, serverSide]);
+  }, [appliedSearch, data, searchKeys, serverSide]);
 
   const totalItems = serverSide ? totalCount : filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -122,26 +123,33 @@ export default function DataTable<T extends { id: string | number }>({
     ? data
     : filtered.slice(safePage * pageSize, (safePage + 1) * pageSize);
 
-  /** Búsqueda: client-side inmediata, server-side con debounce */
-  const handleSearch = (val: string) => {
-    setSearch(val);
+  /** Confirma la búsqueda actual y la aplica a la tabla */
+  const applySearch = (term = searchInput) => {
+    const normalizedTerm = term.trim();
+    setAppliedSearch(normalizedTerm);
 
     if (serverSide) {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        onSearchChange?.(val);
-      }, SEARCH_DEBOUNCE_MS);
-    } else {
-      setPage(0);
+      onSearchChange?.(normalizedTerm);
+      return;
+    }
+
+    setPage(0);
+  };
+
+  /** Actualiza el texto del input sin disparar consultas prematuras */
+  const handleSearchInputChange = (val: string) => {
+    setSearchInput(val);
+
+    if (val === "") {
+      applySearch("");
     }
   };
 
-  // Limpiar debounce al desmontar
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, []);
+  /** Limpia el buscador y restablece la tabla */
+  const clearSearch = () => {
+    setSearchInput("");
+    applySearch("");
+  };
 
   /** Cambiar de página */
   const goToPage = (newPage: number) => {
@@ -159,7 +167,7 @@ export default function DataTable<T extends { id: string | number }>({
         <div className="relative mb-5">
           <div className="h-10 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
         </div>
-        <div className="apple-table-shell overflow-x-auto">
+        <TableScrollArea>
           <table className="w-full min-w-max text-sm">
             <thead>
               <tr className="border-b border-gray-200/50 dark:border-gray-800/50">
@@ -195,29 +203,69 @@ export default function DataTable<T extends { id: string | number }>({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScrollArea>
       </div>
     );
   }
 
   return (
     <div>
-      <div className="relative mb-5">
-        <Search
-          size={16}
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-[#86868b]"
-        />
-        <input
-          type="text"
-          placeholder={searchPlaceholder}
-          value={search}
-          onChange={(e) => handleSearch(e.target.value)}
-          aria-label={searchPlaceholder}
-          className="apple-input pl-11 pr-4"
-        />
+      <div className="mb-5">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="relative flex-1">
+            <Search
+              size={16}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-[#86868b]"
+            />
+            <input
+              type="text"
+              placeholder={searchPlaceholder}
+              value={searchInput}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  applySearch();
+                }
+
+                if (e.key === "Escape" && searchInput) {
+                  e.preventDefault();
+                  clearSearch();
+                }
+              }}
+              aria-label={searchPlaceholder}
+              className="apple-input pl-11 pr-12"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[#86868b] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                aria-label="Limpiar búsqueda"
+                title="Limpiar"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => applySearch()}
+            className="apple-button-secondary min-h-[46px] px-5 text-sm font-medium"
+          >
+            Buscar
+          </button>
+        </div>
+
+        {searchInput !== appliedSearch && (
+          <p className="mt-2 px-1 text-xs text-[#86868b]">
+            Presiona Enter o usa el botón Buscar para aplicar el filtro.
+          </p>
+        )}
       </div>
 
-      <div className="apple-table-shell overflow-x-auto">
+      <TableScrollArea>
         <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="border-b border-gray-200/50 dark:border-gray-800/50">
@@ -248,7 +296,7 @@ export default function DataTable<T extends { id: string | number }>({
                   colSpan={columns.length + (onEdit || onDelete || extraActions ? 1 : 0)}
                   className="px-5 py-12 text-center text-[#86868b]"
                 >
-                  {search ? "Sin resultados" : "No hay registros"}
+                  {appliedSearch ? "Sin resultados" : "No hay registros"}
                 </td>
               </tr>
             ) : (
@@ -299,7 +347,7 @@ export default function DataTable<T extends { id: string | number }>({
             )}
           </tbody>
         </table>
-      </div>
+      </TableScrollArea>
 
       {/* ========== Paginación ========== */}
       {totalPages > 1 && (

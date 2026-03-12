@@ -20,6 +20,7 @@ export default function Navbar() {
     { name: "Características", href: "#features" },
     { name: "Cómo funciona", href: "#how-it-works" },
     { name: "Precios", href: "#pricing" },
+    { name: "Soporte", href: "#contacto" },
   ];
 
   return (
@@ -75,17 +76,17 @@ export default function Navbar() {
                 href="/registro"
                 className="apple-button-primary text-[12px] font-medium tracking-[0.02em]"
               >
-                Prueba gratis
+                Crear cuenta
               </Link>
             </div>
 
             {/* Mobile: login button + hamburger */}
             <div className="flex md:hidden items-center gap-3 z-50">
               <Link
-                href="/login"
+                href="/registro"
                 className="apple-button-primary px-3.5 py-2 text-[12px] font-medium"
               >
-                Iniciar Sesión
+                Crear cuenta
               </Link>
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
@@ -165,7 +166,7 @@ export default function Navbar() {
                   className="apple-button-primary justify-center text-sm font-medium"
                   onClick={() => setMenuOpen(false)}
                 >
-                  Prueba gratis
+                  Crear cuenta
                 </Link>
               </div>
             </div>

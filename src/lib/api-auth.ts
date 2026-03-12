@@ -1,7 +1,9 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import type { Perfil, Rol } from "@/types/database";
+import type { ZodSchema } from "zod";
 
 type MinimalPerfil = Pick<Perfil, "id" | "rol" | "escuela_id" | "sede_id" | "activo">;
 
@@ -26,6 +28,19 @@ async function buildServerClient() {
       },
     }
   );
+}
+
+export function buildSupabaseAdminClient() {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  if (!serviceRoleKey || !supabaseUrl) {
+    throw new Error("Configuración del servidor incompleta.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
 export async function authorizeApiRequest(allowedRoles: Rol[]): Promise<AuthorizationResult> {
@@ -76,6 +91,33 @@ export function normalizeEmail(value: unknown): string | null {
   return normalized ? normalized.toLowerCase() : null;
 }
 
+const RESERVED_AUTH_EMAIL_SUFFIXES = [
+  "@alumno.local",
+  "@instructor.local",
+  "@administrativo.local",
+];
+
+export function ensureNonReservedAuthEmail(email: string | null): string | null {
+  if (!email) return null;
+  const normalized = email.toLowerCase();
+  const usesReservedDomain = RESERVED_AUTH_EMAIL_SUFFIXES.some((suffix) =>
+    normalized.endsWith(suffix)
+  );
+
+  return usesReservedDomain
+    ? "Ese dominio de correo está reservado para credenciales internas."
+    : null;
+}
+
+export function isAuthUserAlreadyRegisteredError(message: string | null | undefined) {
+  const normalized = message?.toLowerCase() ?? "";
+  return (
+    normalized.includes("already registered") ||
+    normalized.includes("already been registered") ||
+    normalized.includes("already exists")
+  );
+}
+
 export function normalizeCedula(value: unknown): string | null {
   const normalized = normalizeText(value);
   if (!normalized) return null;
@@ -93,6 +135,35 @@ export function ensureSedeScope(perfil: MinimalPerfil, sedeId: string): string |
   if (perfil.rol === "super_admin" || perfil.rol === "admin_escuela") return null;
   if (!perfil.sede_id || perfil.sede_id !== sedeId) return "No puedes operar sobre otra sede.";
   return null;
+}
+
+export async function parseJsonBody<T>(
+  request: Request,
+  schema: ZodSchema<T>
+): Promise<
+  | { ok: true; data: T }
+  | { ok: false; response: NextResponse }
+> {
+  let rawBody: unknown;
+
+  try {
+    rawBody = await request.json();
+  } catch {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "JSON inválido." }, { status: 400 }),
+    };
+  }
+
+  const parsed = schema.safeParse(rawBody);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Datos inválidos." }, { status: 400 }),
+    };
+  }
+
+  return { ok: true, data: parsed.data };
 }
 
 export async function findAuthUserByEmail(

@@ -13,6 +13,7 @@ CREATE POLICY "Instructor: crea mantenimiento"
 
 -- 2. SELECT: allow instructor to see all bitacora from their school
 DROP POLICY IF EXISTS "Instructor: ve mantenimiento de sus vehiculos" ON mantenimiento_vehiculos;
+DROP POLICY IF EXISTS "Instructor: ve mantenimiento de su escuela" ON mantenimiento_vehiculos;
 CREATE POLICY "Instructor: ve mantenimiento de su escuela"
   ON mantenimiento_vehiculos FOR SELECT
   USING (

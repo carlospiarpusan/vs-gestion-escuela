@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { useDraftForm } from "@/hooks/useDraftForm";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
+import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import type {
   Vehiculo, TipoVehiculo, EstadoVehiculo,
   MantenimientoVehiculo, TipoMantenimiento, Instructor,
@@ -43,6 +46,8 @@ function safeFloat(v: string, fb = 0) { const n = parseFloat(v); return isNaN(n)
 function safeInt(v: string) { const n = parseInt(v, 10); return isNaN(n) ? null : n; }
 function safeFloatOrNull(v: string) { const n = parseFloat(v); return isNaN(n) ? null : n; }
 
+const PAGE_SIZE = 50;
+
 const tipoMantLabels: Record<TipoMantenimiento, string> = {
   gasolina: "Tanqueo",
   cambio_aceite: "Cambio de aceite",
@@ -65,6 +70,14 @@ type VehiculoConBitacora = Vehiculo & {
   ultimo_registro_descripcion: string | null;
   ultimo_registro_monto: number | null;
   ultimo_registro_km: number | null;
+};
+type VehiculosListResponse = {
+  totalCount: number;
+  rows: VehiculoConBitacora[];
+};
+type MantenimientoListResponse = {
+  totalCount: number;
+  rows: MantenimientoRow[];
 };
 
 function formatTipoMantenimiento(tipo: string) {
@@ -98,29 +111,57 @@ export default function VehiculosPage() {
 
   // ── Vehículos state ──────────────────────────────────
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  const [vehiculosTabla, setVehiculosTabla] = useState<VehiculoConBitacora[]>([]);
+  const [vehiculosTotalCount, setVehiculosTotalCount] = useState(0);
+  const [vehiculosCurrentPage, setVehiculosCurrentPage] = useState(0);
+  const [vehiculosSearchTerm, setVehiculosSearchTerm] = useState("");
   const [loadingV, setLoadingV] = useState(true);
+  const [tableErrorV, setTableErrorV] = useState("");
   const [modalVOpen, setModalVOpen] = useState(false);
   const [editingV, setEditingV] = useState<Vehiculo | null>(null);
   const [deletingV, setDeletingV] = useState<Vehiculo | null>(null);
   const [deleteVOpen, setDeleteVOpen] = useState(false);
   const [savingV, setSavingV] = useState(false);
-  const [formV, setFormV] = useState(emptyVForm);
   const [errorV, setErrorV] = useState("");
+  const vehiculosFetchIdRef = useRef(0);
+  const {
+    value: formV,
+    setValue: setFormV,
+    restoreDraft: restoreVehiculoDraft,
+    clearDraft: clearVehiculoDraft,
+  } = useDraftForm("dashboard:vehiculos:form", emptyVForm, {
+    persist: modalVOpen && !editingV,
+  });
 
   // ── Mantenimiento state ──────────────────────────────
   const [mantenimientos, setMantenimientos] = useState<MantenimientoRow[]>([]);
   const [instructores, setInstructores] = useState<Instructor[]>([]);
+  const [mantenimientosTotalCount, setMantenimientosTotalCount] = useState(0);
+  const [mantenimientosCurrentPage, setMantenimientosCurrentPage] = useState(0);
+  const [mantenimientosSearchTerm, setMantenimientosSearchTerm] = useState("");
   const [loadingM, setLoadingM] = useState(true);
+  const [tableErrorM, setTableErrorM] = useState("");
   const [modalMOpen, setModalMOpen] = useState(false);
   const [editingM, setEditingM] = useState<MantenimientoVehiculo | null>(null);
   const [deletingM, setDeletingM] = useState<MantenimientoVehiculo | null>(null);
   const [deleteMOpen, setDeleteMOpen] = useState(false);
   const [savingM, setSavingM] = useState(false);
-  const [formM, setFormM] = useState(emptyMForm);
   const [errorM, setErrorM] = useState("");
   const [currentInstructorId, setCurrentInstructorId] = useState<string | null>(null);
   const [historialOpen, setHistorialOpen] = useState(false);
   const [historialVehiculoId, setHistorialVehiculoId] = useState<string | null>(null);
+  const [historialRegistros, setHistorialRegistros] = useState<MantenimientoRow[]>([]);
+  const [historialLoading, setHistorialLoading] = useState(false);
+  const [historialError, setHistorialError] = useState("");
+  const mantenimientoFetchIdRef = useRef(0);
+  const {
+    value: formM,
+    setValue: setFormM,
+    restoreDraft: restoreMantenimientoDraft,
+    clearDraft: clearMantenimientoDraft,
+  } = useDraftForm("dashboard:vehiculos:mantenimiento-form", emptyMForm, {
+    persist: modalMOpen && !editingM,
+  });
 
   useEffect(() => {
     if (searchParams.get("tab") === "bitacora") {
@@ -128,64 +169,158 @@ export default function VehiculosPage() {
     }
   }, [searchParams]);
 
-  // ── Fetch vehiculos ──────────────────────────────────
-  const fetchVehiculos = useCallback(async () => {
+  const loadCatalogs = useCallback(async () => {
     if (!perfil?.escuela_id) return;
+
     const supabase = createClient();
-    const { data } = await supabase
-      .from("vehiculos")
-      .select("*")
-      .eq("escuela_id", perfil.escuela_id)
-      .order("created_at", { ascending: false });
-    setVehiculos((data as Vehiculo[]) || []);
-    setLoadingV(false);
+    const [vehiculosRows, instructoresRows, currentInstructor] = await Promise.all([
+      fetchAllSupabaseRows<Vehiculo>((from, to) =>
+        supabase
+          .from("vehiculos")
+          .select("*")
+          .eq("escuela_id", perfil.escuela_id)
+          .order("created_at", { ascending: false })
+          .range(from, to)
+          .then(({ data, error }) => ({ data: (data as Vehiculo[]) ?? [], error }))
+      ),
+      fetchAllSupabaseRows<InstructorRow>((from, to) =>
+        supabase
+          .from("instructores")
+          .select("id, nombre, apellidos")
+          .eq("escuela_id", perfil.escuela_id)
+          .order("nombre", { ascending: true })
+          .order("apellidos", { ascending: true })
+          .range(from, to)
+          .then(({ data, error }) => ({ data: (data as InstructorRow[]) ?? [], error }))
+      ),
+      isInstructor
+        ? supabase
+            .from("instructores")
+            .select("id")
+            .eq("user_id", perfil.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+
+    setVehiculos(vehiculosRows);
+    setInstructores(instructoresRows as Instructor[]);
+    if (isInstructor) {
+      setCurrentInstructorId(currentInstructor.data?.id ?? null);
+    }
+  }, [isInstructor, perfil?.escuela_id, perfil?.id]);
+
+  const fetchVehiculosTable = useCallback(async (page = 0, search = "") => {
+    if (!perfil?.escuela_id) return;
+
+    const fetchId = ++vehiculosFetchIdRef.current;
+    setLoadingV(true);
+    setTableErrorV("");
+
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+      });
+      if (search.trim()) params.set("q", search.trim());
+
+      const payload = await fetchJsonWithRetry<VehiculosListResponse>(`/api/vehiculos?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (fetchId !== vehiculosFetchIdRef.current) return;
+
+      setVehiculosTabla(payload.rows || []);
+      setVehiculosTotalCount(payload.totalCount || 0);
+    } catch (fetchError: unknown) {
+      if (fetchId !== vehiculosFetchIdRef.current) return;
+      setVehiculosTabla([]);
+      setVehiculosTotalCount(0);
+      setTableErrorV(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar los vehículos.");
+    } finally {
+      if (fetchId === vehiculosFetchIdRef.current) {
+        setLoadingV(false);
+      }
+    }
   }, [perfil?.escuela_id]);
 
-  // ── Fetch mantenimiento ──────────────────────────────
-  const fetchMantenimiento = useCallback(async () => {
+  const fetchBitacoraTable = useCallback(async (page = 0, search = "") => {
     if (!perfil?.escuela_id) return;
-    const supabase = createClient();
-    let instructorId = currentInstructorId;
-    if (isInstructor && !instructorId) {
-      const { data: currentInstructor } = await supabase
-        .from("instructores")
-        .select("id")
-        .eq("user_id", perfil.id)
-        .maybeSingle();
-      instructorId = currentInstructor?.id ?? null;
-      setCurrentInstructorId(instructorId);
+
+    const fetchId = ++mantenimientoFetchIdRef.current;
+    setLoadingM(true);
+    setTableErrorM("");
+
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+      });
+      if (search.trim()) params.set("q", search.trim());
+
+      const payload = await fetchJsonWithRetry<MantenimientoListResponse>(`/api/mantenimiento?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (fetchId !== mantenimientoFetchIdRef.current) return;
+
+      setMantenimientos(payload.rows || []);
+      setMantenimientosTotalCount(payload.totalCount || 0);
+    } catch (fetchError: unknown) {
+      if (fetchId !== mantenimientoFetchIdRef.current) return;
+      setMantenimientos([]);
+      setMantenimientosTotalCount(0);
+      setTableErrorM(fetchError instanceof Error ? fetchError.message : "No se pudo cargar la bitácora.");
+    } finally {
+      if (fetchId === mantenimientoFetchIdRef.current) {
+        setLoadingM(false);
+      }
     }
+  }, [perfil?.escuela_id]);
 
-    let mantenimientoQuery = supabase
-      .from("mantenimiento_vehiculos")
-      .select("id, vehiculo_id, instructor_id, tipo, descripcion, monto, kilometraje_actual, litros, precio_por_litro, proveedor, numero_factura, fecha, notas, created_at")
-      .eq("escuela_id", perfil.escuela_id)
-      .order("fecha", { ascending: false });
+  const fetchHistorialVehiculo = useCallback(async (vehiculoId: string) => {
+    setHistorialLoading(true);
+    setHistorialError("");
 
-    const [mantRes, vehiculosRes, instructoresRes] = await Promise.all([
-      mantenimientoQuery,
-      supabase.from("vehiculos").select("id, marca, modelo, matricula").eq("escuela_id", perfil.escuela_id),
-      supabase.from("instructores").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id),
-    ]);
-    const vMap = new Map((vehiculosRes.data || []).map((v: VehiculoRow) => [v.id, `${v.marca} ${v.modelo} (${v.matricula})`]));
-    const iMap = new Map((instructoresRes.data || []).map((i: InstructorRow) => [i.id, `${i.nombre} ${i.apellidos}`]));
-    const mant = ((mantRes.data as MantenimientoVehiculo[]) || []).map((m) => ({
-      ...m,
-      vehiculo_nombre: vMap.get(m.vehiculo_id) || "—",
-      instructor_nombre: m.instructor_id ? iMap.get(m.instructor_id) || "—" : "—",
-    }));
-    setMantenimientos(mant);
-    setInstructores((instructoresRes.data as Instructor[]) || []);
-    setLoadingM(false);
-  }, [currentInstructorId, isInstructor, perfil?.escuela_id, perfil?.id]);
+    try {
+      const params = new URLSearchParams({
+        vehiculo_id: vehiculoId,
+        page: "0",
+        pageSize: "200",
+      });
+      const payload = await fetchJsonWithRetry<MantenimientoListResponse>(`/api/mantenimiento?${params.toString()}`, {
+        cache: "no-store",
+      });
+      setHistorialRegistros(payload.rows || []);
+    } catch (fetchError: unknown) {
+      setHistorialRegistros([]);
+      setHistorialError(fetchError instanceof Error ? fetchError.message : "No se pudo cargar el historial del vehículo.");
+    } finally {
+      setHistorialLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (perfil) { fetchVehiculos(); fetchMantenimiento(); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perfil?.id]);
+    if (!perfil?.escuela_id) return;
+    void loadCatalogs();
+  }, [loadCatalogs, perfil?.escuela_id]);
+
+  useEffect(() => {
+    if (!perfil?.escuela_id || tab !== "vehiculos") return;
+    void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
+  }, [fetchVehiculosTable, perfil?.escuela_id, tab, vehiculosCurrentPage, vehiculosSearchTerm]);
+
+  useEffect(() => {
+    if (!perfil?.escuela_id || tab !== "bitacora") return;
+    void fetchBitacoraTable(mantenimientosCurrentPage, mantenimientosSearchTerm);
+  }, [fetchBitacoraTable, perfil?.escuela_id, tab, mantenimientosCurrentPage, mantenimientosSearchTerm]);
 
   // ── Vehiculos CRUD ───────────────────────────────────
-  const openCreateV = () => { setEditingV(null); setFormV(emptyVForm); setErrorV(""); setModalVOpen(true); };
+  const openCreateV = () => {
+    setEditingV(null);
+    restoreVehiculoDraft(emptyVForm);
+    setErrorV("");
+    setModalVOpen(true);
+  };
   const openEditV = (row: Vehiculo) => {
     setEditingV(row);
     setFormV({ marca: row.marca, modelo: row.modelo, matricula: row.matricula, tipo: row.tipo, anio: row.anio?.toString() || "", fecha_itv: row.fecha_itv || "", seguro_vencimiento: row.seguro_vencimiento || "", estado: row.estado, kilometraje: row.kilometraje.toString(), notas: row.notas || "" });
@@ -205,19 +340,29 @@ export default function VehiculosPage() {
         kilometraje: parseInt(formV.kilometraje) || 0, notas: formV.notas || null,
       };
       if (editingV) {
-        const { error: err } = await supabase.from("vehiculos").update(payload).eq("id", editingV.id);
-        if (err) { setErrorV(err.message); setSavingV(false); return; }
+        await runSupabaseMutationWithRetry(() =>
+          supabase.from("vehiculos").update(payload).eq("id", editingV.id)
+        );
       } else {
-        if (!perfil) return;
+        if (!perfil) {
+          setErrorV("No se encontró el perfil activo para guardar.");
+          setSavingV(false);
+          return;
+        }
         let sedeId = perfil.sede_id;
         if (!sedeId && perfil.escuela_id) {
           const { data: s } = await supabase.from("sedes").select("id").eq("escuela_id", perfil.escuela_id).order("es_principal", { ascending: false }).limit(1).single();
           sedeId = s?.id || null;
         }
-        const { error: err } = await supabase.from("vehiculos").insert({ ...payload, escuela_id: perfil.escuela_id, sede_id: sedeId, user_id: perfil.id });
-        if (err) { setErrorV(err.message); setSavingV(false); return; }
+        await runSupabaseMutationWithRetry(() =>
+          supabase.from("vehiculos").insert({ ...payload, escuela_id: perfil.escuela_id, sede_id: sedeId, user_id: perfil.id })
+        );
       }
-      setSavingV(false); setModalVOpen(false); fetchVehiculos(); fetchMantenimiento();
+      clearVehiculoDraft(emptyVForm);
+      setSavingV(false);
+      setModalVOpen(false);
+      await loadCatalogs();
+      void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
     } catch (e: unknown) { setErrorV(e instanceof Error ? e.message : "Error al guardar"); setSavingV(false); }
   };
 
@@ -227,14 +372,18 @@ export default function VehiculosPage() {
     try {
       const { error: err } = await createClient().from("vehiculos").delete().eq("id", deletingV.id);
       if (err) { setErrorV(err.message); setSavingV(false); return; }
-      setSavingV(false); setDeleteVOpen(false); setDeletingV(null); fetchVehiculos(); fetchMantenimiento();
+      setSavingV(false);
+      setDeleteVOpen(false);
+      setDeletingV(null);
+      await loadCatalogs();
+      void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
     } catch (e: unknown) { setErrorV(e instanceof Error ? e.message : "Error al eliminar"); setSavingV(false); }
   };
 
   // ── Mantenimiento CRUD ───────────────────────────────
   const openCreateM = () => {
     setEditingM(null);
-    setFormM({ ...emptyMForm, instructor_id: isInstructor ? currentInstructorId ?? "" : "" });
+    restoreMantenimientoDraft({ ...emptyMForm, instructor_id: isInstructor ? currentInstructorId ?? "" : "" });
     setErrorM("");
     setModalMOpen(true);
   };
@@ -287,20 +436,34 @@ export default function VehiculosPage() {
         fecha: formM.fecha, notas: formM.notas || null,
       };
       if (editingM) {
-        const { error: err } = await supabase.from("mantenimiento_vehiculos").update(payload).eq("id", editingM.id);
-        if (err) { setErrorM(err.message); setSavingM(false); return; }
+        await runSupabaseMutationWithRetry(() =>
+          supabase.from("mantenimiento_vehiculos").update(payload).eq("id", editingM.id)
+        );
       } else {
-        if (!perfil) return;
+        if (!perfil) {
+          setErrorM("No se encontró el perfil activo para guardar.");
+          setSavingM(false);
+          return;
+        }
         let sedeId = perfil.sede_id;
         if (!sedeId && perfil.escuela_id) {
           const { data: s } = await supabase.from("sedes").select("id").eq("escuela_id", perfil.escuela_id).order("es_principal", { ascending: false }).limit(1).single();
           sedeId = s?.id || null;
         }
-        const { error: err } = await supabase.from("mantenimiento_vehiculos").insert({ ...payload, escuela_id: perfil.escuela_id, sede_id: sedeId, user_id: perfil.id });
-        if (err) { setErrorM(err.message); setSavingM(false); return; }
+        await runSupabaseMutationWithRetry(() =>
+          supabase.from("mantenimiento_vehiculos").insert({ ...payload, escuela_id: perfil.escuela_id, sede_id: sedeId, user_id: perfil.id })
+        );
       }
       await syncVehiculoKilometraje(formM.vehiculo_id, payload.kilometraje_actual);
-      setSavingM(false); setModalMOpen(false); fetchVehiculos(); fetchMantenimiento();
+      clearMantenimientoDraft({ ...emptyMForm, instructor_id: isInstructor ? currentInstructorId ?? "" : "" });
+      setSavingM(false);
+      setModalMOpen(false);
+      await loadCatalogs();
+      void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
+      void fetchBitacoraTable(mantenimientosCurrentPage, mantenimientosSearchTerm);
+      if (historialOpen && historialVehiculoId === formM.vehiculo_id) {
+        void fetchHistorialVehiculo(formM.vehiculo_id);
+      }
     } catch (e: unknown) { setErrorM(e instanceof Error ? e.message : "Error al guardar"); setSavingM(false); }
   };
 
@@ -310,7 +473,15 @@ export default function VehiculosPage() {
     try {
       const { error: err } = await createClient().from("mantenimiento_vehiculos").delete().eq("id", deletingM.id);
       if (err) { setErrorM(err.message); setSavingM(false); return; }
-      setSavingM(false); setDeleteMOpen(false); setDeletingM(null); fetchMantenimiento();
+      setSavingM(false);
+      setDeleteMOpen(false);
+      setDeletingM(null);
+      await loadCatalogs();
+      void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
+      void fetchBitacoraTable(mantenimientosCurrentPage, mantenimientosSearchTerm);
+      if (historialOpen && historialVehiculoId === deletingM.vehiculo_id) {
+        void fetchHistorialVehiculo(deletingM.vehiculo_id);
+      }
     } catch (e: unknown) { setErrorM(e instanceof Error ? e.message : "Error al eliminar"); setSavingM(false); }
   };
 
@@ -333,41 +504,11 @@ export default function VehiculosPage() {
     otros: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
   };
 
-  const vehiculosConBitacora = useMemo<VehiculoConBitacora[]>(() => {
-    const mantenimientosPorVehiculo = new Map<string, MantenimientoRow[]>();
-
-    for (const mantenimiento of mantenimientos) {
-      const historial = mantenimientosPorVehiculo.get(mantenimiento.vehiculo_id) || [];
-      historial.push(mantenimiento);
-      mantenimientosPorVehiculo.set(mantenimiento.vehiculo_id, historial);
-    }
-
-    return vehiculos.map((vehiculo) => {
-      const historial = mantenimientosPorVehiculo.get(vehiculo.id) || [];
-      const ultimo = historial[0];
-
-      return {
-        ...vehiculo,
-        registros_bitacora: historial.length,
-        ultimo_registro_fecha: ultimo?.fecha || null,
-        ultimo_registro_tipo: ultimo?.tipo || null,
-        ultimo_registro_descripcion: ultimo?.descripcion || null,
-        ultimo_registro_monto: ultimo?.monto ?? null,
-        ultimo_registro_km: ultimo?.kilometraje_actual ?? null,
-      };
-    });
-  }, [vehiculos, mantenimientos]);
-
   const historialVehiculo = useMemo(
-    () => vehiculosConBitacora.find((vehiculo) => vehiculo.id === historialVehiculoId) || null,
-    [historialVehiculoId, vehiculosConBitacora]
-  );
-
-  const historialRegistros = useMemo(
-    () => (historialVehiculoId
-      ? mantenimientos.filter((registro) => registro.vehiculo_id === historialVehiculoId)
-      : []),
-    [historialVehiculoId, mantenimientos]
+    () => vehiculos.find((vehiculo) => vehiculo.id === historialVehiculoId)
+      || vehiculosTabla.find((vehiculo) => vehiculo.id === historialVehiculoId)
+      || null,
+    [historialVehiculoId, vehiculos, vehiculosTabla]
   );
 
   const colsV = [
@@ -454,7 +595,7 @@ export default function VehiculosPage() {
         <div className="apple-panel p-4 sm:p-6">
           <DataTable
             columns={colsV}
-            data={vehiculosConBitacora}
+            data={vehiculosTabla}
             loading={loadingV}
             searchPlaceholder="Buscar por marca o matrícula..."
             searchKeys={["marca", "modelo", "matricula"]}
@@ -595,11 +736,11 @@ export default function VehiculosPage() {
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">Historial</p>
                 <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  {historialVehiculo.registros_bitacora} registro{historialVehiculo.registros_bitacora === 1 ? "" : "s"}
+                  {(historialVehiculo as VehiculoConBitacora).registros_bitacora || 0} registro{(historialVehiculo as VehiculoConBitacora).registros_bitacora === 1 ? "" : "s"}
                 </p>
                 <p className="text-xs text-[#86868b]">
-                  {historialVehiculo.ultimo_registro_fecha
-                    ? `Último: ${formatFecha(historialVehiculo.ultimo_registro_fecha)}`
+                  {(historialVehiculo as VehiculoConBitacora).ultimo_registro_fecha
+                    ? `Último: ${formatFecha((historialVehiculo as VehiculoConBitacora).ultimo_registro_fecha)}`
                     : "Sin movimientos todavía."}
                 </p>
               </div>
@@ -662,8 +803,8 @@ export default function VehiculosPage() {
         )}
       </Modal>
 
-      <DeleteConfirm open={deleteVOpen} onClose={() => setDeleteVOpen(false)} onConfirm={handleDeleteV} loading={savingV} message={`¿Eliminar ${deletingV?.marca} ${deletingV?.modelo} (${deletingV?.matricula})?`} />
-      <DeleteConfirm open={deleteMOpen} onClose={() => setDeleteMOpen(false)} onConfirm={handleDeleteM} loading={savingM} message="¿Eliminar este registro de bitácora?" />
+      <DeleteConfirm open={deleteVOpen} onClose={() => setDeleteVOpen(false)} onConfirm={handleDeleteV} loading={savingV} error={errorV} message={`¿Eliminar ${deletingV?.marca} ${deletingV?.modelo} (${deletingV?.matricula})?`} />
+      <DeleteConfirm open={deleteMOpen} onClose={() => setDeleteMOpen(false)} onConfirm={handleDeleteM} loading={savingM} error={errorM} message="¿Eliminar este registro de bitácora?" />
     </div>
   );
 }

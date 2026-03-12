@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { createClient } = require("@supabase/supabase-js");
+const { normalizeContractNumber } = require("./lib/contract-number");
 
 const DEFAULT_EXCEL_PATH = "/Users/carlos/Documents/Ingresos 2026 Carro.xlsx";
 const ESCUELA_ID = process.env.IMPORT_ESCUELA_ID || "a5320c4a-3bf6-4da5-b365-da17d7001d4f";
@@ -212,7 +213,7 @@ async function main() {
     const fecha = normalizeDateValue(row.fecha);
     const categoria = normalizeText(row.categoria);
     const numeroFactura = normalizeStringOrNumber(row.numero_factura);
-    const numeroContrato = normalizeStringOrNumber(row.contrato);
+    const numeroContrato = normalizeContractNumber(normalizeStringOrNumber(row.contrato), [categoria]);
     const valorTotal = Number(row.valor_total || 0);
     const saldo = Number(row.saldo || 0);
     const abonos = Array.isArray(row.abonos) ? row.abonos : [];

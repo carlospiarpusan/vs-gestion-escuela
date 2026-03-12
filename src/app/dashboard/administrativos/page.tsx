@@ -1,16 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { useDraftForm } from "@/hooks/useDraftForm";
+import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
+import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
 import type { Perfil, Sede } from "@/types/database";
-import { Plus, UserCog, Power, Pencil } from "lucide-react";
+import { Plus, Power } from "lucide-react";
 
 interface AdminRow extends Perfil {
   sede_nombre?: string;
 }
+
+type AdministrativosListResponse = {
+  totalCount: number;
+  rows: AdminRow[];
+};
+
+const PAGE_SIZE = 10;
 
 const emptyForm = {
   nombre: "",
@@ -26,74 +36,104 @@ export default function AdministrativosPage() {
   const { perfil } = useAuth();
 
   const [data, setData] = useState<AdminRow[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tableError, setTableError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState<AdminRow | null>(null);
   const [deleting, setDeleting] = useState<AdminRow | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const fetchIdRef = useRef(0);
+  const {
+    value: form,
+    setValue: setForm,
+    restoreDraft,
+    clearDraft,
+  } = useDraftForm("dashboard:administrativos:form", emptyForm, {
+    persist: modalOpen && !editing,
+  });
 
   const canEdit =
     perfil?.rol === "super_admin" ||
     perfil?.rol === "admin_escuela" ||
     perfil?.rol === "admin_sede";
 
+  const fetchAdministrativos = useCallback(async (page = 0, search = "") => {
+    if (!perfil?.escuela_id) return;
+
+    const fetchId = ++fetchIdRef.current;
+    setLoading(true);
+    setTableError("");
+
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+      });
+
+      if (search.trim()) params.set("q", search.trim());
+
+      const payload = await fetchJsonWithRetry<AdministrativosListResponse>(
+        `/api/administrativos?${params.toString()}`,
+        { cache: "no-store" }
+      );
+
+      if (fetchId !== fetchIdRef.current) return;
+
+      setData(payload.rows || []);
+      setTotalCount(payload.totalCount || 0);
+    } catch (fetchError: unknown) {
+      if (fetchId !== fetchIdRef.current) return;
+      setData([]);
+      setTotalCount(0);
+      setTableError(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar los administrativos.");
+    } finally {
+      if (fetchId === fetchIdRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [perfil?.escuela_id]);
+
   useEffect(() => {
     if (!perfil?.escuela_id) return;
 
     let cancelled = false;
 
-    const loadData = async () => {
+    const loadSedes = async () => {
       const supabase = createClient();
-
-      const [adminsRes, sedesRes] = await Promise.all([
-        supabase
-          .from("perfiles")
-          .select("*")
-          .eq("rol", "administrativo")
-          .eq("escuela_id", perfil.escuela_id)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("sedes")
-          .select("*")
-          .eq("escuela_id", perfil.escuela_id)
-          .eq("estado", "activa")
-          .order("es_principal", { ascending: false }),
-      ]);
+      const { data: sedesData } = await supabase
+        .from("sedes")
+        .select("*")
+        .eq("escuela_id", perfil.escuela_id)
+        .eq("estado", "activa")
+        .order("es_principal", { ascending: false });
 
       if (cancelled) return;
 
-      const sedesData = (sedesRes.data as Sede[]) || [];
-      const sedesMap = new Map(sedesData.map((sede) => [sede.id, sede.nombre]));
-      const rows = ((adminsRes.data as Perfil[]) || []).map((adminPerfil) => ({
-        ...adminPerfil,
-        sede_nombre: adminPerfil.sede_id ? sedesMap.get(adminPerfil.sede_id) ?? "—" : "—",
-      }));
-
-      const filtered =
-        perfil.rol === "admin_sede" && perfil.sede_id
-          ? rows.filter((row) => row.sede_id === perfil.sede_id)
-          : rows;
-
-      setSedes(sedesData);
-      setData(filtered);
-      setLoading(false);
+      setSedes((sedesData as Sede[]) || []);
     };
 
-    void loadData();
+    void loadSedes();
 
     return () => {
       cancelled = true;
     };
-  }, [perfil?.escuela_id, perfil?.rol, perfil?.sede_id, reloadKey]);
+  }, [perfil?.escuela_id]);
+
+  useEffect(() => {
+    if (!perfil?.escuela_id) return;
+    void fetchAdministrativos(currentPage, searchTerm);
+  }, [fetchAdministrativos, perfil?.escuela_id, currentPage, searchTerm, reloadKey]);
 
   const openCreate = () => {
     setEditing(null);
-    setForm({
+    restoreDraft({
       ...emptyForm,
       sede_id: perfil?.rol === "admin_sede" && perfil.sede_id ? perfil.sede_id : "",
     });
@@ -123,59 +163,58 @@ export default function AdministrativosPage() {
     setSaving(true);
     setError("");
 
-    if (editing) {
-      // EDITAR: actualizar directamente en la tabla perfiles
-      const supabase = createClient();
-      const { error: err } = await supabase
-        .from("perfiles")
-        .update({
-          nombre: form.nombre.trim(),
-          sede_id: form.sede_id,
-        })
-        .eq("id", editing.id);
+    try {
+      if (editing) {
+        // EDITAR: actualizar directamente en la tabla perfiles
+        const supabase = createClient();
+        await runSupabaseMutationWithRetry(() =>
+          supabase
+            .from("perfiles")
+            .update({
+              nombre: form.nombre.trim(),
+              sede_id: form.sede_id,
+            })
+            .eq("id", editing.id)
+        );
+      } else {
+        // CREAR: llamar a la API que crea el usuario en Supabase Auth + perfil
+        if (!form.cedula.trim()) {
+          setError("La cédula es obligatoria para crear un administrativo.");
+          setSaving(false);
+          return;
+        }
 
-      if (err) {
-        setError(err.message);
-        setSaving(false);
-        return;
+        await fetchJsonWithRetry("/api/crear-administrativo-auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nombre: form.nombre.trim(),
+            cedula: form.cedula.trim(),
+            email: form.email.trim() || null,
+            escuela_id: perfil.escuela_id,
+            sede_id: form.sede_id,
+          }),
+        });
       }
-    } else {
-      // CREAR: llamar a la API que crea el usuario en Supabase Auth + perfil
-      if (!form.cedula.trim()) {
-        setError("La cédula es obligatoria para crear un administrativo.");
-        setSaving(false);
-        return;
-      }
-
-      const res = await fetch("/api/crear-administrativo-auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombre: form.nombre.trim(),
-          cedula: form.cedula.trim(),
-          email: form.email.trim() || null,
-          escuela_id: perfil.escuela_id,
-          sede_id: form.sede_id,
-        }),
+      clearDraft({
+        ...emptyForm,
+        sede_id: perfil?.rol === "admin_sede" && perfil.sede_id ? perfil.sede_id : "",
       });
-
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error || "Error al crear el administrativo.");
-        setSaving(false);
-        return;
-      }
+      setSaving(false);
+      setModalOpen(false);
+      setReloadKey((value) => value + 1);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error al guardar el administrativo.");
+      setSaving(false);
     }
-
-    setSaving(false);
-    setModalOpen(false);
-    setReloadKey((value) => value + 1);
   };
 
   // Activar / desactivar
   const toggleActivo = async (row: AdminRow) => {
     const supabase = createClient();
-    await supabase.from("perfiles").update({ activo: !row.activo }).eq("id", row.id);
+    await runSupabaseMutationWithRetry(() =>
+      supabase.from("perfiles").update({ activo: !row.activo }).eq("id", row.id)
+    );
     setReloadKey((value) => value + 1);
   };
 
@@ -183,18 +222,88 @@ export default function AdministrativosPage() {
   const handleDelete = async () => {
     if (!deleting) return;
     setSaving(true);
-    const supabase = createClient();
-    await supabase.from("perfiles").delete().eq("id", deleting.id);
-    setSaving(false);
-    setDeleteOpen(false);
-    setDeleting(null);
-    setReloadKey((value) => value + 1);
+    try {
+      const supabase = createClient();
+      await runSupabaseMutationWithRetry(() =>
+        supabase.from("perfiles").delete().eq("id", deleting.id)
+      );
+      setSaving(false);
+      setDeleteOpen(false);
+      setDeleting(null);
+      setReloadKey((value) => value + 1);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error al eliminar el administrativo.");
+      setSaving(false);
+    }
   };
 
   const sedesDisponibles =
     perfil?.rol === "admin_sede" && perfil.sede_id
       ? sedes.filter((s) => s.id === perfil.sede_id)
       : sedes;
+
+  const tableRows = useMemo(() => {
+    const sedesMap = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
+    return data.map((row) => ({
+      ...row,
+      sede_nombre: row.sede_nombre ?? (row.sede_id ? sedesMap.get(row.sede_id) ?? "—" : "—"),
+    }));
+  }, [data, sedes]);
+
+  const columns = useMemo(() => ([
+    {
+      key: "nombre" as keyof AdminRow,
+      label: "Nombre",
+      render: (row: AdminRow) => (
+        <div>
+          <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{row.nombre}</p>
+          <p className="text-xs text-[#86868b]">{row.email}</p>
+        </div>
+      ),
+    },
+    {
+      key: "sede_nombre" as keyof AdminRow,
+      label: "Sede",
+      render: (row: AdminRow) => (
+        <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+          {row.sede_nombre || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "activo" as keyof AdminRow,
+      label: "Estado",
+      render: (row: AdminRow) => (
+        <span
+          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+            row.activo
+              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+          }`}
+        >
+          {row.activo ? "Activo" : "Inactivo"}
+        </span>
+      ),
+    },
+    {
+      key: "created_at" as keyof AdminRow,
+      label: "Alta",
+      render: (row: AdminRow) => (
+        <span className="text-sm text-[#86868b]">
+          {new Date(row.created_at).toLocaleDateString("es-CO")}
+        </span>
+      ),
+    },
+  ]), []);
+
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
+
+  const handleSearchChange = useCallback((term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(0);
+  }, []);
 
   return (
     <div>
@@ -220,93 +329,38 @@ export default function AdministrativosPage() {
 
       {/* Lista */}
       <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-6 h-6 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : data.length === 0 ? (
-          <div className="text-center py-12">
-            <UserCog size={40} className="mx-auto text-[#86868b] mb-3" />
-            <p className="text-sm text-[#86868b]">No hay administrativos registrados.</p>
-            {canEdit && (
-              <button
-                onClick={openCreate}
-                className="mt-4 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors"
-              >
-                Crear primer administrativo
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-gray-800">
-                  <th className="text-left pb-3 text-xs text-[#86868b] font-medium">Nombre</th>
-                  <th className="text-left pb-3 text-xs text-[#86868b] font-medium">Correo / Cédula</th>
-                  <th className="text-left pb-3 text-xs text-[#86868b] font-medium">Sede</th>
-                  <th className="text-left pb-3 text-xs text-[#86868b] font-medium">Estado</th>
-                  {canEdit && (
-                    <th className="text-right pb-3 text-xs text-[#86868b] font-medium">Acciones</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                {data.map((row) => (
-                  <tr key={row.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                    <td className="py-3 font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{row.nombre}</td>
-                    <td className="py-3 text-[#86868b]">{row.email}</td>
-                    <td className="py-3">
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium">
-                        {row.sede_nombre}
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <span
-                        className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                          row.activo
-                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                            : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-                        }`}
-                      >
-                        {row.activo ? "Activo" : "Inactivo"}
-                      </span>
-                    </td>
-                    {canEdit && (
-                      <td className="py-3">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => openEdit(row)}
-                            title="Editar"
-                            className="apple-icon-button hover:text-[#0071e3]"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            onClick={() => toggleActivo(row)}
-                            title={row.activo ? "Desactivar" : "Activar"}
-                            className="apple-icon-button hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
-                          >
-                            <Power size={15} />
-                          </button>
-                          <button
-                            onClick={() => { setDeleting(row); setDeleteOpen(true); }}
-                            title="Eliminar"
-                            className="apple-icon-button hover:text-red-500"
-                          >
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                            </svg>
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {tableError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
+            {tableError}
           </div>
         )}
+
+        <DataTable
+          columns={columns}
+          data={tableRows}
+          loading={loading}
+          searchPlaceholder="Buscar por nombre o correo..."
+          serverSide
+          totalCount={totalCount}
+          currentPage={currentPage}
+          onPageChange={handlePageChange}
+          onSearchChange={handleSearchChange}
+          pageSize={PAGE_SIZE}
+          onEdit={canEdit ? openEdit : undefined}
+          onDelete={canEdit ? (row) => {
+            setDeleting(row);
+            setDeleteOpen(true);
+          } : undefined}
+          extraActions={canEdit ? ((row) => (
+            <button
+              onClick={() => toggleActivo(row)}
+              title={row.activo ? "Desactivar" : "Activar"}
+              className="apple-icon-button hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+            >
+              <Power size={14} />
+            </button>
+          )) : undefined}
+        />
       </div>
 
       {/* Modal crear / editar */}

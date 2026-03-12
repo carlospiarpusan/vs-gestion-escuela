@@ -32,27 +32,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
-
-/**
- * Validar que la contraseña cumpla requisitos mínimos de seguridad.
- * - Mínimo 8 caracteres
- * - Al menos 1 letra mayúscula
- * - Al menos 1 número
- *
- * @returns Mensaje de error o null si es válida
- */
-function validatePassword(password: string): string | null {
-  if (password.length < 8) {
-    return "La contraseña debe tener al menos 8 caracteres.";
-  }
-  if (!/[A-Z]/.test(password)) {
-    return "La contraseña debe incluir al menos una mayúscula.";
-  }
-  if (!/[0-9]/.test(password)) {
-    return "La contraseña debe incluir al menos un número.";
-  }
-  return null;
-}
+import { getPasswordValidationError } from "@/lib/password-policy";
 
 /**
  * Sanitizar mensajes de error de Supabase para no exponer
@@ -112,7 +92,7 @@ export default function RegistroPage() {
     }
 
     // Validación de contraseña segura
-    const passwordError = validatePassword(password);
+    const passwordError = getPasswordValidationError(password);
     if (passwordError) {
       setError(passwordError);
       setLoading(false);

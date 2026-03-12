@@ -1,99 +1,79 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import {
   authorizeApiRequest,
-  findAuthUserByEmail,
+  buildSupabaseAdminClient,
+  ensureNonReservedAuthEmail,
+  isAuthUserAlreadyRegisteredError,
   normalizeEmail,
-  normalizeText,
+  parseJsonBody,
 } from "@/lib/api-auth";
+import { createAdminEscuelaSchema } from "@/lib/schemas";
+import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
     const authz = await authorizeApiRequest(["super_admin"]);
     if (!authz.ok) return authz.response;
 
-    const body = await request.json();
-    const escuela_id = normalizeText(body.escuela_id);
-    const nombre = normalizeText(body.nombre);
-    const email = normalizeEmail(body.email);
-    const password = typeof body.password === "string" ? body.password : null;
+    const limiter = rateLimit(
+      getRateLimitKey(request, "api:create-admin-escuela", authz.perfil.id),
+      10,
+      15 * 60 * 1000
+    );
+    if (!limiter.ok) {
+      return NextResponse.json({ error: "Demasiadas solicitudes. Intenta más tarde." }, { status: 429 });
+    }
 
-    if (!escuela_id || !nombre || !email || !password || password.length < 6) {
+    const parsedBody = await parseJsonBody(request, createAdminEscuelaSchema);
+    if (!parsedBody.ok) return parsedBody.response;
+
+    const escuela_id = parsedBody.data.escuela_id;
+    const nombre = parsedBody.data.nombre.trim();
+    const email = normalizeEmail(parsedBody.data.email);
+    const password = parsedBody.data.password;
+
+    if (!escuela_id || !nombre || !email || !password) {
       return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
     }
 
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "Configuración del servidor incompleta (SUPABASE_SERVICE_ROLE_KEY)" },
-        { status: 500 }
-      );
+    const reservedEmailError = ensureNonReservedAuthEmail(email);
+    if (reservedEmailError) {
+      return NextResponse.json({ error: reservedEmailError }, { status: 400 });
     }
 
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
-
-    let userId: string;
-
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    const supabaseAdmin = buildSupabaseAdminClient();
+    const createUserPayload = {
       email,
       password,
       email_confirm: true,
-    });
+      user_metadata: {
+        nombre,
+        rol: "admin_escuela",
+      },
+    };
+
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser(createUserPayload);
 
     if (authError) {
-      const emailYaRegistrado =
-        authError.message.toLowerCase().includes("already registered") ||
-        authError.message.toLowerCase().includes("already been registered") ||
-        authError.message.toLowerCase().includes("already exists");
-
-      if (!emailYaRegistrado) {
-        return NextResponse.json({ error: authError.message }, { status: 400 });
-      }
-
-      const existingAuthUser = await findAuthUserByEmail(supabaseAdmin, email);
-
-      if (!existingAuthUser) {
+      if (isAuthUserAlreadyRegisteredError(authError.message)) {
         return NextResponse.json(
           { error: "El correo ya está registrado. Usa un correo diferente." },
           { status: 400 }
         );
       }
 
-      const { data: perfilExistente } = await supabaseAdmin
-        .from("perfiles")
-        .select("id, escuela_id, rol")
-        .eq("id", existingAuthUser.id)
-        .maybeSingle();
+      return NextResponse.json(
+        { error: "No se pudo crear el usuario administrador." },
+        { status: 400 }
+      );
+    }
 
-      if (perfilExistente && perfilExistente.escuela_id) {
-        return NextResponse.json(
-          { error: "El correo ya está en uso por otro administrador. Usa un correo diferente." },
-          { status: 400 }
-        );
-      }
-
-      await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id);
-
-      const { data: newAuthData, error: newAuthError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-      });
-
-      if (newAuthError || !newAuthData?.user) {
-        return NextResponse.json(
-          { error: newAuthError?.message || "Error al crear el usuario" },
-          { status: 400 }
-        );
-      }
-
-      userId = newAuthData.user.id;
-    } else {
-      userId = authData.user.id;
+    const userId = authData?.user?.id;
+    if (!userId) {
+      return NextResponse.json(
+        { error: "No se pudo crear el usuario administrador." },
+        { status: 400 }
+      );
     }
 
     const { error: perfilError } = await supabaseAdmin.from("perfiles").upsert(
@@ -111,7 +91,10 @@ export async function POST(request: Request) {
 
     if (perfilError) {
       await supabaseAdmin.auth.admin.deleteUser(userId);
-      return NextResponse.json({ error: perfilError.message }, { status: 400 });
+      return NextResponse.json(
+        { error: "No se pudo guardar el perfil del administrador." },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({ success: true, user_id: userId });

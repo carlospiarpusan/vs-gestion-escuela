@@ -20,9 +20,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { useDraftForm } from "@/hooks/useDraftForm";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
+import { fetchJsonWithRetry } from "@/lib/retry";
+import { runSupabaseMutationWithRetry } from "@/lib/retry";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import type { MantenimientoVehiculo, TipoMantenimiento, Vehiculo, Instructor } from "@/types/database";
 import { Plus } from "lucide-react";
 
@@ -76,12 +80,18 @@ type VehiculoRow = { id: string; marca: string; modelo: string; matricula: strin
 
 /** Type for instructor rows returned by the Supabase select query */
 type InstructorRow = { id: string; nombre: string; apellidos: string };
+type MantenimientoRow = MantenimientoVehiculo & { vehiculo_nombre?: string; instructor_nombre?: string };
+type MantenimientoListResponse = {
+  totalCount: number;
+  rows: MantenimientoRow[];
+};
 
 export default function MantenimientoPage() {
   const { perfil } = useAuth();
+  const escuelaId = perfil?.escuela_id ?? null;
 
   // Data state: maintenance records enriched with display names
-  const [data, setData] = useState<(MantenimientoVehiculo & { vehiculo_nombre?: string; instructor_nombre?: string })[]>([]);
+  const [data, setData] = useState<MantenimientoRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
@@ -92,91 +102,109 @@ export default function MantenimientoPage() {
 
   // UI state flags
   const [loading, setLoading] = useState(true);
+  const [tableError, setTableError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState<MantenimientoVehiculo | null>(null);
   const [deleting, setDeleting] = useState<MantenimientoVehiculo | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const {
+    value: form,
+    setValue: setForm,
+    restoreDraft,
+    clearDraft,
+  } = useDraftForm("dashboard:mantenimiento:form", emptyForm, {
+    persist: modalOpen && !editing,
+  });
 
   /**
    * Fetches paginated maintenance records, vehicles, and instructors,
    * then maps vehicle/instructor names onto each maintenance record for display.
    */
   const fetchData = useCallback(async (page = 0, search = "") => {
-    if (!perfil?.escuela_id) return;
+    if (!escuelaId) return;
 
     const fetchId = ++fetchIdRef.current;
     setLoading(true);
-    const supabase = createClient();
+    setTableError("");
 
-    // 1. Count query for pagination
-    let countQuery = supabase
-      .from("mantenimiento_vehiculos")
-      .select("id", { count: "exact", head: true })
-      .eq("escuela_id", perfil.escuela_id);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+      });
+      if (search.trim()) params.set("q", search.trim());
 
-    if (search) {
-      countQuery = countQuery.or(
-        `descripcion.ilike.%${search}%,fecha.ilike.%${search}%,proveedor.ilike.%${search}%`
-      );
+      const payload = await fetchJsonWithRetry<MantenimientoListResponse>(`/api/mantenimiento?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (fetchId !== fetchIdRef.current) return;
+
+      setData(payload.rows || []);
+      setTotalCount(payload.totalCount || 0);
+    } catch (fetchError: unknown) {
+      if (fetchId !== fetchIdRef.current) return;
+      setData([]);
+      setTotalCount(0);
+      setTableError(fetchError instanceof Error ? fetchError.message : "No se pudo cargar el mantenimiento.");
+    } finally {
+      if (fetchId === fetchIdRef.current) {
+        setLoading(false);
+      }
     }
-
-    // 2. Paginated data query
-    const from = page * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-
-    let dataQuery = supabase
-      .from("mantenimiento_vehiculos")
-      .select("id, vehiculo_id, instructor_id, tipo, descripcion, monto, kilometraje_actual, litros, precio_por_litro, proveedor, numero_factura, fecha, notas, created_at")
-      .eq("escuela_id", perfil.escuela_id)
-      .order("fecha", { ascending: false })
-      .range(from, to);
-
-    if (search) {
-      dataQuery = dataQuery.or(
-        `descripcion.ilike.%${search}%,fecha.ilike.%${search}%,proveedor.ilike.%${search}%`
-      );
-    }
-
-    // Fetch lookups for form selectors in parallel
-    const [countRes, mantRes, vehiculosRes, instructoresRes] = await Promise.all([
-      countQuery,
-      dataQuery,
-      supabase.from("vehiculos").select("id, marca, modelo, matricula").eq("escuela_id", perfil.escuela_id),
-      supabase.from("instructores").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id),
-    ]);
-
-    if (fetchId !== fetchIdRef.current) return;
-
-    // Build lookup maps to resolve IDs into human-readable names
-    const vMap = new Map(
-      (vehiculosRes.data || []).map((v: VehiculoRow) => [v.id, `${v.marca} ${v.modelo} (${v.matricula})`])
-    );
-    const iMap = new Map(
-      (instructoresRes.data || []).map((i: InstructorRow) => [i.id, `${i.nombre} ${i.apellidos}`])
-    );
-
-    // Enrich maintenance records with resolved vehicle and instructor names
-    const mant = ((mantRes.data as MantenimientoVehiculo[]) || []).map(m => ({
-      ...m, vehiculo_nombre: vMap.get(m.vehiculo_id) || "—",
-      instructor_nombre: m.instructor_id ? iMap.get(m.instructor_id) || "—" : "—",
-    }));
-
-    setData(mant);
-    setTotalCount(countRes.count ?? 0);
-    setVehiculos((vehiculosRes.data as Vehiculo[]) || []);
-    setInstructores((instructoresRes.data as Instructor[]) || []);
-    setLoading(false);
-  }, [perfil?.escuela_id]);
+  }, [escuelaId]);
 
   // Fetch data whenever page, search, or profile changes
   useEffect(() => {
-    if (perfil) {
-      fetchData(currentPage, searchTerm);
-    }
-  }, [fetchData, perfil, currentPage, searchTerm]);
+    if (!escuelaId) return;
+    const timeoutId = window.setTimeout(() => {
+      void fetchData(currentPage, searchTerm);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [escuelaId, fetchData, currentPage, searchTerm]);
+
+  useEffect(() => {
+    if (!escuelaId) return;
+
+    let cancelled = false;
+    const supabase = createClient();
+
+    const loadCatalogs = async () => {
+      const [vehiculosRows, instructoresRows] = await Promise.all([
+        fetchAllSupabaseRows<VehiculoRow>((from, to) =>
+          supabase
+            .from("vehiculos")
+            .select("id, marca, modelo, matricula")
+            .eq("escuela_id", escuelaId)
+            .order("created_at", { ascending: false })
+            .range(from, to)
+            .then(({ data, error }) => ({ data: (data as VehiculoRow[]) ?? [], error }))
+        ),
+        fetchAllSupabaseRows<InstructorRow>((from, to) =>
+          supabase
+            .from("instructores")
+            .select("id, nombre, apellidos")
+            .eq("escuela_id", escuelaId)
+            .order("nombre", { ascending: true })
+            .order("apellidos", { ascending: true })
+            .range(from, to)
+            .then(({ data, error }) => ({ data: (data as InstructorRow[]) ?? [], error }))
+        ),
+      ]);
+
+      if (cancelled) return;
+      setVehiculos(vehiculosRows as Vehiculo[]);
+      setInstructores(instructoresRows as Instructor[]);
+    };
+
+    void loadCatalogs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [escuelaId]);
 
   /** Callback del DataTable server-side: cambio de página */
   const handlePageChange = useCallback((page: number) => {
@@ -190,7 +218,12 @@ export default function MantenimientoPage() {
   }, []);
 
   /** Opens the modal in "create" mode with an empty form */
-  const openCreate = () => { setEditing(null); setForm(emptyForm); setError(""); setModalOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+    restoreDraft(emptyForm);
+    setError("");
+    setModalOpen(true);
+  };
 
   /** Opens the modal in "edit" mode, pre-filling the form with existing record values */
   const openEdit = (row: MantenimientoVehiculo) => {
@@ -229,16 +262,28 @@ export default function MantenimientoPage() {
 
       if (editing) {
         // Update existing record
-        const { error: err } = await supabase.from("mantenimiento_vehiculos").update(payload).eq("id", editing.id);
-        if (err) { setError(err.message); setSaving(false); return; }
+        await runSupabaseMutationWithRetry(() =>
+          supabase.from("mantenimiento_vehiculos").update(payload).eq("id", editing.id)
+        );
       } else {
         // Insert new record, attaching school/sede/user context
-        if (!perfil) return;
-        const { error: err } = await supabase.from("mantenimiento_vehiculos").insert({ ...payload, escuela_id: perfil.escuela_id, sede_id: perfil.sede_id, user_id: perfil.id });
-        if (err) { setError(err.message); setSaving(false); return; }
+        if (!perfil) {
+          setError("No se encontró el perfil activo para guardar.");
+          setSaving(false);
+          return;
+        }
+        await runSupabaseMutationWithRetry(() =>
+          supabase.from("mantenimiento_vehiculos").insert({
+            ...payload,
+            escuela_id: perfil.escuela_id,
+            sede_id: perfil.sede_id,
+            user_id: perfil.id,
+          })
+        );
       }
 
-      setSaving(false); setModalOpen(false); fetchData();
+      clearDraft(emptyForm);
+      setSaving(false); setModalOpen(false); fetchData(currentPage, searchTerm);
     } catch (networkError) {
       // Catch unexpected network or runtime errors (e.g. connection lost)
       setError(networkError instanceof Error ? networkError.message : "Error de red inesperado. Intente nuevamente.");
@@ -261,7 +306,7 @@ export default function MantenimientoPage() {
         setSaving(false);
         return;
       }
-      setSaving(false); setDeleteOpen(false); setDeleting(null); fetchData();
+      setSaving(false); setDeleteOpen(false); setDeleting(null); fetchData(currentPage, searchTerm);
     } catch (networkError) {
       // Catch unexpected network or runtime errors during deletion
       setError(networkError instanceof Error ? networkError.message : "Error al eliminar. Intente nuevamente.");
@@ -306,7 +351,26 @@ export default function MantenimientoPage() {
           <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors"><Plus size={16} /> Nuevo Registro</button>
         </div>
         <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 sm:p-8 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in delay-100">
-          <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por descripción..." searchKeys={["descripcion", "fecha"]} onEdit={openEdit} onDelete={openDelete} />
+          {tableError && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
+              {tableError}
+            </div>
+          )}
+          <DataTable
+            columns={columns}
+            data={data}
+            loading={loading}
+            searchPlaceholder="Buscar por descripción..."
+            searchTerm={searchTerm}
+            onEdit={openEdit}
+            onDelete={openDelete}
+            serverSide
+            totalCount={totalCount}
+            currentPage={currentPage}
+            onPageChange={handlePageChange}
+            onSearchChange={handleSearchChange}
+            pageSize={PAGE_SIZE}
+          />
         </div>
         <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Editar Registro" : "Nuevo Registro de Mantenimiento"} maxWidth="max-w-xl">
           <div className="space-y-4">

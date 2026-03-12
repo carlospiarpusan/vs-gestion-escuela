@@ -15,9 +15,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
+import { fetchJsonWithRetry } from "@/lib/retry";
 import type { Clase, TipoClase, EstadoClase, Alumno, Instructor, Vehiculo } from "@/types/database";
 import { Plus } from "lucide-react";
 
@@ -38,12 +40,18 @@ const emptyForm = {
 
 /** Tipo auxiliar para las filas del mapa de alumnos/instructores */
 type PersonaRow = { id: string; nombre: string; apellidos: string };
+type ClaseRow = Clase & { alumno_nombre?: string; instructor_nombre?: string };
+type ClasesListResponse = {
+  totalCount: number;
+  rows: ClaseRow[];
+};
 
 export default function ClasesPage() {
   const { perfil } = useAuth();
+  const escuelaId = perfil?.escuela_id ?? null;
 
   // Estado principal: lista de clases con nombres resueltos
-  const [data, setData] = useState<(Clase & { alumno_nombre?: string; instructor_nombre?: string })[]>([]);
+  const [data, setData] = useState<ClaseRow[]>([]);
 
   // --- Paginacion server-side ---
   const [totalCount, setTotalCount] = useState(0);
@@ -58,6 +66,7 @@ export default function ClasesPage() {
 
   // Estado de UI
   const [loading, setLoading] = useState(true);
+  const [tableError, setTableError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState<Clase | null>(null);
@@ -67,84 +76,105 @@ export default function ClasesPage() {
   const [error, setError] = useState("");
 
   /**
-   * fetchData - Obtiene clases paginadas server-side, alumnos, instructores y vehiculos de Supabase.
-   * Resuelve los nombres de alumno e instructor solo para los IDs de la pagina actual.
+   * fetchData - Obtiene clases paginadas desde la API server-side.
    */
   const fetchData = useCallback(async (page = 0, search = "") => {
-    if (!perfil?.escuela_id) return;
+    if (!escuelaId) return;
 
     const fetchId = ++fetchIdRef.current;
     setLoading(true);
-    const supabase = createClient();
+    setTableError("");
 
-    // 1. Contar total (para la paginacion)
-    let countQuery = supabase
-      .from("clases")
-      .select("id", { count: "exact", head: true })
-      .eq("escuela_id", perfil.escuela_id);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+      });
+      if (search.trim()) params.set("q", search.trim());
 
-    if (search) {
-      countQuery = countQuery.or(
-        `fecha.ilike.%${search}%,tipo.ilike.%${search}%,estado.ilike.%${search}%,notas.ilike.%${search}%`
-      );
+      const payload = await fetchJsonWithRetry<ClasesListResponse>(`/api/clases?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (fetchId !== fetchIdRef.current) return;
+
+      setData(payload.rows || []);
+      setTotalCount(payload.totalCount || 0);
+    } catch (fetchError: unknown) {
+      if (fetchId !== fetchIdRef.current) return;
+      setData([]);
+      setTotalCount(0);
+      setTableError(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar las clases.");
+    } finally {
+      if (fetchId === fetchIdRef.current) {
+        setLoading(false);
+      }
     }
-
-    // 2. Traer solo la pagina actual
-    const from = page * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-
-    let dataQuery = supabase
-      .from("clases")
-      .select("id, alumno_id, instructor_id, vehiculo_id, tipo, fecha, hora_inicio, hora_fin, estado, notas, created_at")
-      .eq("escuela_id", perfil.escuela_id)
-      .order("fecha", { ascending: false })
-      .range(from, to);
-
-    if (search) {
-      dataQuery = dataQuery.or(
-        `fecha.ilike.%${search}%,tipo.ilike.%${search}%,estado.ilike.%${search}%,notas.ilike.%${search}%`
-      );
-    }
-
-    // Listas de referencia para los selectores (siempre se necesitan completas)
-    const [countRes, clasesRes, alumnosFullRes, instructoresFullRes, vehiculosRes] = await Promise.all([
-      countQuery,
-      dataQuery,
-      supabase.from("alumnos").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id).eq("estado", "activo"),
-      supabase.from("instructores").select("id, nombre, apellidos").eq("escuela_id", perfil.escuela_id).eq("estado", "activo"),
-      supabase.from("vehiculos").select("id, marca, modelo, matricula").eq("escuela_id", perfil.escuela_id).neq("estado", "baja"),
-    ]);
-
-    // Evitar race conditions: si ya se disparo otro fetch, ignorar este
-    if (fetchId !== fetchIdRef.current) return;
-
-    const clasesList = (clasesRes.data as Clase[]) || [];
-
-    // Mapas id->nombre para resolver las relaciones de la pagina actual
-    const alumnosMap = new Map((alumnosFullRes.data || []).map((a: PersonaRow) => [a.id, `${a.nombre} ${a.apellidos}`]));
-    const instructoresMap = new Map((instructoresFullRes.data || []).map((i: PersonaRow) => [i.id, `${i.nombre} ${i.apellidos}`]));
-
-    // Enriquecer cada clase con los nombres resueltos
-    const clases = clasesList.map(c => ({
-      ...c,
-      alumno_nombre: alumnosMap.get(c.alumno_id) || "—",
-      instructor_nombre: c.instructor_id ? instructoresMap.get(c.instructor_id) || "—" : "—",
-    }));
-
-    setData(clases);
-    setAlumnos((alumnosFullRes.data as Alumno[]) || []);
-    setInstructores((instructoresFullRes.data as Instructor[]) || []);
-    setVehiculos((vehiculosRes.data as Vehiculo[]) || []);
-    setTotalCount(countRes.count ?? 0);
-    setLoading(false);
-  }, [perfil?.escuela_id]);
+  }, [escuelaId]);
 
   // Cargar datos cuando el perfil este disponible o cambie la pagina/busqueda
   useEffect(() => {
-    if (perfil) {
-      fetchData(currentPage, searchTerm);
-    }
-  }, [fetchData, perfil, currentPage, searchTerm]);
+    if (!escuelaId) return;
+    const timeoutId = window.setTimeout(() => {
+      void fetchData(currentPage, searchTerm);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [escuelaId, fetchData, currentPage, searchTerm]);
+
+  useEffect(() => {
+    if (!escuelaId) return;
+
+    let cancelled = false;
+    const supabase = createClient();
+
+    const loadCatalogs = async () => {
+      const [alumnosRows, instructoresRows, vehiculosRows] = await Promise.all([
+        fetchAllSupabaseRows<PersonaRow>((from, to) =>
+          supabase
+            .from("alumnos")
+            .select("id, nombre, apellidos")
+            .eq("escuela_id", escuelaId)
+            .eq("estado", "activo")
+            .order("nombre", { ascending: true })
+            .order("apellidos", { ascending: true })
+            .range(from, to)
+            .then(({ data, error }) => ({ data: (data as PersonaRow[]) ?? [], error }))
+        ),
+        fetchAllSupabaseRows<PersonaRow>((from, to) =>
+          supabase
+            .from("instructores")
+            .select("id, nombre, apellidos")
+            .eq("escuela_id", escuelaId)
+            .eq("estado", "activo")
+            .order("nombre", { ascending: true })
+            .order("apellidos", { ascending: true })
+            .range(from, to)
+            .then(({ data, error }) => ({ data: (data as PersonaRow[]) ?? [], error }))
+        ),
+        fetchAllSupabaseRows<Vehiculo>((from, to) =>
+          supabase
+            .from("vehiculos")
+            .select("id, marca, modelo, matricula")
+            .eq("escuela_id", escuelaId)
+            .neq("estado", "baja")
+            .order("created_at", { ascending: false })
+            .range(from, to)
+            .then(({ data, error }) => ({ data: (data as Vehiculo[]) ?? [], error }))
+        ),
+      ]);
+
+      if (cancelled) return;
+      setAlumnos(alumnosRows as Alumno[]);
+      setInstructores(instructoresRows as Instructor[]);
+      setVehiculos(vehiculosRows);
+    };
+
+    void loadCatalogs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [escuelaId]);
 
   /** Callback del DataTable server-side: cambio de pagina */
   const handlePageChange = useCallback((page: number) => {
@@ -267,7 +297,12 @@ export default function ClasesPage() {
 
       {/* Tabla principal de clases */}
       <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 sm:p-8 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in delay-100">
-        <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por fecha, tipo, estado..." onEdit={openEdit} onDelete={openDelete} serverSide totalCount={totalCount} currentPage={currentPage} onPageChange={handlePageChange} onSearchChange={handleSearchChange} pageSize={PAGE_SIZE} />
+        {tableError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
+            {tableError}
+          </div>
+        )}
+        <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por fecha, tipo, estado..." searchTerm={searchTerm} onEdit={openEdit} onDelete={openDelete} serverSide totalCount={totalCount} currentPage={currentPage} onPageChange={handlePageChange} onSearchChange={handleSearchChange} pageSize={PAGE_SIZE} />
       </div>
 
       {/* Modal de creacion/edicion de clase */}

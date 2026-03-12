@@ -23,7 +23,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { canAccessDashboardPath, getDashboardFallbackPath } from "@/lib/access-control";
-import type { Rol } from "@/types/database";
+
+function applySecurityHeaders(response: NextResponse) {
+  response.headers.set("Content-Security-Policy", "base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  return response;
+}
 
 export async function proxy(request: NextRequest) {
   // --- Crear respuesta mutable para manipular cookies ---
@@ -74,47 +83,34 @@ export async function proxy(request: NextRequest) {
   // Si intenta acceder al dashboard sin sesión → redirigir a /login
   if (isProtectedRoute && !user) {
     const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    return applySecurityHeaders(NextResponse.redirect(loginUrl));
   }
 
   if (isProtectedRoute && user) {
-    // Use role from JWT metadata to avoid a DB query on every request.
-    // The role in user_metadata is set when the user is created/updated.
-    // AuthContext still fetches the full perfil for the UI.
-    const rol = user.user_metadata?.rol as string | undefined;
+    const { data: perfil } = await supabase
+      .from("perfiles")
+      .select("rol, activo")
+      .eq("id", user.id)
+      .maybeSingle();
 
-    if (!rol) {
-      // Fallback: fetch from DB only if metadata is missing
-      const { data: perfil } = await supabase
-        .from("perfiles")
-        .select("rol, activo")
-        .eq("id", user.id)
-        .maybeSingle();
+    if (!perfil?.activo) {
+      const loginUrl = new URL("/login", request.url);
+      return applySecurityHeaders(NextResponse.redirect(loginUrl));
+    }
 
-      if (!perfil?.activo) {
-        const loginUrl = new URL("/login", request.url);
-        return NextResponse.redirect(loginUrl);
-      }
-
-      if (!canAccessDashboardPath(perfil.rol, pathname)) {
-        const fallbackUrl = new URL(getDashboardFallbackPath(perfil.rol), request.url);
-        return NextResponse.redirect(fallbackUrl);
-      }
-    } else {
-      if (!canAccessDashboardPath(rol as Rol, pathname)) {
-        const fallbackUrl = new URL(getDashboardFallbackPath(rol as Rol), request.url);
-        return NextResponse.redirect(fallbackUrl);
-      }
+    if (!canAccessDashboardPath(perfil.rol, pathname)) {
+      const fallbackUrl = new URL(getDashboardFallbackPath(perfil.rol), request.url);
+      return applySecurityHeaders(NextResponse.redirect(fallbackUrl));
     }
   }
 
   // Si ya está logueado e intenta ir a /login o /registro → ir al dashboard
   if (isAuthRoute && user) {
     const dashboardUrl = new URL("/dashboard", request.url);
-    return NextResponse.redirect(dashboardUrl);
+    return applySecurityHeaders(NextResponse.redirect(dashboardUrl));
   }
 
-  return response;
+  return applySecurityHeaders(response);
 }
 
 /**

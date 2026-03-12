@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
-import type { Sede, EstadoSede } from "@/types/database";
+import type { Escuela, Sede, EstadoSede } from "@/types/database";
 import { Plus, MapPin, Phone, Mail, Clock, Star, Building2, AlertTriangle } from "lucide-react";
 
 /* ─── estilos reutilizables ─── */
@@ -19,6 +19,7 @@ const CATEGORIAS_COMBO = [
 const TODAS_CATEGORIAS = [...CATEGORIAS_INDIVIDUALES, ...CATEGORIAS_COMBO];
 
 const emptyForm = {
+  escuela_id: "",
   nombre: "",
   estado: "activa" as EstadoSede,
   es_principal: false,
@@ -34,12 +35,16 @@ const emptyForm = {
 };
 
 type FormType = typeof emptyForm;
+type EscuelaOption = Pick<Escuela, "id" | "nombre" | "categorias">;
+type SedeRow = Sede & { escuela_nombre?: string };
 
 export default function SedesPage() {
   const { perfil } = useAuth();
   const canEdit = perfil?.rol === "super_admin" || perfil?.rol === "admin_escuela";
+  const isSuperAdmin = perfil?.rol === "super_admin";
 
-  const [sedes, setSedes] = useState<Sede[]>([]);
+  const [sedes, setSedes] = useState<SedeRow[]>([]);
+  const [escuelas, setEscuelas] = useState<EscuelaOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -49,17 +54,53 @@ export default function SedesPage() {
   const [deleting2, setDeleting2] = useState(false);
   const [form, setForm] = useState<FormType>(emptyForm);
   const [categoriasEscuela, setCategoriasEscuela] = useState<string[]>([]);
+  const [filtroEscuela, setFiltroEscuela] = useState("all");
   const [error, setError] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (!perfil?.escuela_id) return;
+    if (!perfil) return;
 
     let cancelled = false;
 
     const loadSedes = async () => {
       const supabase = createClient();
+
+      if (isSuperAdmin) {
+        const [sedesRes, escuelasRes] = await Promise.all([
+          supabase
+            .from("sedes")
+            .select("*")
+            .order("es_principal", { ascending: false })
+            .order("nombre"),
+          supabase
+            .from("escuelas")
+            .select("id, nombre, categorias")
+            .order("nombre"),
+        ]);
+
+        if (cancelled) return;
+
+        const escuelasData = (escuelasRes.data as EscuelaOption[]) || [];
+        const schoolNameById = new Map(escuelasData.map((escuela) => [escuela.id, escuela.nombre]));
+        const sedesData = ((sedesRes.data as Sede[]) || []).map((sede) => ({
+          ...sede,
+          escuela_nombre: schoolNameById.get(sede.escuela_id) ?? "Escuela desconocida",
+        }));
+
+        setEscuelas(escuelasData);
+        setSedes(sedesData);
+        setCategoriasEscuela([]);
+        setLoading(false);
+        return;
+      }
+
+      if (!perfil.escuela_id) {
+        setLoading(false);
+        return;
+      }
+
       const [sedesRes, escuelaRes] = await Promise.all([
         supabase
           .from("sedes")
@@ -69,14 +110,15 @@ export default function SedesPage() {
           .order("nombre"),
         supabase
           .from("escuelas")
-          .select("categorias")
+          .select("id, nombre, categorias")
           .eq("id", perfil.escuela_id)
           .single(),
       ]);
 
       if (cancelled) return;
 
-      setSedes((sedesRes.data as Sede[]) || []);
+      setEscuelas(escuelaRes.data ? [escuelaRes.data as EscuelaOption] : []);
+      setSedes((sedesRes.data as SedeRow[]) || []);
       setCategoriasEscuela(escuelaRes.data?.categorias || []);
       setLoading(false);
     };
@@ -86,12 +128,32 @@ export default function SedesPage() {
     return () => {
       cancelled = true;
     };
-  }, [perfil?.escuela_id, reloadKey]);
+  }, [isSuperAdmin, perfil, reloadKey]);
+
+  const sedesFiltradas = useMemo(() => {
+    if (!isSuperAdmin || filtroEscuela === "all") return sedes;
+    return sedes.filter((sede) => sede.escuela_id === filtroEscuela);
+  }, [filtroEscuela, isSuperAdmin, sedes]);
+
+  const getSchoolCategories = (escuelaId: string) =>
+    escuelas.find((escuela) => escuela.id === escuelaId)?.categorias || [];
 
   /* ── abrir modal crear ── */
   const openCreate = () => {
+    const escuelaIdInicial =
+      isSuperAdmin && filtroEscuela !== "all"
+        ? filtroEscuela
+        : isSuperAdmin
+          ? ""
+          : perfil?.escuela_id || "";
+
     setEditing(null);
-    setForm({ ...emptyForm, es_principal: sedes.length === 0, categorias: categoriasEscuela });
+    setForm({
+      ...emptyForm,
+      escuela_id: escuelaIdInicial,
+      es_principal: escuelaIdInicial ? sedes.filter((sede) => sede.escuela_id === escuelaIdInicial).length === 0 : false,
+      categorias: escuelaIdInicial ? getSchoolCategories(escuelaIdInicial) : categoriasEscuela,
+    });
     setError("");
     setModalOpen(true);
   };
@@ -100,6 +162,7 @@ export default function SedesPage() {
   const openEdit = (sede: Sede) => {
     setEditing(sede);
     setForm({
+      escuela_id: sede.escuela_id,
       nombre: sede.nombre,
       estado: sede.estado,
       es_principal: sede.es_principal,
@@ -111,8 +174,9 @@ export default function SedesPage() {
       email: sede.email || "",
       horario_apertura: sede.horario_apertura || "",
       horario_cierre: sede.horario_cierre || "",
-      categorias: categoriasEscuela,
+      categorias: getSchoolCategories(sede.escuela_id),
     });
+    setCategoriasEscuela(getSchoolCategories(sede.escuela_id));
     setError("");
     setModalOpen(true);
   };
@@ -140,7 +204,11 @@ export default function SedesPage() {
       setError("El nombre de la sede es obligatorio.");
       return;
     }
-    if (!perfil?.escuela_id) return;
+    const escuelaId = isSuperAdmin ? form.escuela_id : perfil?.escuela_id;
+    if (!escuelaId) {
+      setError("Selecciona la escuela a la que pertenece la sede.");
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -150,7 +218,7 @@ export default function SedesPage() {
     const { error: escuelaError } = await supabase
       .from("escuelas")
       .update({ categorias: categoriasPayload })
-      .eq("id", perfil.escuela_id);
+      .eq("id", escuelaId);
     if (escuelaError) {
       setError(escuelaError.message);
       setSaving(false);
@@ -158,7 +226,7 @@ export default function SedesPage() {
     }
 
     const payload = {
-      escuela_id: perfil.escuela_id,
+      escuela_id: escuelaId,
       nombre: form.nombre.trim(),
       estado: form.estado,
       es_principal: form.es_principal,
@@ -195,7 +263,7 @@ export default function SedesPage() {
       await supabase
         .from("sedes")
         .update({ es_principal: false })
-        .eq("escuela_id", perfil.escuela_id)
+        .eq("escuela_id", escuelaId)
         .neq("id", savedId)
         .eq("es_principal", true);
     }
@@ -216,12 +284,13 @@ export default function SedesPage() {
   /* ── borrar ── */
   const handleDelete = async () => {
     if (!deleting) return;
+    const totalSedesEscuela = sedes.filter((sede) => sede.escuela_id === deleting.escuela_id).length;
 
     if (deleting.es_principal) {
       setDeleteError("No puedes eliminar la sede principal. Primero designa otra sede como principal.");
       return;
     }
-    if (sedes.length <= 1) {
+    if (totalSedesEscuela <= 1) {
       setDeleteError("No puedes eliminar la única sede de la escuela.");
       return;
     }
@@ -269,34 +338,79 @@ export default function SedesPage() {
             Sedes
           </h2>
           <p className="text-sm text-[#86868b] mt-1">
-            Gestiona las sedes o sucursales de tu escuela
+            {isSuperAdmin
+              ? "Gestiona las sedes de todas las escuelas desde un solo panel"
+              : "Gestiona las sedes o sucursales de tu escuela"}
           </p>
         </div>
-        {canEdit && (
-          <button
-            onClick={openCreate}
-            className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors self-start sm:self-auto"
-          >
-            <Plus size={16} />
-            Nueva Sede
-          </button>
-        )}
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+          {isSuperAdmin && (
+            <select
+              value={filtroEscuela}
+              onChange={(e) => setFiltroEscuela(e.target.value)}
+              className="apple-input min-w-[230px]"
+            >
+              <option value="all">Todas las escuelas</option>
+              {escuelas.map((escuela) => (
+                <option key={escuela.id} value={escuela.id}>
+                  {escuela.nombre}
+                </option>
+              ))}
+            </select>
+          )}
+          {canEdit && (
+            <button
+              onClick={openCreate}
+              className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors self-start sm:self-auto"
+            >
+              <Plus size={16} />
+              Nueva Sede
+            </button>
+          )}
+        </div>
       </div>
+
+      {isSuperAdmin && (
+        <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+            <p className="text-xs text-[#86868b]">Escuelas con sedes</p>
+            <p className="mt-2 text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {new Set(sedes.map((sede) => sede.escuela_id)).size}
+            </p>
+          </div>
+          <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+            <p className="text-xs text-[#86868b]">Sedes visibles</p>
+            <p className="mt-2 text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {sedesFiltradas.length}
+            </p>
+          </div>
+          <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+            <p className="text-xs text-[#86868b]">Sedes principales visibles</p>
+            <p className="mt-2 text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {sedesFiltradas.filter((sede) => sede.es_principal).length}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Contenido */}
       {loading ? (
         <div className="flex justify-center py-20">
           <div className="w-8 h-8 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : sedes.length === 0 ? (
+      ) : sedesFiltradas.length === 0 ? (
         <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-12 text-center border border-gray-100 dark:border-gray-800">
           <Building2 size={40} className="mx-auto text-[#86868b] mb-4" />
           <p className="text-[#1d1d1f] dark:text-[#f5f5f7] font-medium mb-1">Sin sedes registradas</p>
-          <p className="text-sm text-[#86868b]">Crea la primera sede de tu escuela</p>
+          <p className="text-sm text-[#86868b]">
+            {isSuperAdmin
+              ? "No hay sedes para el filtro actual. Crea la primera o cambia de escuela."
+              : "Crea la primera sede de tu escuela"}
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sedes.map((sede) => (
+          {sedesFiltradas.map((sede) => (
             <div
               key={sede.id}
               className={`bg-white dark:bg-[#1d1d1f] rounded-2xl p-5 border transition-shadow hover:shadow-md ${
@@ -324,6 +438,9 @@ export default function SedesPage() {
                     <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">
                       {sede.nombre}
                     </h3>
+                    {isSuperAdmin && (
+                      <p className="mt-0.5 text-[11px] text-[#86868b] truncate">{sede.escuela_nombre}</p>
+                    )}
                     <div className="flex items-center gap-1.5 mt-0.5">
                       {sede.es_principal && (
                         <span className="flex items-center gap-0.5 text-[10px] font-medium text-[#0071e3]">
@@ -425,6 +542,36 @@ export default function SedesPage() {
             </p>
           )}
 
+          {isSuperAdmin && (
+            <div>
+              <label className={labelCls}>Escuela *</label>
+              <select
+                value={form.escuela_id}
+                onChange={(e) => {
+                  const escuelaId = e.target.value;
+                  const categorias = getSchoolCategories(escuelaId);
+                  setCategoriasEscuela(categorias);
+                  setForm((prev) => ({
+                    ...prev,
+                    escuela_id: escuelaId,
+                    categorias,
+                    es_principal: escuelaId
+                      ? sedes.filter((sede) => sede.escuela_id === escuelaId).length === 0
+                      : false,
+                  }));
+                }}
+                className={inputCls}
+              >
+                <option value="">Selecciona una escuela</option>
+                {escuelas.map((escuela) => (
+                  <option key={escuela.id} value={escuela.id}>
+                    {escuela.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Nombre y Estado */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -474,7 +621,9 @@ export default function SedesPage() {
               <div>
                 <label className={labelCls}>Categorías habilitadas</label>
                 <p className="text-xs text-[#86868b] mt-1">
-                  Esta selección aplica a toda la escuela y ahora se administra desde la edición de sedes.
+                  {isSuperAdmin
+                    ? "Esta selección aplica a la escuela elegida y se actualiza desde esta misma edición."
+                    : "Esta selección aplica a toda la escuela y ahora se administra desde la edición de sedes."}
                 </p>
               </div>
               <button

@@ -215,6 +215,8 @@ create table public.alumnos (
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
   sede_id uuid references public.sedes(id) on delete cascade not null,
   user_id uuid references public.perfiles(id) on delete cascade not null,
+  tipo_registro text not null default 'regular' check (tipo_registro in ('regular', 'aptitud_conductor', 'practica_adicional')),
+  numero_contrato text,
   nombre text not null,
   apellidos text not null,
   dni text not null,
@@ -223,9 +225,21 @@ create table public.alumnos (
   fecha_nacimiento date,
   direccion text,
   tipo_permiso text not null default 'B' check (tipo_permiso in ('AM', 'A1', 'A2', 'A', 'B', 'C', 'D')),
+  categorias text[] not null default '{}',
   estado text not null default 'activo' check (estado in ('activo', 'inactivo', 'graduado')),
   fecha_inscripcion date default current_date,
   notas text,
+  valor_total numeric,
+  ciudad text,
+  departamento text,
+  empresa_convenio text,
+  nota_examen_teorico numeric(5,2),
+  fecha_examen_teorico date,
+  nota_examen_practico numeric(5,2),
+  fecha_examen_practico date,
+  tiene_tramitador boolean default false,
+  tramitador_nombre text,
+  tramitador_valor numeric,
   created_at timestamp with time zone default now()
 );
 
@@ -340,12 +354,75 @@ create table public.gastos (
   proveedor text,
   numero_factura text,
   fecha date default current_date,
+  fecha_vencimiento date default current_date,
+  estado_pago text not null default 'pagado' check (estado_pago in ('pendiente', 'pagado', 'anulado')),
   recurrente boolean default false,
   notas text,
   created_at timestamp with time zone default now()
 );
 
--- 12. INGRESOS (por sede)
+-- 12. INTEGRACION DE CORREO PARA FACTURAS ELECTRONICAS
+create table public.facturas_correo_integraciones (
+  id uuid default gen_random_uuid() primary key,
+  escuela_id uuid references public.escuelas(id) on delete cascade not null,
+  sede_id uuid references public.sedes(id) on delete cascade not null,
+  created_by uuid references public.perfiles(id) on delete set null,
+  updated_by uuid references public.perfiles(id) on delete set null,
+  provider text not null default 'imap' check (provider in ('imap', 'gmail_google')),
+  correo text not null,
+  imap_host text not null,
+  imap_port integer not null default 993 check (imap_port between 1 and 65535),
+  imap_secure boolean not null default true,
+  imap_user text not null,
+  imap_password_encrypted text,
+  oauth_refresh_token_encrypted text,
+  mailbox text not null default 'INBOX',
+  from_filter text,
+  subject_filter text,
+  import_only_unseen boolean not null default true,
+  auto_sync boolean not null default true,
+  activa boolean not null default true,
+  last_uid bigint,
+  last_synced_at timestamp with time zone,
+  last_error text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  constraint facturas_correo_integraciones_escuela_unique unique (escuela_id)
+);
+
+create table public.facturas_correo_importaciones (
+  id uuid default gen_random_uuid() primary key,
+  integracion_id uuid references public.facturas_correo_integraciones(id) on delete cascade not null,
+  escuela_id uuid references public.escuelas(id) on delete cascade not null,
+  sede_id uuid references public.sedes(id) on delete cascade not null,
+  gasto_id uuid references public.gastos(id) on delete set null,
+  imap_uid bigint,
+  message_id text,
+  message_date timestamp with time zone,
+  remitente text,
+  asunto text,
+  attachment_name text not null,
+  invoice_number text,
+  supplier_name text,
+  total numeric(12,2),
+  currency text,
+  status text not null default 'importada' check (status in ('importada', 'duplicada', 'omitida', 'error')),
+  detail text,
+  created_at timestamp with time zone not null default now()
+);
+
+create unique index facturas_correo_importaciones_message_attachment_uidx
+  on public.facturas_correo_importaciones (integracion_id, message_id, attachment_name)
+  where message_id is not null;
+
+create unique index facturas_correo_importaciones_uid_attachment_uidx
+  on public.facturas_correo_importaciones (integracion_id, imap_uid, attachment_name)
+  where imap_uid is not null;
+
+create index facturas_correo_importaciones_escuela_created_idx
+  on public.facturas_correo_importaciones (escuela_id, created_at desc);
+
+-- 13. INGRESOS (por sede)
 create table public.ingresos (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
@@ -355,7 +432,7 @@ create table public.ingresos (
   matricula_id uuid references public.matriculas_alumno(id) on delete set null,
   categoria text not null check (categoria in (
     'matricula', 'mensualidad', 'clase_suelta', 'examen_teorico',
-    'examen_practico', 'material', 'tasas_dgt', 'otros'
+    'examen_practico', 'examen_aptitud', 'material', 'tasas_dgt', 'otros'
   )),
   concepto text not null,
   monto decimal(10,2) not null,
@@ -363,12 +440,13 @@ create table public.ingresos (
   medio_especifico text,
   numero_factura text,
   fecha date default current_date,
+  fecha_vencimiento date default current_date,
   estado text not null default 'cobrado' check (estado in ('cobrado', 'pendiente', 'anulado')),
   notas text,
   created_at timestamp with time zone default now()
 );
 
--- 13. CATEGORÍAS DE PREGUNTAS DE EXAMEN (globales, solo super_admin)
+-- 14. CATEGORÍAS DE PREGUNTAS DE EXAMEN (globales, solo super_admin)
 create table public.categorias_examen (
   id uuid default gen_random_uuid() primary key,
   nombre text not null,
@@ -378,7 +456,7 @@ create table public.categorias_examen (
   created_at timestamp with time zone default now()
 );
 
--- 14. PREGUNTAS DE EXAMEN (globales, solo super_admin)
+-- 15. PREGUNTAS DE EXAMEN (globales, solo super_admin)
 create table public.preguntas_examen (
   id uuid default gen_random_uuid() primary key,
   categoria_id uuid references public.categorias_examen(id) on delete set null,
@@ -395,7 +473,7 @@ create table public.preguntas_examen (
   created_at timestamp with time zone default now()
 );
 
--- 15. RESPUESTAS DE ALUMNOS (por escuela y sede)
+-- 16. RESPUESTAS DE ALUMNOS (por escuela y sede)
 create table public.respuestas_examen (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
@@ -409,7 +487,36 @@ create table public.respuestas_examen (
   created_at timestamp with time zone default now()
 );
 
--- 16. LOG DE ACTIVIDAD
+alter table public.examenes
+  add column if not exists modulo_origen text,
+  add column if not exists fuente_banco text,
+  add column if not exists total_preguntas integer,
+  add column if not exists respuestas_correctas integer,
+  add column if not exists porcentaje integer,
+  add column if not exists tiempo_segundos integer;
+
+alter table public.preguntas_examen
+  add column if not exists created_by uuid references public.perfiles(id) on delete set null,
+  add column if not exists updated_by uuid references public.perfiles(id) on delete set null,
+  add column if not exists updated_at timestamp with time zone not null default now();
+
+create table if not exists public.examenes_cale_preguntas (
+  id bigint generated always as identity primary key,
+  escuela_id uuid references public.escuelas(id) on delete cascade not null,
+  sede_id uuid references public.sedes(id) on delete cascade not null,
+  alumno_id uuid references public.alumnos(id) on delete cascade not null,
+  examen_id uuid references public.examenes(id) on delete cascade not null,
+  pregunta_id uuid references public.preguntas_examen(id) on delete set null,
+  categoria_id uuid references public.categorias_examen(id) on delete set null,
+  categoria_nombre text,
+  codigo_externo text,
+  pregunta_texto text not null,
+  orden_pregunta integer not null check (orden_pregunta > 0),
+  created_at timestamp with time zone not null default now(),
+  constraint examenes_cale_preguntas_examen_orden_unique unique (examen_id, orden_pregunta)
+);
+
+-- 17. LOG DE ACTIVIDAD
 create table public.actividad_log (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade,
@@ -481,10 +588,77 @@ alter table public.gastos
 -- );
 
 -- Índices operativos
+create extension if not exists pg_trgm;
 create index if not exists matriculas_alumno_escuela_idx on public.matriculas_alumno (escuela_id);
 create index if not exists matriculas_alumno_sede_idx on public.matriculas_alumno (sede_id);
 create index if not exists matriculas_alumno_alumno_idx on public.matriculas_alumno (alumno_id);
+create index if not exists matriculas_alumno_escuela_fecha_idx on public.matriculas_alumno (escuela_id, fecha_inscripcion desc, created_at desc);
 create index if not exists ingresos_matricula_id_idx on public.ingresos (matricula_id);
+create index if not exists ingresos_escuela_fecha_created_idx on public.ingresos (escuela_id, fecha desc, created_at desc);
+create index if not exists ingresos_escuela_estado_fecha_idx on public.ingresos (escuela_id, estado, fecha desc);
+create index if not exists ingresos_escuela_vencimiento_estado_idx on public.ingresos (escuela_id, estado, fecha_vencimiento asc);
+create index if not exists ingresos_escuela_categoria_fecha_idx on public.ingresos (escuela_id, categoria, fecha desc);
+create index if not exists ingresos_escuela_metodo_fecha_idx on public.ingresos (escuela_id, metodo_pago, fecha desc);
+create index if not exists ingresos_escuela_alumno_fecha_idx on public.ingresos (escuela_id, alumno_id, fecha desc);
+create index if not exists gastos_escuela_fecha_created_idx on public.gastos (escuela_id, fecha desc, created_at desc);
+create index if not exists gastos_escuela_categoria_fecha_idx on public.gastos (escuela_id, categoria, fecha desc);
+create index if not exists gastos_escuela_metodo_fecha_idx on public.gastos (escuela_id, metodo_pago, fecha desc);
+create index if not exists gastos_escuela_vencimiento_estado_pago_idx on public.gastos (escuela_id, estado_pago, fecha_vencimiento asc);
+create index if not exists gastos_escuela_recurrente_fecha_idx on public.gastos (escuela_id, recurrente, fecha desc);
+create index if not exists gastos_escuela_factura_idx on public.gastos (escuela_id, numero_factura)
+  where numero_factura is not null and btrim(numero_factura) <> '';
+create index if not exists alumnos_escuela_tipo_created_idx on public.alumnos (escuela_id, tipo_registro, created_at desc);
+create index if not exists alumnos_nombre_apellidos_trgm_idx
+  on public.alumnos using gin ((coalesce(nombre, '') || ' ' || coalesce(apellidos, '')) gin_trgm_ops);
+create index if not exists alumnos_dni_trgm_idx on public.alumnos using gin (dni gin_trgm_ops);
+create index if not exists alumnos_numero_contrato_trgm_idx
+  on public.alumnos using gin ((coalesce(numero_contrato, '')) gin_trgm_ops);
+create index if not exists alumnos_empresa_convenio_trgm_idx
+  on public.alumnos using gin ((coalesce(empresa_convenio, '')) gin_trgm_ops);
+create index if not exists alumnos_categorias_gin_idx on public.alumnos using gin (categorias);
+create index if not exists matriculas_alumno_categorias_gin_idx on public.matriculas_alumno using gin (categorias);
+create index if not exists perfiles_escuela_rol_created_idx on public.perfiles (escuela_id, rol, created_at desc);
+create index if not exists perfiles_escuela_sede_rol_created_idx on public.perfiles (escuela_id, sede_id, rol, created_at desc);
+create index if not exists perfiles_nombre_trgm_idx on public.perfiles using gin (nombre gin_trgm_ops);
+create index if not exists perfiles_email_trgm_idx on public.perfiles using gin (email gin_trgm_ops);
+create index if not exists sedes_escuela_estado_principal_idx on public.sedes (escuela_id, estado, es_principal desc);
+create index if not exists instructores_escuela_created_idx on public.instructores (escuela_id, created_at desc);
+create index if not exists instructores_escuela_sede_created_idx on public.instructores (escuela_id, sede_id, created_at desc);
+create index if not exists instructores_nombre_trgm_idx on public.instructores using gin (nombre gin_trgm_ops);
+create index if not exists instructores_apellidos_trgm_idx on public.instructores using gin (apellidos gin_trgm_ops);
+create index if not exists instructores_dni_trgm_idx on public.instructores using gin (dni gin_trgm_ops);
+create index if not exists ingresos_concepto_trgm_idx on public.ingresos using gin (concepto gin_trgm_ops);
+create index if not exists ingresos_numero_factura_trgm_idx
+  on public.ingresos using gin ((coalesce(numero_factura, '')) gin_trgm_ops);
+create index if not exists ingresos_notas_trgm_idx
+  on public.ingresos using gin ((coalesce(notas, '')) gin_trgm_ops);
+create index if not exists examenes_cale_modulo_fecha_created_idx on public.examenes (modulo_origen, fecha desc, created_at desc);
+create index if not exists examenes_cale_escuela_modulo_fecha_created_idx on public.examenes (escuela_id, modulo_origen, fecha desc, created_at desc);
+create index if not exists examenes_cale_escuela_sede_modulo_fecha_created_idx on public.examenes (escuela_id, sede_id, modulo_origen, fecha desc, created_at desc);
+create index if not exists examenes_cale_alumno_modulo_fecha_created_idx on public.examenes (alumno_id, modulo_origen, fecha desc, created_at desc);
+create index if not exists examenes_cale_escuela_resultado_fecha_created_idx
+  on public.examenes (escuela_id, resultado, fecha desc, created_at desc)
+  where modulo_origen = 'cale_practica';
+create index if not exists respuestas_examen_examen_created_idx on public.respuestas_examen (examen_id, created_at desc);
+create index if not exists respuestas_examen_pregunta_created_idx on public.respuestas_examen (pregunta_id, created_at desc);
+create index if not exists respuestas_examen_categoria_created_idx on public.respuestas_examen (categoria_nombre, created_at desc);
+create index if not exists examenes_cale_preguntas_escuela_created_idx on public.examenes_cale_preguntas (escuela_id, created_at desc);
+create index if not exists examenes_cale_preguntas_sede_created_idx on public.examenes_cale_preguntas (sede_id, created_at desc);
+create index if not exists examenes_cale_preguntas_examen_orden_idx on public.examenes_cale_preguntas (examen_id, orden_pregunta asc);
+create index if not exists examenes_cale_preguntas_pregunta_created_idx on public.examenes_cale_preguntas (pregunta_id, created_at desc);
+create index if not exists examenes_cale_preguntas_categoria_created_idx on public.examenes_cale_preguntas (categoria_nombre, created_at desc);
+create index if not exists preguntas_examen_fuente_activa_dificultad_idx on public.preguntas_examen (fuente, activa, dificultad, categoria_id);
+create index if not exists preguntas_examen_codigo_externo_idx on public.preguntas_examen (codigo_externo);
+create index if not exists preguntas_examen_pregunta_trgm_idx on public.preguntas_examen using gin (pregunta gin_trgm_ops);
+create index if not exists preguntas_examen_explicacion_trgm_idx on public.preguntas_examen using gin ((coalesce(explicacion, '')) gin_trgm_ops);
+create index if not exists preguntas_examen_fundamento_trgm_idx on public.preguntas_examen using gin ((coalesce(fundamento_legal, '')) gin_trgm_ops);
+create index if not exists gastos_concepto_trgm_idx on public.gastos using gin (concepto gin_trgm_ops);
+create index if not exists gastos_proveedor_trgm_idx
+  on public.gastos using gin ((coalesce(proveedor, '')) gin_trgm_ops);
+create index if not exists gastos_numero_factura_trgm_idx
+  on public.gastos using gin ((coalesce(numero_factura, '')) gin_trgm_ops);
+create index if not exists gastos_notas_trgm_idx
+  on public.gastos using gin ((coalesce(notas, '')) gin_trgm_ops);
 
 -- Mantiene el resumen legado del alumno sincronizado con sus contratos
 create or replace function public.sync_alumno_from_matriculas()
@@ -583,10 +757,13 @@ alter table public.clases enable row level security;
 alter table public.examenes enable row level security;
 -- alter table public.pagos enable row level security; -- Eliminado
 alter table public.gastos enable row level security;
+alter table public.facturas_correo_integraciones enable row level security;
+alter table public.facturas_correo_importaciones enable row level security;
 alter table public.ingresos enable row level security;
 alter table public.categorias_examen enable row level security;
 alter table public.preguntas_examen enable row level security;
 alter table public.respuestas_examen enable row level security;
+alter table public.examenes_cale_preguntas enable row level security;
 alter table public.actividad_log enable row level security;
 alter table public.mantenimiento_vehiculos enable row level security;
 -- alter table public.cursos enable row level security;
@@ -1008,6 +1185,25 @@ create policy "Alumno: crea sus respuestas"
   on public.respuestas_examen for insert with check (
     public.is_alumno() and alumno_id = public.get_my_alumno_id()
     and sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id()
+  );
+
+-- ========== DETALLE DE PREGUNTAS USADAS EN CALE ==========
+create policy "Super admin: ve todas las preguntas usadas en CALE"
+  on public.examenes_cale_preguntas for select using (public.is_super_admin());
+create policy "Super admin: gestiona detalle de preguntas CALE"
+  on public.examenes_cale_preguntas for all using (public.is_super_admin());
+create policy "Admin escuela: ve detalle de preguntas CALE de su escuela"
+  on public.examenes_cale_preguntas for select using (
+    escuela_id = public.get_my_escuela_id() and public.is_admin_escuela()
+  );
+create policy "Usuarios sede: ven detalle de preguntas CALE de su sede"
+  on public.examenes_cale_preguntas for select using (
+    sede_id = public.get_my_sede_id() and escuela_id = public.get_my_escuela_id()
+    and not public.is_alumno()
+  );
+create policy "Alumno: ve solo detalle de sus preguntas CALE"
+  on public.examenes_cale_preguntas for select using (
+    public.is_alumno() and alumno_id = public.get_my_alumno_id()
   );
 
 -- -- ========== CURSOS (catálogo global) ==========

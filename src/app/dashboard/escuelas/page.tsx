@@ -3,9 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { useDraftForm } from "@/hooks/useDraftForm";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
+import { getPasswordValidationError } from "@/lib/password-policy";
+import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
 import type { Escuela, EstadoEscuela, PlanEscuela } from "@/types/database";
 import { Plus, Building2, Eye, EyeOff } from "lucide-react";
 
@@ -51,12 +54,26 @@ export default function EscuelasPage() {
   const [editing, setEditing] = useState<Escuela | null>(null);
   const [deleting, setDeleting] = useState<Escuela | null>(null);
   const [saving, setSaving] = useState(false);
-  const [escuelaForm, setEscuelaForm] = useState(emptyEscuelaForm);
-  const [adminForm, setAdminForm] = useState(emptyAdminForm);
   const [crearAdmin, setCrearAdmin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  const {
+    value: escuelaForm,
+    setValue: setEscuelaForm,
+    restoreDraft: restoreEscuelaDraft,
+    clearDraft: clearEscuelaDraft,
+  } = useDraftForm("dashboard:escuelas:escuela-form", emptyEscuelaForm, {
+    persist: modalOpen && !editing,
+  });
+  const {
+    value: adminForm,
+    setValue: setAdminForm,
+    restoreDraft: restoreAdminDraft,
+    clearDraft: clearAdminDraft,
+  } = useDraftForm("dashboard:escuelas:admin-form", emptyAdminForm, {
+    persist: modalOpen && !editing && crearAdmin,
+  });
 
   const fetchEscuelas = useCallback(async () => {
     const supabase = createClient();
@@ -75,8 +92,8 @@ export default function EscuelasPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setEscuelaForm(emptyEscuelaForm);
-    setAdminForm(emptyAdminForm);
+    restoreEscuelaDraft(emptyEscuelaForm);
+    restoreAdminDraft(emptyAdminForm);
     setCrearAdmin(true);
     setShowPassword(false);
     setError("");
@@ -129,8 +146,9 @@ export default function EscuelasPage() {
         setError("Completa todos los datos del administrador.");
         return;
       }
-      if (adminForm.password.length < 6) {
-        setError("La contraseña del administrador debe tener al menos 6 caracteres.");
+      const passwordError = getPasswordValidationError(adminForm.password);
+      if (passwordError) {
+        setError(passwordError);
         return;
       }
     }
@@ -141,77 +159,84 @@ export default function EscuelasPage() {
 
     try {
       if (editing) {
-        const { error } = await supabase
-          .from("escuelas")
-          .update({
-            nombre: escuelaForm.nombre,
-            cif: escuelaForm.cif,
-            telefono: escuelaForm.telefono || null,
-            email: escuelaForm.email || null,
-            direccion: escuelaForm.direccion || null,
-            plan: escuelaForm.plan,
-            estado: escuelaForm.estado,
-            max_alumnos: escuelaForm.max_alumnos,
-            max_sedes: escuelaForm.max_sedes,
-            categorias: escuelaForm.categorias,
-          })
-          .eq("id", editing.id);
-        if (error) throw error;
+        await runSupabaseMutationWithRetry(() =>
+          supabase
+            .from("escuelas")
+            .update({
+              nombre: escuelaForm.nombre,
+              cif: escuelaForm.cif,
+              telefono: escuelaForm.telefono || null,
+              email: escuelaForm.email || null,
+              direccion: escuelaForm.direccion || null,
+              plan: escuelaForm.plan,
+              estado: escuelaForm.estado,
+              max_alumnos: escuelaForm.max_alumnos,
+              max_sedes: escuelaForm.max_sedes,
+              categorias: escuelaForm.categorias,
+            })
+            .eq("id", editing.id)
+        );
       } else {
-        const { data: nuevaEscuela, error: errEscuela } = await supabase
-          .from("escuelas")
-          .insert([{
-            nombre: escuelaForm.nombre,
-            cif: escuelaForm.cif,
-            telefono: escuelaForm.telefono || null,
-            email: escuelaForm.email || null,
-            direccion: escuelaForm.direccion || null,
-            plan: escuelaForm.plan,
-            estado: escuelaForm.estado,
-            max_alumnos: escuelaForm.max_alumnos,
-            max_sedes: escuelaForm.max_sedes,
-            categorias: escuelaForm.categorias,
-            fecha_alta: new Date().toISOString().split("T")[0],
-          }])
-          .select()
-          .single();
-
-        if (errEscuela) throw errEscuela;
+        const { data: nuevaEscuela } = await runSupabaseMutationWithRetry(() =>
+          supabase
+            .from("escuelas")
+            .insert([{
+              nombre: escuelaForm.nombre,
+              cif: escuelaForm.cif,
+              telefono: escuelaForm.telefono || null,
+              email: escuelaForm.email || null,
+              direccion: escuelaForm.direccion || null,
+              plan: escuelaForm.plan,
+              estado: escuelaForm.estado,
+              max_alumnos: escuelaForm.max_alumnos,
+              max_sedes: escuelaForm.max_sedes,
+              categorias: escuelaForm.categorias,
+              fecha_alta: new Date().toISOString().split("T")[0],
+            }])
+            .select()
+            .single()
+        );
 
         if (nuevaEscuela) {
           // Crear Sede 1 automáticamente como sede principal
-          await supabase.from("sedes").insert([{
-            escuela_id: nuevaEscuela.id,
-            nombre: "Sede 1",
-            direccion: escuelaForm.direccion || null,
-            telefono: escuelaForm.telefono || null,
-            email: escuelaForm.email || null,
-            es_principal: true,
-            estado: "activa",
-          }]);
+          await runSupabaseMutationWithRetry(() =>
+            supabase.from("sedes").insert([{
+              escuela_id: nuevaEscuela.id,
+              nombre: "Sede 1",
+              direccion: escuelaForm.direccion || null,
+              telefono: escuelaForm.telefono || null,
+              email: escuelaForm.email || null,
+              es_principal: true,
+              estado: "activa",
+            }])
+          );
 
           if (crearAdmin) {
-            const res = await fetch("/api/crear-admin-escuela", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                escuela_id: nuevaEscuela.id,
-                nombre: adminForm.nombre,
-                email: adminForm.email,
-                password: adminForm.password,
-              }),
-            });
-            const json = await res.json();
-            if (!res.ok) {
+            try {
+              await fetchJsonWithRetry("/api/crear-admin-escuela", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  escuela_id: nuevaEscuela.id,
+                  nombre: adminForm.nombre,
+                  email: adminForm.email,
+                  password: adminForm.password,
+                }),
+              });
+            } catch (adminErr: unknown) {
               // Rollback: eliminar sede y escuela para no dejar datos huérfanos
               await supabase.from("sedes").delete().eq("escuela_id", nuevaEscuela.id);
               await supabase.from("escuelas").delete().eq("id", nuevaEscuela.id);
-              throw new Error(json.error || "Error al crear el administrador");
+              throw adminErr instanceof Error
+                ? adminErr
+                : new Error("Error al crear el administrador");
             }
           }
         }
       }
 
+      clearEscuelaDraft(emptyEscuelaForm);
+      clearAdminDraft(emptyAdminForm);
       setModalOpen(false);
       fetchEscuelas();
     } catch (err: unknown) {
@@ -230,25 +255,11 @@ export default function EscuelasPage() {
     setSaving(true);
     setDeleteError("");
     try {
-      const supabase = createClient();
-      const id = deleting.id;
-
-      // Eliminar en cascada todos los registros relacionados
-      await supabase.from("mantenimiento_vehiculos").delete().eq("escuela_id", id);
-      await supabase.from("ingresos").delete().eq("escuela_id", id);
-      await supabase.from("gastos").delete().eq("escuela_id", id);
-      await supabase.from("examenes").delete().eq("escuela_id", id);
-      await supabase.from("clases").delete().eq("escuela_id", id);
-      await supabase.from("vehiculos").delete().eq("escuela_id", id);
-      await supabase.from("instructores").delete().eq("escuela_id", id);
-      await supabase.from("alumnos").delete().eq("escuela_id", id);
-      // Eliminar perfiles ANTES de sedes para evitar que ON DELETE SET NULL
-      // en perfiles.sede_id viole el check constraint perfiles_jerarquia
-      await supabase.from("perfiles").delete().eq("escuela_id", id);
-      await supabase.from("sedes").delete().eq("escuela_id", id);
-
-      const { error } = await supabase.from("escuelas").delete().eq("id", id);
-      if (error) throw error;
+      await fetchJsonWithRetry("/api/escuelas/eliminar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ escuela_id: deleting.id }),
+      });
 
       setDeleteOpen(false);
       setDeleting(null);

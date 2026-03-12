@@ -1,29 +1,49 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import {
   authorizeApiRequest,
+  buildSupabaseAdminClient,
+  ensureNonReservedAuthEmail,
   ensureSchoolScope,
   ensureSedeScope,
   findAuthUserByEmail,
   normalizeCedula,
   normalizeEmail,
-  normalizeText,
+  parseJsonBody,
+  isAuthUserAlreadyRegisteredError,
 } from "@/lib/api-auth";
+import { createAlumnoSchema } from "@/lib/schemas";
+import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
     const authz = await authorizeApiRequest(["super_admin", "admin_escuela", "admin_sede", "administrativo", "recepcion"]);
     if (!authz.ok) return authz.response;
 
-    const body = await request.json();
-    const nombre = normalizeText(body.nombre);
-    const email = normalizeEmail(body.email);
-    const dni = normalizeCedula(body.dni);
-    const escuela_id = normalizeText(body.escuela_id);
-    const sede_id = normalizeText(body.sede_id);
+    const limiter = rateLimit(
+      getRateLimitKey(request, "api:create-alumno-auth", authz.perfil.id),
+      20,
+      15 * 60 * 1000
+    );
+    if (!limiter.ok) {
+      return NextResponse.json({ error: "Demasiadas solicitudes. Intenta más tarde." }, { status: 429 });
+    }
+
+    const parsedBody = await parseJsonBody(request, createAlumnoSchema);
+    if (!parsedBody.ok) return parsedBody.response;
+
+    const nombre = parsedBody.data.nombre.trim();
+    const email = normalizeEmail(parsedBody.data.email);
+    const dni = normalizeCedula(parsedBody.data.dni);
+    const escuela_id = parsedBody.data.escuela_id;
+    const sede_id = parsedBody.data.sede_id;
 
     if (!nombre || !dni || !escuela_id || !sede_id) {
       return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
+    }
+
+    const reservedEmailError = ensureNonReservedAuthEmail(email);
+    if (reservedEmailError) {
+      return NextResponse.json({ error: reservedEmailError }, { status: 400 });
     }
 
     const schoolScopeError = ensureSchoolScope(authz.perfil, escuela_id);
@@ -36,16 +56,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: sedeScopeError }, { status: 403 });
     }
 
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!serviceRoleKey) {
-      return NextResponse.json({ error: "Configuración del servidor incompleta" }, { status: 500 });
-    }
+    const supabaseAdmin = buildSupabaseAdminClient();
+    const { data: perfilConCedula } = await supabaseAdmin
+      .from("perfiles")
+      .select("id")
+      .eq("cedula", dni)
+      .maybeSingle();
 
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
+    if (perfilConCedula) {
+      return NextResponse.json(
+        { error: "La cédula o correo ya tiene una cuenta registrada." },
+        { status: 400 }
+      );
+    }
 
     const authEmail = email || `${dni}@alumno.local`;
     const authPassword = dni;
@@ -58,9 +81,9 @@ export async function POST(request: Request) {
         .eq("id", existingUser.id)
         .maybeSingle();
 
-      if (perfilExistente?.escuela_id) {
+      if (perfilExistente || email) {
         return NextResponse.json(
-          { error: "La cédula o correo ya tiene una cuenta activa." },
+          { error: "La cédula o correo ya tiene una cuenta registrada." },
           { status: 400 }
         );
       }
@@ -81,8 +104,15 @@ export async function POST(request: Request) {
     });
 
     if (authError || !authData?.user) {
+      if (isAuthUserAlreadyRegisteredError(authError?.message)) {
+        return NextResponse.json(
+          { error: "La cédula o correo ya tiene una cuenta registrada." },
+          { status: 400 }
+        );
+      }
+
       return NextResponse.json(
-        { error: authError?.message || "Error al crear el usuario" },
+        { error: "No se pudo crear el usuario alumno." },
         { status: 400 }
       );
     }
@@ -105,7 +135,10 @@ export async function POST(request: Request) {
 
     if (perfilError) {
       await supabaseAdmin.auth.admin.deleteUser(userId);
-      return NextResponse.json({ error: perfilError.message }, { status: 400 });
+      return NextResponse.json(
+        { error: "No se pudo guardar el perfil del usuario." },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({ success: true, user_id: userId });

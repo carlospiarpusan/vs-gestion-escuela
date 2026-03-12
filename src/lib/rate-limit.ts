@@ -17,6 +17,18 @@ export function rateLimit(key: string, limit: number, windowMs: number): { ok: b
   return { ok: true, remaining: limit - entry.count };
 }
 
+export function getRateLimitKey(request: Request, scope: string, suffix?: string) {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  const ipFromForward = forwardedFor?.split(",")[0]?.trim();
+  const ip =
+    ipFromForward ||
+    request.headers.get("x-real-ip") ||
+    request.headers.get("cf-connecting-ip") ||
+    "unknown";
+
+  return [scope, ip, suffix].filter(Boolean).join(":");
+}
+
 // Clean up old entries every 5 minutes to prevent memory leaks
 if (typeof setInterval !== "undefined") {
   setInterval(() => {

@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Sidebar from "@/components/dashboard/Sidebar";
-import { LogOut, Sun, Moon, Menu, AlertCircle, KeyRound, Eye, EyeOff, UserCheck, UserCircle, PanelLeftOpen } from "lucide-react";
+import { LogOut, Sun, Moon, Menu, AlertCircle, KeyRound, Eye, EyeOff, UserCheck, UserCircle, PanelLeftOpen, Wifi, WifiOff } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import { canAccessDashboardPath, getDashboardFallbackPath } from "@/lib/access-control";
 import ErrorBoundary from "@/components/dashboard/ErrorBoundary";
+import { getPasswordValidationError } from "@/lib/password-policy";
 
 const DEPARTAMENTOS_COLOMBIA = [
   "Amazonas", "Antioquia", "Arauca", "Atlántico", "Bolívar", "Boyacá",
@@ -46,6 +47,9 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const [themeReady, setThemeReady] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [connectionBanner, setConnectionBanner] = useState<"online" | "offline" | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hadOfflineRef = useRef(false);
 
   // --- Modal 1: Cambio de contraseña obligatorio ---
   const [cambioOpen, setCambioOpen] = useState(false);
@@ -89,6 +93,45 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, perfil?.rol]);
 
+  useEffect(() => {
+    const clearReconnectTimer = () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+
+    const handleOffline = () => {
+      hadOfflineRef.current = true;
+      clearReconnectTimer();
+      setConnectionBanner("offline");
+    };
+
+    const handleOnline = () => {
+      if (!hadOfflineRef.current) return;
+
+      clearReconnectTimer();
+      setConnectionBanner("online");
+      reconnectTimerRef.current = setTimeout(() => {
+        setConnectionBanner(null);
+        hadOfflineRef.current = false;
+      }, 3000);
+    };
+
+    if (!window.navigator.onLine) {
+      handleOffline();
+    }
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      clearReconnectTimer();
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
+
   const abrirCompletarPerfil = async () => {
     if (!user) return;
     const supabase = createClient();
@@ -112,8 +155,9 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       setCambioError("Completa todos los campos.");
       return;
     }
-    if (nuevaPassword.length < 6) {
-      setCambioError("La contraseña debe tener al menos 6 caracteres.");
+    const passwordError = getPasswordValidationError(nuevaPassword);
+    if (passwordError) {
+      setCambioError(passwordError);
       return;
     }
     if (nuevaPassword !== confirmarPassword) {
@@ -195,9 +239,12 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       setCuentaError("El nombre es obligatorio.");
       return;
     }
-    if (cuentaPass1 && cuentaPass1.length < 6) {
-      setCuentaError("La contraseña debe tener al menos 6 caracteres.");
-      return;
+    if (cuentaPass1) {
+      const passwordError = getPasswordValidationError(cuentaPass1);
+      if (passwordError) {
+        setCuentaError(passwordError);
+        return;
+      }
     }
     if (cuentaPass1 && cuentaPass1 !== cuentaPass2) {
       setCuentaError("Las contraseñas no coinciden.");
@@ -302,10 +349,10 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const nombre = perfil?.nombre || user.user_metadata?.nombre || "Usuario";
 
   return (
-    <div className="apple-shell flex min-h-screen transition-colors duration-300">
+    <div className="apple-shell flex min-h-screen transition-colors duration-300 lg:h-dvh lg:overflow-hidden">
       <Sidebar rol={perfil?.rol} open={sidebarOpen} onClose={() => setSidebarOpen(false)} collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
-      <div className="relative flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
+      <div className="dashboard-scroll-shell relative flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden lg:h-dvh lg:overflow-y-auto">
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute left-[-10rem] top-[-8rem] h-72 w-72 rounded-full bg-[#0071e3]/10 blur-3xl" />
           <div className="absolute bottom-[-9rem] right-[-6rem] h-80 w-80 rounded-full bg-sky-200/30 blur-3xl dark:bg-sky-900/20" />
@@ -383,9 +430,28 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
           </header>
         </div>
 
+        {connectionBanner && (
+          <div className="relative z-20 px-3 pt-3 sm:px-6">
+            <div
+              className={`mx-auto flex w-full max-w-[1520px] items-center gap-3 rounded-[24px] border px-4 py-3 text-sm shadow-sm ${
+                connectionBanner === "offline"
+                  ? "border-amber-200 bg-amber-50/90 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
+                  : "border-emerald-200 bg-emerald-50/90 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300"
+              }`}
+            >
+              {connectionBanner === "offline" ? <WifiOff size={16} /> : <Wifi size={16} />}
+              <p>
+                {connectionBanner === "offline"
+                  ? "Sin conexión. La información puede quedar desactualizada hasta que vuelva la red."
+                  : "Conexión restablecida. Ya puedes seguir trabajando con normalidad."}
+              </p>
+            </div>
+          </div>
+        )}
+
         <main className="relative z-10 flex-1 px-3 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-5">
           <div className="mx-auto w-full max-w-[1520px]">
-            <ErrorBoundary>{children}</ErrorBoundary>
+            <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
           </div>
         </main>
       </div>

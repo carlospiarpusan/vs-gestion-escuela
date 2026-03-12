@@ -16,15 +16,27 @@ const DASHBOARD_ROUTE_RULES: RouteRule[] = [
   { prefix: "/dashboard/categorias", roles: ["super_admin", "admin_escuela", "admin_sede"] },
   { prefix: "/dashboard/clases", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
   { prefix: "/dashboard/horas", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"] },
-  { prefix: "/dashboard/examenes", roles: ["super_admin", "admin_escuela", "admin_sede"] },
+  { prefix: "/dashboard/examenes", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "alumno"] },
   { prefix: "/dashboard/ingresos", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
   { prefix: "/dashboard/gastos", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
+  { prefix: "/dashboard/informes", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
   { prefix: "/dashboard/sedes", roles: ["super_admin", "admin_escuela", "admin_sede"] },
+];
+
+const SUPER_ADMIN_ALLOWED_PREFIXES = [
+  "/dashboard/escuelas",
+  "/dashboard/sedes",
+  "/dashboard/examenes",
+  "/dashboard/informes",
 ];
 
 export function canAccessDashboardPath(rol: Rol | null | undefined, pathname: string): boolean {
   if (!rol) return false;
   if (pathname === "/dashboard") return true;
+
+  if (rol === "super_admin") {
+    return SUPER_ADMIN_ALLOWED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  }
 
   const matchedRule = DASHBOARD_ROUTE_RULES.find((rule) => pathname.startsWith(rule.prefix));
   if (!matchedRule) return false;

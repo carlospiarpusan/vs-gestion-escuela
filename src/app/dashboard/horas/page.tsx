@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { Instructor } from "@/types/database";
+import { AlertCircle, ChevronLeft, ChevronRight, ReceiptText, RefreshCw } from "lucide-react";
+import TableScrollArea from "@/components/dashboard/TableScrollArea";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
+import type { CierreHorasInstructor, Instructor } from "@/types/database";
 
 // ─── Constantes ────────────────────────────────────────────────
 
@@ -19,6 +21,31 @@ const DIA_ABREV = ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"];
 
 type HorasMap = Record<string, Record<number, number>>;
 type InputOverrides = Record<string, string>;
+type InstructorHorasRow = Pick<Instructor, "id" | "nombre" | "apellidos" | "color" | "sede_id"> & {
+  valor_hora?: number | null;
+};
+type CierreHoraMensualRow = Pick<
+  CierreHorasInstructor,
+  "id" | "instructor_id" | "gasto_id" | "periodo_anio" | "periodo_mes" | "fecha_cierre" | "total_horas" | "valor_hora" | "monto_total" | "updated_at"
+>;
+type GeneracionGastoHoraRow = {
+  instructor_id: string;
+  gasto_id: string;
+  instructor_nombre: string;
+  total_horas: number | string;
+  valor_hora: number | string;
+  monto_total: number | string;
+  accion: "creado" | "actualizado";
+};
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim().length > 0) return message;
+  }
+  return fallback;
+}
 
 // ─── Helpers ───────────────────────────────────────────────────
 
@@ -56,12 +83,26 @@ export default function HorasPage() {
   const [valorHoras, setValorHoras] = useState<Record<string, number>>({});
   const [valorHoraEdits, setValorHoraEdits] = useState<Record<string, string>>({});
   const [savingValor, setSavingValor] = useState<Set<string>>(new Set());
+  const [monthClosures, setMonthClosures] = useState<CierreHoraMensualRow[]>([]);
+  const [loadingClosures, setLoadingClosures] = useState(false);
+  const [closingMonth, setClosingMonth] = useState(false);
+  const [closureError, setClosureError] = useState<string | null>(null);
+  const [closureNotice, setClosureNotice] = useState<string | null>(null);
 
   const daysInMonth = getDaysInMonth(anio, mes);
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
   const isReadOnly = perfil?.rol === "instructor" || perfil?.rol === "alumno";
   const canEditValor = ["super_admin", "admin_escuela", "admin_sede"].includes(perfil?.rol ?? "");
+  const canGenerateMonthlyExpenses = Boolean(
+    perfil?.escuela_id && ["super_admin", "admin_escuela", "admin_sede", "administrativo"].includes(perfil?.rol ?? "")
+  );
+  const monthNumber = mes + 1;
+  const monthKey = `${anio}-${String(monthNumber).padStart(2, "0")}`;
+  const selectedMonthLabel = `${MESES[mes]} ${anio}`;
+  const selectedMonthLastDay = new Date(anio, mes + 1, 0);
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const monthClosed = selectedMonthLastDay < startOfToday;
 
   // Anchos fijos de columnas sticky derecha
   const VALOR_COL_W = 110; // px — columna valor total (solo admins)
@@ -78,36 +119,49 @@ export default function HorasPage() {
     const firstDay = padMonth(anio, mes, 1);
     const lastDay = padMonth(anio, mes, daysInMonth);
 
-    const [instRes, horasRes] = await Promise.all([
-      supabase
-        .from("instructores")
-        .select("id, nombre, apellidos, color, sede_id, valor_hora")
-        .eq("escuela_id", perfil.escuela_id)
-        .eq("estado", "activo")
-        .order("nombre"),
-      supabase
-        .from("horas_trabajo")
-        .select("instructor_id, fecha, horas")
-        .eq("escuela_id", perfil.escuela_id)
-        .gte("fecha", firstDay)
-        .lte("fecha", lastDay),
+    const [instRows, horasRows] = await Promise.all([
+      fetchAllSupabaseRows<InstructorHorasRow>((from, to) =>
+        supabase
+          .from("instructores")
+          .select("id, nombre, apellidos, color, sede_id, valor_hora")
+          .eq("escuela_id", perfil.escuela_id)
+          .eq("estado", "activo")
+          .order("nombre", { ascending: true })
+          .order("apellidos", { ascending: true })
+          .range(from, to)
+          .then(({ data, error }) => ({ data: (data as InstructorHorasRow[]) ?? [], error }))
+      ),
+      fetchAllSupabaseRows<{ instructor_id: string; fecha: string; horas: number }>((from, to) =>
+        supabase
+          .from("horas_trabajo")
+          .select("instructor_id, fecha, horas")
+          .eq("escuela_id", perfil.escuela_id)
+          .gte("fecha", firstDay)
+          .lte("fecha", lastDay)
+          .order("fecha", { ascending: true })
+          .range(from, to)
+          .then(({ data, error }) => ({
+            data: (data as { instructor_id: string; fecha: string; horas: number }[]) ?? [],
+            error,
+          }))
+      ),
     ]);
 
     const map: HorasMap = {};
     const vh: Record<string, number> = {};
 
-    (instRes.data || []).forEach((i: { id: string; valor_hora?: number }) => {
+    instRows.forEach((i) => {
       map[i.id] = {};
       vh[i.id] = Number(i.valor_hora) || 0;
     });
 
-    (horasRes.data || []).forEach((h: { instructor_id: string; fecha: string; horas: number }) => {
+    horasRows.forEach((h: { instructor_id: string; fecha: string; horas: number }) => {
       const day = parseInt(h.fecha.split("-")[2], 10);
       if (!map[h.instructor_id]) map[h.instructor_id] = {};
       map[h.instructor_id][day] = Number(h.horas);
     });
 
-    setInstructores((instRes.data as unknown as Instructor[]) || []);
+    setInstructores(instRows as unknown as Instructor[]);
     setHorasMap(map);
     setValorHoras(vh);
     setInputOverrides({});
@@ -232,6 +286,97 @@ export default function HorasPage() {
 
   const grandTotal = instructores.reduce((s, i) => s + getTotalInstructor(i.id), 0);
   const grandTotalValor = instructores.reduce((s, i) => s + getTotalValor(i.id), 0);
+  const closureByInstructor = useMemo(
+    () => new Map(monthClosures.map((row) => [row.instructor_id, row])),
+    [monthClosures]
+  );
+  const closureTotal = useMemo(
+    () => monthClosures.reduce((sum, row) => sum + Number(row.monto_total || 0), 0),
+    [monthClosures]
+  );
+  const instructorsMissingRate = instructores.filter(
+    (inst) => getTotalInstructor(inst.id) > 0 && (valorHoras[inst.id] ?? 0) <= 0
+  );
+
+  const fetchMonthlyClosures = useCallback(async () => {
+    if (!perfil?.escuela_id || !canGenerateMonthlyExpenses || !monthClosed) {
+      setMonthClosures([]);
+      setClosureError(null);
+      return;
+    }
+
+    setLoadingClosures(true);
+    setClosureError(null);
+
+    try {
+      const supabase = createClient();
+      const rows = await fetchAllSupabaseRows<CierreHoraMensualRow>((from, to) =>
+        supabase
+          .from("cierres_horas_instructores")
+          .select("id, instructor_id, gasto_id, periodo_anio, periodo_mes, fecha_cierre, total_horas, valor_hora, monto_total, updated_at")
+          .eq("escuela_id", perfil.escuela_id)
+          .eq("periodo_anio", anio)
+          .eq("periodo_mes", monthNumber)
+          .order("monto_total", { ascending: false })
+          .range(from, to)
+          .then(({ data, error }) => ({ data: (data as CierreHoraMensualRow[]) ?? [], error }))
+      );
+      setMonthClosures(rows);
+    } catch (closureLoadError) {
+      console.error("[HorasPage] Error cargando cierres mensuales:", closureLoadError);
+      setMonthClosures([]);
+      setClosureError("No se pudo verificar el cierre contable del mes.");
+    } finally {
+      setLoadingClosures(false);
+    }
+  }, [anio, canGenerateMonthlyExpenses, monthClosed, monthNumber, perfil?.escuela_id]);
+
+  useEffect(() => {
+    setClosureNotice(null);
+    setClosureError(null);
+  }, [monthKey]);
+
+  useEffect(() => {
+    void fetchMonthlyClosures();
+  }, [fetchMonthlyClosures]);
+
+  const handleGenerateMonthlyExpenses = async () => {
+    if (!monthClosed || !canGenerateMonthlyExpenses || !perfil?.escuela_id) return;
+
+    setClosingMonth(true);
+    setClosureError(null);
+    setClosureNotice(null);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc("generar_gastos_horas_mes", {
+        p_anio: anio,
+        p_mes: monthNumber,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      const generatedRows = (data as GeneracionGastoHoraRow[] | null) ?? [];
+      const totalGenerado = generatedRows.reduce((sum, row) => sum + Number(row.monto_total || 0), 0);
+
+      if (generatedRows.length === 0) {
+        setClosureNotice(`No había horas con valor para trasladar a gastos en ${selectedMonthLabel}.`);
+      } else {
+        setClosureNotice(
+          `${generatedRows.length} gasto(s) ${monthClosures.length > 0 ? "actualizado(s)" : "generado(s)"} por ${fmtCOP(totalGenerado)} para ${selectedMonthLabel}.`
+        );
+      }
+
+      await fetchMonthlyClosures();
+    } catch (generationError) {
+      console.error("[HorasPage] Error generando gastos mensuales:", generationError);
+      setClosureError(getErrorMessage(generationError, "No se pudo generar el gasto mensual de horas."));
+    } finally {
+      setClosingMonth(false);
+    }
+  };
 
   // ── Navegación de mes ─────────────────────────────────────────
 
@@ -291,6 +436,102 @@ export default function HorasPage() {
         </div>
       )}
 
+      {canGenerateMonthlyExpenses && (
+        <div className="mb-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-[#1d1d1f] dark:text-[#f5f5f7]">
+                <ReceiptText size={18} className="text-[#0071e3]" />
+                <h3 className="text-lg font-semibold">Cierre contable de horas</h3>
+              </div>
+              <p className="mt-1 text-sm text-[#86868b]">
+                Cuando el mes termina, puedes convertir el valor total de horas de cada instructor en gasto de nómina sin duplicados.
+              </p>
+            </div>
+
+            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+              <span
+                className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                  monthClosed
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                    : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                }`}
+              >
+                {monthClosed ? `Mes cerrado: ${selectedMonthLabel}` : `Mes aún abierto: ${selectedMonthLabel}`}
+              </span>
+              <button
+                onClick={handleGenerateMonthlyExpenses}
+                disabled={
+                  closingMonth ||
+                  loading ||
+                  loadingClosures ||
+                  !monthClosed ||
+                  grandTotalValor <= 0 ||
+                  instructorsMissingRate.length > 0
+                }
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED] disabled:cursor-not-allowed disabled:bg-[#0071e3]/40"
+              >
+                {closingMonth ? <RefreshCw size={16} className="animate-spin" /> : <ReceiptText size={16} />}
+                {closingMonth
+                  ? "Generando gastos..."
+                  : monthClosures.length > 0
+                    ? "Regenerar gastos del mes"
+                    : "Generar gastos del mes"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-[#141414]">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Total horas del mes</p>
+              <p className="mt-1 text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                {grandTotal > 0 ? `${grandTotal}h` : "—"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-[#141414]">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Valor a gasto</p>
+              <p className="mt-1 text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                {grandTotalValor > 0 ? fmtCOP(grandTotalValor) : "—"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-[#141414]">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Gastos ya generados</p>
+              <p className="mt-1 text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                {loadingClosures ? "..." : `${monthClosures.length}`}
+              </p>
+              <p className="mt-1 text-xs text-[#86868b]">
+                {loadingClosures ? "Verificando..." : monthClosures.length > 0 ? fmtCOP(closureTotal) : "Sin cierre todavía"}
+              </p>
+            </div>
+          </div>
+
+          {!monthClosed && (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+              Este mes todavía no ha terminado. El traslado a gastos se habilita cuando cierre el período.
+            </div>
+          )}
+
+          {monthClosed && instructorsMissingRate.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+              Hay instructores con horas registradas y valor por hora en `0`: {instructorsMissingRate.map((inst) => `${inst.nombre} ${inst.apellidos}`).join(", ")}.
+              Corrige ese valor antes de generar el gasto del mes.
+            </div>
+          )}
+
+          {closureError && (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+              {closureError}
+            </div>
+          )}
+
+          {closureNotice && (
+            <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300">
+              {closureNotice}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Tabla ── */}
       <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in delay-100 overflow-hidden">
         {loading ? (
@@ -303,8 +544,7 @@ export default function HorasPage() {
             <p className="text-sm">No hay instructores activos para mostrar</p>
           </div>
         ) : (
-          /* overflow-x-auto con w-full: la tabla scrollea dentro del card */
-          <div className="overflow-x-auto w-full">
+          <TableScrollArea framed={false} viewportClassName="w-full">
             <table
               className="border-collapse"
               style={{ minWidth: `${180 + daysInMonth * DAY_COL_W + TOTAL_COL_W + (canEditValor ? VALOR_COL_W : 0)}px` }}
@@ -375,9 +615,9 @@ export default function HorasPage() {
                 {instructores.map((inst, idx) => {
                   const totalInst  = getTotalInstructor(inst.id);
                   const totalValor = getTotalValor(inst.id);
+                  const cierreMes = closureByInstructor.get(inst.id);
                   const isEven = idx % 2 === 0;
                   const rowBg = isEven ? "bg-white dark:bg-[#1d1d1f]" : "bg-gray-50/40 dark:bg-[#1f1f1f]";
-                  const footBg = isEven ? "bg-gray-50 dark:bg-[#141414]" : "bg-gray-100/70 dark:bg-[#111]";
                   const stickyRowBg = isEven ? "bg-white dark:bg-[#1d1d1f]" : "bg-gray-50 dark:bg-[#1f1f1f]";
                   const stickyFootBg = isEven ? "bg-gray-50 dark:bg-[#141414]" : "bg-gray-100 dark:bg-[#111]";
 
@@ -415,6 +655,26 @@ export default function HorasPage() {
                                   placeholder="0"
                                   className={`w-[72px] text-xs px-1.5 py-0.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-1 focus:ring-[#0071e3]/50 focus:border-[#0071e3] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${savingValor.has(inst.id) ? "opacity-40" : ""}`}
                                 />
+                              </div>
+                            )}
+
+                            {canGenerateMonthlyExpenses && monthClosed && totalInst > 0 && (
+                              <div className="mt-1.5 flex items-center gap-1.5 text-[10px]">
+                                {cierreMes ? (
+                                  <>
+                                    <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+                                    <span className="font-medium text-green-600 dark:text-green-400">
+                                      Gasto generado: {fmtCOP(Number(cierreMes.monto_total || 0))}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <AlertCircle size={11} className="text-amber-500" />
+                                    <span className="font-medium text-amber-600 dark:text-amber-400">
+                                      Pendiente de pasar a gasto
+                                    </span>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>
@@ -558,7 +818,7 @@ export default function HorasPage() {
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </TableScrollArea>
         )}
       </div>
 

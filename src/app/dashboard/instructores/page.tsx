@@ -15,13 +15,21 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { useDraftForm } from "@/hooks/useDraftForm";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
+import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
+import { fetchSchoolCategories } from "@/lib/school-categories";
 import type { Instructor, EstadoInstructor } from "@/types/database";
 import { Plus } from "lucide-react";
 
 const PAGE_SIZE = 10;
+
+type InstructoresListResponse = {
+  totalCount: number;
+  rows: Instructor[];
+};
 
 /** Allowed activity states for an instructor record. */
 const estados: EstadoInstructor[] = ["activo", "inactivo"];
@@ -49,14 +57,22 @@ export default function InstructoresPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const fetchIdRef = useRef(0);
+  const [tableError, setTableError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState<Instructor | null>(null);
   const [deleting, setDeleting] = useState<Instructor | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [categoriasEscuela, setCategoriasEscuela] = useState<string[]>([]);
+  const {
+    value: form,
+    setValue: setForm,
+    restoreDraft,
+    clearDraft,
+  } = useDraftForm("dashboard:instructores:form", emptyForm, {
+    persist: modalOpen && !editing,
+  });
 
   // --- Data fetching ----------------------------------------------------
 
@@ -66,64 +82,72 @@ export default function InstructoresPage() {
 
     const fetchId = ++fetchIdRef.current;
     setLoading(true);
-    const supabase = createClient();
+    setTableError("");
 
-    // 1. Count query for pagination
-    let countQuery = supabase
-      .from("instructores")
-      .select("id", { count: "exact", head: true })
-      .eq("escuela_id", perfil.escuela_id);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+      });
 
-    if (search) {
-      countQuery = countQuery.or(
-        `nombre.ilike.%${search}%,apellidos.ilike.%${search}%,dni.ilike.%${search}%`
+      if (search.trim()) params.set("q", search.trim());
+
+      const payload = await fetchJsonWithRetry<InstructoresListResponse>(
+        `/api/instructores?${params.toString()}`,
+        { cache: "no-store" }
       );
+
+      if (fetchId !== fetchIdRef.current) return;
+
+      setData(payload.rows || []);
+      setTotalCount(payload.totalCount || 0);
+    } catch (fetchError: unknown) {
+      if (fetchId !== fetchIdRef.current) return;
+      setData([]);
+      setTotalCount(0);
+      setTableError(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar los instructores.");
+    } finally {
+      if (fetchId === fetchIdRef.current) {
+        setLoading(false);
+      }
     }
-
-    // 2. Paginated data query
-    const from = page * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-
-    let dataQuery = supabase
-      .from("instructores")
-      .select("id, nombre, apellidos, dni, telefono, licencia, especialidad, especialidades, estado, color, created_at")
-      .eq("escuela_id", perfil.escuela_id)
-      .order("created_at", { ascending: false })
-      .range(from, to);
-
-    if (search) {
-      dataQuery = dataQuery.or(
-        `nombre.ilike.%${search}%,apellidos.ilike.%${search}%,dni.ilike.%${search}%`
-      );
-    }
-
-    const [countRes, dataRes] = await Promise.all([countQuery, dataQuery]);
-
-    if (fetchId !== fetchIdRef.current) return;
-
-    setData((dataRes.data as Instructor[]) || []);
-    setTotalCount(countRes.count ?? 0);
-    setLoading(false);
-  }, [perfil?.escuela_id]);
+  }, [perfil]);
 
   // Re-fetch whenever page, search, or profile changes.
-  // Also load school's enabled categories.
   useEffect(() => {
     if (!perfil) return;
-    fetchData(currentPage, searchTerm);
+
+    const timeoutId = window.setTimeout(() => {
+      void fetchData(currentPage, searchTerm);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchData, perfil, currentPage, searchTerm]);
+
+  useEffect(() => {
+    if (!perfil?.escuela_id) return;
+
+    let cancelled = false;
 
     const loadCategorias = async () => {
-      if (!perfil.escuela_id) return;
-      const supabase = createClient();
-      const { data: escuela } = await supabase
-        .from("escuelas")
-        .select("categorias")
-        .eq("id", perfil.escuela_id)
-        .single();
-      if (escuela?.categorias) setCategoriasEscuela(escuela.categorias);
+      try {
+        const categorias = await fetchSchoolCategories(perfil.escuela_id!);
+        if (!cancelled) {
+          setCategoriasEscuela(categorias);
+        }
+      } catch {
+        if (!cancelled) {
+          setCategoriasEscuela([]);
+        }
+      }
     };
-    loadCategorias();
-  }, [fetchData, perfil, currentPage, searchTerm]);
+
+    void loadCategorias();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [perfil?.escuela_id]);
 
   /** Callback del DataTable server-side: cambio de página */
   const handlePageChange = useCallback((page: number) => {
@@ -141,7 +165,7 @@ export default function InstructoresPage() {
   /** Open the modal in "create" mode with a blank form. */
   const openCreate = () => {
     setEditing(null);
-    setForm(emptyForm);
+    restoreDraft(emptyForm);
     setError("");
     setModalOpen(true);
   };
@@ -201,16 +225,21 @@ export default function InstructoresPage() {
       const supabase = createClient();
 
       if (editing) {
-        const { error: err } = await supabase.from("instructores").update({
-          nombre: form.nombre, apellidos: form.apellidos, dni: form.dni,
-          email: form.email || null, telefono: form.telefono, licencia: form.licencia,
-          especialidad: especialidadPrincipal,
-          especialidades: form.especialidades,
-          estado: form.estado, color: form.color,
-        }).eq("id", editing.id);
-        if (err) { setError(err.message); setSaving(false); return; }
+        await runSupabaseMutationWithRetry(() =>
+          supabase.from("instructores").update({
+            nombre: form.nombre, apellidos: form.apellidos, dni: form.dni,
+            email: form.email || null, telefono: form.telefono, licencia: form.licencia,
+            especialidad: especialidadPrincipal,
+            especialidades: form.especialidades,
+            estado: form.estado, color: form.color,
+          }).eq("id", editing.id)
+        );
       } else {
-        if (!perfil) return;
+        if (!perfil) {
+          setError("No se encontró el perfil activo para guardar.");
+          setSaving(false);
+          return;
+        }
 
         let sedeId = perfil.sede_id;
         if (!sedeId && perfil.escuela_id) {
@@ -231,35 +260,34 @@ export default function InstructoresPage() {
         }
 
         // Crear cuenta de acceso para el instructor (email=cédula, password=cédula)
-        const authRes = await fetch("/api/crear-instructor-auth", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nombre: `${form.nombre} ${form.apellidos}`,
-            email: form.email || null,
-            dni: form.dni,
-            escuela_id: perfil.escuela_id,
-            sede_id: sedeId,
-          }),
-        });
-        const authJson = await authRes.json();
-        if (!authRes.ok) {
-          setError(authJson.error || "Error al crear la cuenta del instructor.");
-          setSaving(false);
-          return;
-        }
+        const authJson = await fetchJsonWithRetry<{ user_id: string }>(
+          "/api/crear-instructor-auth",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nombre: `${form.nombre} ${form.apellidos}`,
+              email: form.email || null,
+              dni: form.dni,
+              escuela_id: perfil.escuela_id,
+              sede_id: sedeId,
+            }),
+          }
+        );
 
-        const { error: err } = await supabase.from("instructores").insert({
-          escuela_id: perfil.escuela_id, sede_id: sedeId, user_id: authJson.user_id,
-          nombre: form.nombre, apellidos: form.apellidos, dni: form.dni,
-          email: form.email || null, telefono: form.telefono, licencia: form.licencia,
-          especialidad: especialidadPrincipal,
-          especialidades: form.especialidades,
-          estado: form.estado, color: form.color,
-        });
-        if (err) { setError(err.message); setSaving(false); return; }
+        await runSupabaseMutationWithRetry(() =>
+          supabase.from("instructores").insert({
+            escuela_id: perfil.escuela_id, sede_id: sedeId, user_id: authJson.user_id,
+            nombre: form.nombre, apellidos: form.apellidos, dni: form.dni,
+            email: form.email || null, telefono: form.telefono, licencia: form.licencia,
+            especialidad: especialidadPrincipal,
+            especialidades: form.especialidades,
+            estado: form.estado, color: form.color,
+          })
+        );
       }
 
+      clearDraft(emptyForm);
       setSaving(false);
       setModalOpen(false);
       fetchData(currentPage, searchTerm);
@@ -350,6 +378,11 @@ export default function InstructoresPage() {
 
       {/* Data table */}
       <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
+        {tableError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
+            {tableError}
+          </div>
+        )}
         <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por nombre o cédula..." serverSide totalCount={totalCount} currentPage={currentPage} onPageChange={handlePageChange} onSearchChange={handleSearchChange} pageSize={PAGE_SIZE} onEdit={openEdit} onDelete={openDelete} />
       </div>
 

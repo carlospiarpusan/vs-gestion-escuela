@@ -1,4 +1,14 @@
 import { z } from "zod";
+import { PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
+
+const strongPasswordSchema = z
+  .string()
+  .min(
+    PASSWORD_MIN_LENGTH,
+    `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`
+  )
+  .regex(/[A-Z]/, "La contraseña debe incluir al menos una mayúscula")
+  .regex(/[0-9]/, "La contraseña debe incluir al menos un número");
 
 export const createAlumnoSchema = z.object({
   nombre: z.string().min(2, "Nombre muy corto").max(200),
@@ -28,7 +38,7 @@ export const createAdminEscuelaSchema = z.object({
   escuela_id: z.string().uuid("ID de escuela inválido"),
   nombre: z.string().min(2, "Nombre muy corto").max(200),
   email: z.string().email("Email inválido"),
-  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+  password: strongPasswordSchema,
 });
 
 export const buscarEmailCedulaSchema = z.object({

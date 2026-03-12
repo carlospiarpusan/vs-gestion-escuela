@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "AutoEscuela Pro - Gestión de Escuelas de Conducción",
   description:
-    "La plataforma más avanzada para gestionar tu escuela de conducción. Simple. Potente. Profesional.",
+    "Software para escuelas de conducción en Colombia. Gestiona alumnos, pagos, clases y flota desde un solo panel.",
 };
 
 export default function RootLayout({

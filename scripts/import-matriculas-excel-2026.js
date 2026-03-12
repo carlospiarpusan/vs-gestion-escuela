@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { createClient } = require("@supabase/supabase-js");
+const { normalizeContractNumber } = require("./lib/contract-number");
 
 const DEFAULT_EXCEL_PATH = "/Users/carlos/Documents/Ingresos 2026 Moto.xlsx";
 const ESCUELA_ID = process.env.IMPORT_ESCUELA_ID || "a5320c4a-3bf6-4da5-b365-da17d7001d4f";
@@ -259,7 +260,9 @@ async function main() {
     const fechaOriginal = normalizeDateValue(row.fecha);
     const categoria = normalizeCategoriaValue(row.categoria);
     const numeroFactura = resolveNumeroFactura(row);
-    const numeroContrato = normalizeStringOrNumber(row.contrato);
+    const numeroContratoRaw = normalizeStringOrNumber(row.contrato);
+    const categorias = categoria ? [categoria] : [];
+    const numeroContrato = normalizeContractNumber(numeroContratoRaw, categorias);
     const fecha = resolveFechaImportacion({ sourceTag, numeroContrato, fecha: fechaOriginal });
     const valorTotal = row.valor_total === null ? null : Number(row.valor_total);
     const tramitadorNombre = normalizeText(row.tramitador);
@@ -267,11 +270,10 @@ async function main() {
     const saldo = Number(row.saldo || 0);
     const abonos = Array.isArray(row.abonos) ? row.abonos : [];
     const totalAbonos = abonos.reduce((sum, item) => sum + Number(item.monto || 0), 0);
-    const categorias = categoria ? [categoria] : [];
-
     if (!fullName || !dni || !fecha || categorias.length === 0) {
       throw new Error(`Fila inválida: faltan nombre, cédula, fecha o categoría (${JSON.stringify(row)})`);
     }
+
     if (!numeroContrato) {
       throw new Error(`La fila de ${fullName} no tiene número de contrato; no se puede asegurar idempotencia.`);
     }

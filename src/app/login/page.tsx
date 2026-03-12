@@ -67,7 +67,7 @@ export default function LoginPage() {
           return;
         }
       } else {
-        // Es una cédula → probar alumno → instructor → administrativo → email real
+        // Es una cédula → probar credenciales internas por rol.
         const { error: errAlumno } = await supabase.auth.signInWithPassword({
           email: `${trimmed}@alumno.local`,
           password,
@@ -83,29 +83,9 @@ export default function LoginPage() {
               password,
             });
             if (errAdmin) {
-              // Último intento: el usuario puede tener email real.
-              // Buscar el email en la tabla perfiles por cédula.
-              const lookup = await fetch("/api/buscar-email-cedula", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ cedula: trimmed }),
-              });
-              if (lookup.ok) {
-                const { email: realEmail } = await lookup.json();
-                const { error: errReal } = await supabase.auth.signInWithPassword({
-                  email: realEmail,
-                  password,
-                });
-                if (errReal) {
-                  setError("Cédula o contraseña incorrectos.");
-                  setLoading(false);
-                  return;
-                }
-              } else {
-                setError("Cédula o contraseña incorrectos.");
-                setLoading(false);
-                return;
-              }
+              setError("Cédula o contraseña incorrectos.");
+              setLoading(false);
+              return;
             }
           }
         }

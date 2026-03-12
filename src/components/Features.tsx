@@ -1,44 +1,56 @@
 "use client";
 
-import {
-  Users,
-  Calendar,
-  Car,
-  BarChart3,
-} from "lucide-react";
+import Link from "next/link";
+import { Users, Calendar, Car, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, useMotionTemplate, useMotionValue, useSpring } from "framer-motion";
 import { MouseEvent } from "react";
 
-const features = [
+type FeatureItem = {
+  icon: typeof Users;
+  title: string;
+  description: string;
+  benefit: string;
+  ctaLabel: string;
+  className: string;
+};
+
+const features: FeatureItem[] = [
   {
     icon: Users,
     title: "Alumnos",
-    description: "Expedientes completos, pagos y progreso práctico.",
+    description: "Expedientes, matrículas, pagos, contratos y progreso práctico en un mismo lugar.",
+    benefit: "Reduce errores en expedientes y controla mejor los pagos atrasados.",
+    ctaLabel: "Ver gestión de alumnos",
     className: "sm:col-span-2 md:col-span-2 md:row-span-2",
   },
   {
     icon: Calendar,
     title: "Agenda",
-    description: "Calendario drag-and-drop para clases y exámenes.",
+    description: "Programa clases y exámenes por instructor, sede y vehículo sin perder visibilidad.",
+    benefit: "Evita cruces de horarios y aprovecha mejor tu flota.",
+    ctaLabel: "Ver agenda en acción",
     className: "sm:col-span-1 md:col-span-1 md:row-span-1",
   },
   {
     icon: Car,
     title: "Flota",
-    description: "Control de vehículos, ITV y seguros.",
+    description: "Controla mantenimientos, tecnomecánica, seguros y disponibilidad diaria.",
+    benefit: "Anticipa vencimientos y evita parar vehículos por falta de control.",
+    ctaLabel: "Ver control de flota",
     className: "sm:col-span-1 md:col-span-1 md:row-span-1",
   },
   {
     icon: BarChart3,
     title: "Finanzas",
-    description: "Control de ingresos, gastos y facturación.",
+    description: "Monitorea ingresos, gastos, caja, cartera y rendimiento por sede.",
+    benefit: "Detecta fugas de dinero y entiende mejor qué cursos dejan margen.",
+    ctaLabel: "Ver módulo de finanzas",
     className: "sm:col-span-2 md:col-span-2 md:row-span-1",
   },
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function FeatureCard({ feature, index }: { feature: any; index: number }) {
+function FeatureCard({ feature, index }: { feature: FeatureItem; index: number }) {
   const x = useMotionValue(0);
   const y = useMotionValue(0);
 
@@ -59,38 +71,40 @@ function FeatureCard({ feature, index }: { feature: any; index: number }) {
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ duration: 0.5, delay: index * 0.1 }}
+      transition={{ duration: 0.5, delay: index * 0.08 }}
       onMouseMove={onMouseMove}
       className={cn(
-        "group relative bg-white dark:bg-[#1d1d1f] rounded-3xl p-8 shadow-sm hover:shadow-xl transition-shadow duration-500 overflow-hidden border border-gray-100 dark:border-gray-800",
+        "group relative overflow-hidden rounded-[32px] border border-gray-100 bg-white/85 p-8 shadow-[0_20px_55px_rgba(15,23,42,0.06)] transition-shadow duration-500 hover:shadow-[0_28px_70px_rgba(15,23,42,0.12)] dark:border-gray-800 dark:bg-white/[0.03]",
         feature.className
       )}
     >
-      {/* Background Hover Effect */}
-      <div className="pointer-events-none absolute inset-0 group-hover:bg-slate-50/50 dark:group-hover:bg-white/5 transition-colors duration-500" />
+      <div className="pointer-events-none absolute inset-0 transition-colors duration-500 group-hover:bg-slate-50/50 dark:group-hover:bg-white/5" />
 
-      {/* Spotlight Effect */}
       <motion.div
         className="pointer-events-none absolute -inset-px opacity-0 transition duration-300 group-hover:opacity-100"
         style={style}
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10" />
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-sky-300/10" />
       </motion.div>
 
-      <div className="relative z-10 flex flex-col h-full justify-between">
-        <div className="mb-8">
-          <feature.icon className="w-10 h-10 text-blue-apple mb-4" />
-          <h3 className="text-2xl font-semibold text-foreground mb-2">
-            {feature.title}
-          </h3>
-          <p className="text-[17px] text-gray-500 leading-relaxed max-w-[90%]">
+      <div className="relative z-10 flex h-full flex-col justify-between">
+        <div>
+          <feature.icon className="mb-5 h-10 w-10 text-blue-apple" />
+          <h3 className="text-left text-2xl font-semibold text-foreground">{feature.title}</h3>
+          <p className="mt-3 max-w-[36rem] text-left text-base leading-7 text-gray-600 dark:text-gray-300">
             {feature.description}
+          </p>
+          <p className="mt-4 max-w-[36rem] text-left text-sm font-medium leading-6 text-foreground/82">
+            {feature.benefit}
           </p>
         </div>
 
-        <div className="flex items-center text-blue-apple font-medium text-sm group-hover:translate-x-1 transition-transform cursor-pointer">
-          Saber más &rarr;
-        </div>
+        <Link
+          href="/registro"
+          className="mt-8 inline-flex min-h-[44px] items-center text-left text-sm font-semibold text-blue-apple transition-transform group-hover:translate-x-1"
+        >
+          {feature.ctaLabel} &rarr;
+        </Link>
       </div>
     </motion.div>
   );
@@ -98,23 +112,43 @@ function FeatureCard({ feature, index }: { feature: any; index: number }) {
 
 export default function Features() {
   return (
-    <section id="features" className="py-16 sm:py-24 md:py-32 bg-gray-50 dark:bg-black">
-      <div className="max-w-[1200px] mx-auto px-6">
-        <div className="text-center mb-12 sm:mb-16 md:mb-24">
+    <section
+      id="features"
+      className="border-y border-gray-100 bg-gray-50 py-16 dark:border-gray-900 dark:bg-black sm:py-24 md:py-32"
+    >
+      <div className="mx-auto max-w-[1200px] px-6">
+        <div className="mb-12 max-w-3xl text-left sm:mb-16 md:mb-20">
+          <motion.span
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.45 }}
+            className="apple-badge"
+          >
+            Características clave
+          </motion.span>
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-foreground mb-4"
+            transition={{ duration: 0.55, delay: 0.05 }}
+            className="mt-4 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl"
           >
-            Orden. Control.
-            <br />
-            <span className="text-gray-500">Todo en su sitio.</span>
+            Control operativo real para escuelas de conducción.
           </motion.h2>
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.55, delay: 0.1 }}
+            className="mt-5 max-w-2xl text-base leading-7 text-gray-500 sm:text-lg"
+          >
+            Desde matrícula hasta cartera, agenda y flota: cada módulo está pensado para ahorrar
+            tiempo al equipo administrativo y darle visibilidad diaria a la dirección.
+          </motion.p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 auto-rows-[minmax(200px,auto)] sm:auto-rows-[minmax(240px,auto)]">
+        <div className="grid auto-rows-[minmax(220px,auto)] grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 sm:auto-rows-[minmax(240px,auto)] md:grid-cols-3">
           {features.map((feature, index) => (
             <FeatureCard key={feature.title} feature={feature} index={index} />
           ))}

@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Autoescuela Pro - Sistema de Gestión de Escuelas de Conducción
 
-## Getting Started
+Autoescuela Pro es una plataforma SaaS integral construida para administrar flujos operativos, académicos y financieros para Centros de Enseñanza Automovilística (CEA). Con un enfoque multi-tenant, el sistema permite gestionar múltiples escuelas y sedes desde un único entorno.
 
-First, run the development server:
+## Características y Módulos Principales (Funciones de la Página)
 
+El sistema cuenta con un panel de control (Dashboard) segmentado por roles que abarca los siguientes submódulos:
+
+### 🏢 Gestión Multi-Tenant y Administrativa
+- **Escuelas**: Gestión de los diferentes Centros de Enseñanza.
+- **Sedes**: Administración de sucursales independientes por escuela.
+- **Administrativos**: Asignación y control de personal de oficinas con niveles de acceso estrictos (Super Admin, Admin Escuela, Admin Sede, Administrativos).
+- **Bitácora**: Registro de actividad y auditoría de todas las acciones del sistema.
+
+### 👥 Gestión Académica y Usuarios
+- **Alumnos**: Perfiles completos, control de documentos, seguimiento de aprendizaje y estado de licencias.
+- **Instructores**: Gestión de profesores, asignación, y control de horas laboradas.
+- **Categorías**: Configuración de los diferentes tipos de permisos y licencias expedidos (A1, A2, B1, C1, etc.).
+- **Clases y Horas**: Agendamiento de clases prácticas/teóricas y seguimiento del progreso o cumplimiento de horas de cada estudiante.
+
+### 🚗 Gestión de Flota Automotor
+- **Vehículos**: Base de datos de la flota (taxis, motos, particulares, buses), documentos asociados, seguros (SOAT, Técnico-mecánica).
+- **Mantenimiento**: Registro de mantenimientos preventivos y correctivos, tracking de gastos por vehículo y alertas.
+
+### 💰 Gestión Financiera
+- **Ingresos**: Control de pagos de alumnos, planes curriculares y facturación. Permite integración con API de DIAN (Facturación Electrónica).
+- **Gastos**: Manejo de egresos de la escuela, caja menor, pago a instructores, mantenimiento de la flota.
+- **Informes**: Reportería avanzada de rentabilidad, estado académico y consolidados de gastos/ingresos.
+
+### 📝 Evaluación y Exámenes
+- **Exámenes (Simulador CALE/ANSV)**: Banco de preguntas en tiempo real para simulacros teóricos obligatorios, segmentados por núcleos temáticos y conocimiento actitudinal para los alumnos.
+
+## 🛠️ Stack Tecnológico
+
+Este proyecto está desarrollado usando tecnologías modernas centradas en rendimiento, escalabilidad y Serverless:
+- **Frontend / Framework**: Next.js 16 (App Router), React 19.
+- **Estilos y UI**: Tailwind CSS 4, Lucide React (Iconos), Framer Motion (Animaciones).
+- **Backend / Base de Datos**: Supabase (PostgreSQL), `@supabase/ssr` para autenticación y base de datos con Políticas de Seguridad (RLS).
+- **Servicios Externos Integrados**: Facturación electrónica DIAN (SOAP XML), exportación/importación de reportes CALE.
+- **Validación**: Zod.
+
+## Ejecución en Entorno de Desarrollo
 ```bash
 npm run dev
-# or
+# o
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

@@ -1,142 +1,211 @@
 "use client";
 
 import Link from "next/link";
-import { motion, useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
+import { motion } from "framer-motion";
+import { ArrowRight, BadgeCheck, CalendarClock, CarFront, WalletCards } from "lucide-react";
+
+const heroBenefits = [
+  "Reduce errores en expedientes y controla pagos atrasados con más orden.",
+  "Evita cruces de horarios y aprovecha mejor instructores y vehículos.",
+];
+
+const heroMetrics = [
+  { label: "Ingresos del mes", value: "$12.5M COP", accent: "bg-emerald-500" },
+  { label: "Nuevos alumnos", value: "27", accent: "bg-blue-apple" },
+  { label: "Clases hoy", value: "18", accent: "bg-amber-400" },
+];
+
+const todaysAgenda = [
+  { hour: "07:30", title: "Clase práctica B1", meta: "Vehículo Mazda 2 • Sede principal" },
+  { hour: "10:00", title: "Examen interno de patio", meta: "Instructor Camilo R. • 3 alumnos" },
+  { hour: "15:40", title: "Control de cartera", meta: "5 pagos por confirmar" },
+];
 
 export default function Hero() {
-  const ref = useRef(null);
-  const { scrollYProgress } = useScroll({
-    target: ref,
-    offset: ["start start", "end start"],
-  });
-
-  const y = useTransform(scrollYProgress, [0, 1], [0, 150]);
-  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
-
   return (
-    <section
-      ref={ref}
-      className="relative min-h-screen md:min-h-[120vh] flex flex-col items-center justify-start overflow-hidden bg-background pt-24 sm:pt-32 md:pt-40 pb-16 sm:pb-24 md:pb-32"
-    >
-      <div className="relative z-10 max-w-[980px] mx-auto px-6 text-center">
-        {/* Overline */}
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-          className="text-blue-apple text-xs md:text-sm font-semibold mb-6 tracking-wider uppercase"
-        >
-          Gestión de Escuelas de Conducción
-        </motion.p>
+    <section className="relative overflow-hidden border-b border-gray-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(246,248,252,0.98))] pb-16 pt-28 dark:border-gray-900 dark:bg-[linear-gradient(180deg,rgba(4,4,6,0.98),rgba(0,0,0,1))] sm:pb-20 sm:pt-32 md:pb-28 md:pt-40">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,113,227,0.14),transparent_32rem),radial-gradient(circle_at_85%_18%,rgba(39,144,255,0.12),transparent_26rem)]" />
 
-        {/* Main headline */}
-        <motion.h1
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-          className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-semibold tracking-[-0.015em] leading-[1.05] text-foreground mb-4 sm:mb-6"
-        >
-          AutoEscuela<span className="text-blue-apple">Pro</span>
-        </motion.h1>
-
-        {/* Subtitle */}
-        <motion.h2
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-medium text-foreground mb-6 sm:mb-10 tracking-tight"
-        >
-          Simple. Potente. Profesional.
-        </motion.h2>
-
-        {/* Description */}
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
-          className="text-base sm:text-xl md:text-2xl text-gray-500 max-w-2xl mx-auto mb-8 sm:mb-12 leading-relaxed font-normal px-2"
-        >
-          La plataforma definitiva para tu autoescuela. Gestiona alumnos, pagos y clases desde un único lugar.
-        </motion.p>
-
-        {/* CTA Buttons */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
-          className="flex flex-col sm:flex-row items-center justify-center gap-6"
-        >
-          <Link
-            href="/registro"
-            className="w-full sm:w-auto bg-blue-apple text-white text-[15px] sm:text-[17px] px-8 py-3.5 sm:py-3 rounded-full hover:bg-blue-hover transition-all hover:scale-[1.02] active:scale-[0.98] text-center"
+      <div className="relative z-10 mx-auto grid max-w-[1180px] gap-10 px-6 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
+        <div className="max-w-3xl text-left">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55 }}
+            className="flex flex-wrap items-center gap-3"
           >
-            Comenzar gratis
-          </Link>
-          <Link
-            href="/login"
-            className="w-full sm:w-auto text-blue-apple text-[15px] sm:text-[17px] px-8 py-3.5 sm:py-3 rounded-full hover:bg-blue-apple/10 transition-colors flex items-center justify-center gap-1 group border border-blue-apple/20 sm:border-transparent"
-          >
-            Iniciar Sesión
-            <span className="group-hover:translate-x-1 transition-transform">
-              &gt;
+            <span className="apple-badge">Hecho para autoescuelas en Colombia</span>
+            <span className="rounded-full border border-gray-200 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-white/[0.04] dark:text-gray-300">
+              Operación local, sin hojas sueltas
             </span>
-          </Link>
-        </motion.div>
+          </motion.div>
 
-        {/* Hero visual with Parallax */}
+          <motion.h1
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.72, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+            className="mt-6 text-4xl font-semibold tracking-[-0.03em] text-foreground sm:text-5xl md:text-6xl lg:text-7xl"
+          >
+            Gestiona alumnos, pagos y clases desde un solo panel.
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.65, delay: 0.16 }}
+            className="mt-6 max-w-2xl text-base leading-8 text-gray-600 dark:text-gray-300 sm:text-xl"
+          >
+            AutoEscuelaPro centraliza la operación diaria de tu escuela de conducción para que
+            tengas más control, menos reprocesos y una visión clara del negocio en Colombia.
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.24 }}
+            className="mt-8 space-y-3"
+          >
+            {heroBenefits.map((item) => (
+              <div key={item} className="flex items-start gap-3">
+                <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-apple" />
+                <p className="text-sm leading-6 text-gray-600 dark:text-gray-300 sm:text-base">
+                  {item}
+                </p>
+              </div>
+            ))}
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.32 }}
+            className="mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap"
+          >
+            <Link
+              href="/registro"
+              className="apple-button-primary min-h-[48px] justify-center px-6 text-sm font-semibold sm:text-base"
+            >
+              Crear cuenta para mi autoescuela
+            </Link>
+            <a
+              href="#how-it-works"
+              className="apple-button-secondary min-h-[48px] justify-center px-6 text-sm font-semibold sm:text-base"
+            >
+              Probar demo guiada
+            </a>
+            <Link
+              href="/login"
+              className="apple-button-ghost min-h-[48px] justify-center px-2 text-sm font-semibold text-blue-apple sm:text-base"
+            >
+              Iniciar sesión
+            </Link>
+          </motion.div>
+
+          <motion.p
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.38 }}
+            className="mt-4 text-sm text-gray-500"
+          >
+            Ideal para escuelas nuevas y operaciones multi-sede en ciudades como Ipiales, Pasto,
+            Cali o Bogotá.
+          </motion.p>
+        </div>
+
         <motion.div
-          style={{ y, opacity }}
-          initial={{ opacity: 0, scale: 0.95, y: 40 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ duration: 1, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="mt-12 sm:mt-16 md:mt-24 w-full"
+          initial={{ opacity: 0, y: 28, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.85, delay: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="relative"
         >
-          <div className="relative mx-auto max-w-6xl">
-            {/* Browser Window Mockup */}
-            <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-background shadow-2xl overflow-hidden ring-1 ring-black/5">
-              {/* Traffic Lights */}
-              <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 dark:bg-[#1c1c1e] border-b border-gray-200 dark:border-gray-800">
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-[#ff5f57]" />
-                  <div className="w-3 h-3 rounded-full bg-[#febc2e]" />
-                  <div className="w-3 h-3 rounded-full bg-[#28c840]" />
+          <div className="apple-panel overflow-hidden rounded-[34px] border border-white/60 p-4 shadow-[0_30px_90px_rgba(15,23,42,0.14)] dark:border-white/[0.08] sm:p-5">
+            <div className="mb-4 flex items-center justify-between rounded-[22px] border border-gray-100 bg-white/80 px-4 py-3 dark:border-gray-800 dark:bg-white/[0.03]">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                  Panel principal
+                </p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  Escuela de conducción lista para operar
+                </p>
+              </div>
+              <div className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-apple dark:bg-blue-950/30">
+                En línea
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              {heroMetrics.map((metric) => (
+                <div
+                  key={metric.label}
+                  className="rounded-[24px] border border-gray-100 bg-white/85 p-4 dark:border-gray-800 dark:bg-white/[0.03]"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                    {metric.label}
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
+                    {metric.value}
+                  </p>
+                  <div className="mt-4 h-2 rounded-full bg-gray-100 dark:bg-gray-800">
+                    <div className={`h-2 rounded-full ${metric.accent} w-[72%]`} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-[26px] border border-gray-100 bg-white/85 p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+                <div className="mb-5 flex items-center gap-3">
+                  <CalendarClock className="h-5 w-5 text-blue-apple" />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Agenda de hoy</p>
+                    <p className="text-xs text-gray-500">Clases, exámenes y tareas operativas</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {todaysAgenda.map((item) => (
+                    <div
+                      key={item.hour}
+                      className="rounded-[20px] border border-gray-100 px-4 py-3 dark:border-gray-800"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                        <span className="text-xs font-semibold text-blue-apple">{item.hour}</span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-gray-500">{item.meta}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* Window Content */}
-              <div className="p-4 sm:p-8 md:p-12 bg-gray-50/50 dark:bg-[#000000]">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Dummy Dashboard Cards */}
-                  <div className="bg-background rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-                    <div className="text-sm text-gray-500 font-medium mb-2">Ingresos Mes</div>
-                    <div className="text-3xl font-semibold text-foreground">€12,450</div>
-                    <div className="mt-4 h-1 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-green-500 w-[75%] rounded-full" />
-                    </div>
+              <div className="flex flex-col gap-4">
+                <div className="rounded-[26px] border border-gray-100 bg-white/85 p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+                  <div className="flex items-center gap-3">
+                    <WalletCards className="h-5 w-5 text-blue-apple" />
+                    <p className="text-sm font-semibold text-foreground">Cartera y pagos</p>
                   </div>
-                  <div className="bg-background rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-                    <div className="text-sm text-gray-500 font-medium mb-2">Nuevos Alumnos</div>
-                    <div className="text-3xl font-semibold text-foreground">+24</div>
-                    <div className="flex gap-1 mt-4">
-                      {[1, 2, 3, 4, 5].map(i => (
-                        <div key={i} className="h-6 w-full bg-blue-apple/10 rounded-sm" />
-                      ))}
-                    </div>
-                  </div>
-                  <div className="bg-background rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-                    <div className="text-sm text-gray-500 font-medium mb-2">Clases Hoy</div>
-                    <div className="text-3xl font-semibold text-foreground">18</div>
-                    <div className="mt-4 flex -space-x-2">
-                      {[1, 2, 3].map(i => (
-                        <div key={i} className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 border-2 border-background" />
-                      ))}
-                    </div>
-                  </div>
+                  <p className="mt-4 text-3xl font-semibold tracking-tight text-foreground">94%</p>
+                  <p className="mt-2 text-sm leading-6 text-gray-500">
+                    de pagos del mes conciliados sin revisar varias hojas de cálculo.
+                  </p>
                 </div>
-                {/* Main Content Area */}
-                <div className="mt-6 bg-background rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 h-64 flex items-center justify-center">
-                  <div className="text-gray-400 font-medium">Gráfico de Rendimiento</div>
+
+                <div className="rounded-[26px] border border-blue-100 bg-blue-50/70 p-5 dark:border-blue-900/60 dark:bg-blue-950/20">
+                  <div className="flex items-center gap-3">
+                    <CarFront className="h-5 w-5 text-blue-apple" />
+                    <p className="text-sm font-semibold text-foreground">Flota bajo control</p>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                    Tecnomecánica, mantenimiento y disponibilidad listos para que no se te cruce la
+                    operación del día.
+                  </p>
+                  <a
+                    href="#features"
+                    className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-blue-apple"
+                  >
+                    Ver módulos del sistema
+                    <ArrowRight className="h-4 w-4" />
+                  </a>
                 </div>
               </div>
             </div>
