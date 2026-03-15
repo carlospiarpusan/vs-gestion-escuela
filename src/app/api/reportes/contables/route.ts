@@ -1312,6 +1312,7 @@ async function buildJsonResponse({
               coalesce(sum(valor_cobrado), 0) as total_cobrado,
               coalesce(sum(saldo_pendiente), 0) as total_pendiente
             from all_obligations
+            where saldo_pendiente > 0
           `,
           parts.values
         )
