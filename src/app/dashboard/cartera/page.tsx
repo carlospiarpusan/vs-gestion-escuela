@@ -17,13 +17,17 @@ import {
   type AccountingBreakdownRow,
   type AccountingContractPendingRow,
   type AccountingReportResponse,
+  buildAccountingYears,
   downloadCsv,
   fetchAccountingReport,
   formatAccountingMoney,
   formatCompactDate,
+  getCurrentAccountingYear,
+  getMonthDateRange,
+  MONTH_OPTIONS,
 } from "@/lib/accounting-dashboard";
 import { INCOME_VIEW_ITEMS, type IncomeView } from "@/lib/income-view";
-import type { Alumno } from "@/types/database";
+import type { Alumno, MetodoPago } from "@/types/database";
 import { AlertTriangle, BookOpen, Clock3, Download, Wallet, X } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -36,6 +40,18 @@ type CarteraTableRow = AccountingContractPendingRow & { id: string };
 const inputCls = "apple-input";
 const labelCls = "apple-label";
 const PAGE_SIZE = 10;
+
+const currentYear = getCurrentAccountingYear();
+const currentMonth = new Date().getMonth() + 1;
+const years = buildAccountingYears();
+
+const metodos: { value: MetodoPago; label: string }[] = [
+  { value: "efectivo", label: "Efectivo" },
+  { value: "datafono", label: "Datáfono" },
+  { value: "nequi", label: "Nequi" },
+  { value: "sistecredito", label: "Sistecrédito" },
+  { value: "otro", label: "Otro" },
+];
 
 const VIEW_ITEMS = INCOME_VIEW_ITEMS.filter(
   (v) => v.id === "all" || v.id === "matriculas" || v.id === "practicas" || v.id === "examenes"
@@ -56,14 +72,30 @@ export default function CarteraPage() {
 
   const [activeView, setActiveView] = useState<IncomeView>("all");
   const [filtroAlumno, setFiltroAlumno] = useState("");
+  const [filtroYear, setFiltroYear] = useState(String(currentYear));
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroMetodo, setFiltroMetodo] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(0);
 
-  const hayFiltros = filtroAlumno || activeView !== "all";
+  const mesesDelAno =
+    Number(filtroYear) === currentYear
+      ? MONTH_OPTIONS.filter((m) => !m.value || Number(m.value) <= currentMonth)
+      : MONTH_OPTIONS;
+
+  const hayFiltros =
+    filtroAlumno ||
+    activeView !== "all" ||
+    filtroMetodo ||
+    filtroYear !== String(currentYear) ||
+    filtroMes;
 
   const limpiarFiltros = () => {
     setFiltroAlumno("");
     setActiveView("all");
+    setFiltroYear(String(currentYear));
+    setFiltroMes("");
+    setFiltroMetodo("");
     setSearchTerm("");
     setCurrentPage(0);
   };
@@ -116,9 +148,10 @@ export default function CarteraPage() {
       setLoading(true);
       setError("");
 
+      const { from, to } = getMonthDateRange(Number(filtroYear), filtroMes);
       const params = new URLSearchParams({
-        from: "2000-01-01",
-        to: "2099-12-31",
+        from,
+        to,
         page: String(currentPage),
         pageSize: String(PAGE_SIZE),
         include: "contracts",
@@ -126,6 +159,7 @@ export default function CarteraPage() {
 
       if (filtroAlumno) params.set("alumno_id", filtroAlumno);
       if (activeView !== "all") params.set("ingreso_view", activeView);
+      if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
       if (searchTerm) params.set("q", searchTerm);
 
       try {
@@ -142,7 +176,16 @@ export default function CarteraPage() {
     };
 
     void load();
-  }, [perfil?.escuela_id, filtroAlumno, activeView, searchTerm, currentPage]);
+  }, [
+    perfil?.escuela_id,
+    filtroAlumno,
+    activeView,
+    filtroYear,
+    filtroMes,
+    filtroMetodo,
+    searchTerm,
+    currentPage,
+  ]);
 
   // ─── Derived data ─────────────────────────────────────────────────
 
@@ -173,15 +216,17 @@ export default function CarteraPage() {
     setExporting(true);
 
     try {
+      const { from, to } = getMonthDateRange(Number(filtroYear), filtroMes);
       const params = new URLSearchParams({
-        from: "2000-01-01",
-        to: "2099-12-31",
+        from,
+        to,
         page: "0",
         pageSize: "10000",
         include: "contracts",
       });
       if (filtroAlumno) params.set("alumno_id", filtroAlumno);
       if (activeView !== "all") params.set("ingreso_view", activeView);
+      if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
       if (searchTerm) params.set("q", searchTerm);
 
       const payload = await fetchAccountingReport(params);
@@ -218,7 +263,15 @@ export default function CarteraPage() {
     } finally {
       setExporting(false);
     }
-  }, [perfil?.escuela_id, filtroAlumno, activeView, searchTerm]);
+  }, [
+    perfil?.escuela_id,
+    filtroAlumno,
+    activeView,
+    filtroYear,
+    filtroMes,
+    filtroMetodo,
+    searchTerm,
+  ]);
 
   // ─── Columns ──────────────────────────────────────────────────────
 
@@ -334,7 +387,7 @@ export default function CarteraPage() {
           }}
         />
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <label className={labelCls}>Alumno</label>
             <select
@@ -349,6 +402,59 @@ export default function CarteraPage() {
               {alumnos.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.nombre} {a.apellidos}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Año</label>
+            <select
+              value={filtroYear}
+              onChange={(e) => {
+                setFiltroYear(e.target.value);
+                setFiltroMes("");
+                setCurrentPage(0);
+              }}
+              className={inputCls}
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Mes de {filtroYear}</label>
+            <select
+              value={filtroMes}
+              onChange={(e) => {
+                setFiltroMes(e.target.value);
+                setCurrentPage(0);
+              }}
+              className={inputCls}
+            >
+              {mesesDelAno.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Forma de pago</label>
+            <select
+              value={filtroMetodo}
+              onChange={(e) => {
+                setFiltroMetodo(e.target.value);
+                setCurrentPage(0);
+              }}
+              className={inputCls}
+            >
+              <option value="">Todos</option>
+              {metodos.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
                 </option>
               ))}
             </select>

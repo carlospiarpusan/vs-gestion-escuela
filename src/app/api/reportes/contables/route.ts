@@ -1002,6 +1002,8 @@ async function buildJsonResponse({
               coalesce(sum(case when estado = 'pendiente' then monto else 0 end), 0) as ingresos_pendientes,
               coalesce(sum(case when estado = 'anulado' then monto else 0 end), 0) as ingresos_anulados,
               coalesce(avg(case when estado = 'cobrado' then monto end), 0) as ticket_promedio,
+              coalesce(sum(monto), 0) as total_ingresos,
+              (select coalesce(sum(monto), 0) from filtered_gastos) as gastos_totales,
               (select count(*)::int from filtered_gastos) as total_gastos,
               (select coalesce(avg(monto), 0) from filtered_gastos) as gasto_promedio,
               (select coalesce(sum(monto), 0) from filtered_gastos where recurrente = true) as gastos_recurrentes_total,
