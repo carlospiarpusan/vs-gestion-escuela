@@ -71,15 +71,17 @@ export async function GET(request: Request) {
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
   const search = (url.searchParams.get("q") ?? "").trim();
-  const rawTipos = parseStringArray(url.searchParams.get("tipos"));
-  const tipos = rawTipos.filter((tipo): tipo is TipoRegistroAlumno =>
+  const RAW_TIPOS = parseStringArray(url.searchParams.get("tipos"));
+  const tipos = RAW_TIPOS.filter((tipo): tipo is TipoRegistroAlumno =>
     ALLOWED_TYPES.includes(tipo as TipoRegistroAlumno)
   );
   const categorias = parseStringArray(url.searchParams.get("categorias"));
+  const mes = (url.searchParams.get("mes") ?? "").trim();
 
-  const escuelaId = perfil.rol === "super_admin"
-    ? (url.searchParams.get("escuela_id") ?? perfil.escuela_id)
-    : perfil.escuela_id;
+  const escuelaId =
+    perfil.rol === "super_admin"
+      ? (url.searchParams.get("escuela_id") ?? perfil.escuela_id)
+      : perfil.escuela_id;
   const sedeId = perfil.rol === "admin_sede" ? perfil.sede_id : null;
 
   if (!escuelaId) {
@@ -105,7 +107,9 @@ export async function GET(request: Request) {
   }
 
   const tiposRef = addValue(tipos);
-  where.push(`(cardinality(${tiposRef}::text[]) = 0 OR a.tipo_registro = ANY(${tiposRef}::text[]))`);
+  where.push(
+    `(cardinality(${tiposRef}::text[]) = 0 OR a.tipo_registro = ANY(${tiposRef}::text[]))`
+  );
 
   const categoriasRef = addValue(categorias);
   where.push(`(
@@ -118,6 +122,19 @@ export async function GET(request: Request) {
         and coalesce(m.categorias, '{}'::text[]) && ${categoriasRef}::text[]
     )
   )`);
+
+  if (mes && (/^\d{4}-\d{2}$/.test(mes) || /^\d{4}$/.test(mes))) {
+    const mesRef = addValue(`${mes}%`);
+    where.push(`(
+      coalesce(a.fecha_inscripcion::text, a.created_at::text) LIKE ${mesRef}
+      OR exists (
+        select 1
+        from public.matriculas_alumno m
+        where m.alumno_id = a.id
+          and coalesce(m.fecha_inscripcion::text, m.created_at::text) LIKE ${mesRef}
+      )
+    )`);
+  }
 
   if (search) {
     const searchRef = addValue(`%${search}%`);
@@ -185,7 +202,7 @@ export async function GET(request: Request) {
         paged_alumnos AS (
           SELECT *
           FROM filtered_alumnos
-          ORDER BY created_at DESC
+          ORDER BY created_at DESC, id DESC
           LIMIT ${limitRef} OFFSET ${offsetRef}
         ),
         matriculas_agg AS (
@@ -252,7 +269,7 @@ export async function GET(request: Request) {
         LEFT JOIN matriculas_agg ma ON ma.alumno_id = p.id
         LEFT JOIN categorias_agg ca ON ca.alumno_id = p.id
         LEFT JOIN pagos_agg pa ON pa.alumno_id = p.id
-        ORDER BY p.created_at DESC
+        ORDER BY p.created_at DESC, p.id DESC
       `,
       [...values, pageSize, offset]
     ),

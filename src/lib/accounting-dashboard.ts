@@ -13,6 +13,9 @@ export type AccountingSummary = {
   totalIngresos: number;
   totalGastos: number;
   totalMovimientos: number;
+  alumnosNuevosRegulares?: number;
+  alumnosNuevosPractica?: number;
+  alumnosNuevosAptitud?: number;
 };
 
 export type AccountingBreakdownRow = {
@@ -130,6 +133,28 @@ export type AccountingOptionSede = {
   escuela_id: string;
 };
 
+export type AccountingStudentReportRow = {
+  id: string;
+  nombre: string;
+  dni: string;
+  tipo_registro: string;
+  categorias: string[];
+  fecha_inscripcion: string;
+  valor_total: number;
+  total_pagado: number;
+  saldo_pendiente: number;
+};
+
+export type AccountingStudentsSummary = {
+  countRegulares: number;
+  countPractica: number;
+  countAptitud: number;
+  totalIngresosRegulares: number;
+  totalIngresosPractica: number;
+  totalIngresosAptitud: number;
+  rows: AccountingStudentReportRow[];
+};
+
 export type AccountingReportResponse = {
   options: {
     escuelas: AccountingOptionSchool[];
@@ -154,6 +179,7 @@ export type AccountingReportResponse = {
   receivables?: AccountingReceivablesSummary;
   payables?: AccountingPayablesSummary;
   contracts?: AccountingContractsSummary;
+  students?: AccountingStudentsSummary;
 };
 
 export const HISTORICAL_START_YEAR = 2023;
@@ -211,7 +237,9 @@ export function getMonthDateRange(year: number, month: string) {
 
 export function buildAccountingYears(startYear = HISTORICAL_START_YEAR) {
   const currentYear = getCurrentAccountingYear();
-  return Array.from({ length: currentYear - startYear + 1 }, (_, index) => String(currentYear - index));
+  return Array.from({ length: currentYear - startYear + 1 }, (_, index) =>
+    String(currentYear - index)
+  );
 }
 
 export async function fetchAccountingReport(params: URLSearchParams) {
@@ -227,8 +255,13 @@ export async function fetchAccountingReport(params: URLSearchParams) {
   return payload as AccountingReportResponse;
 }
 
-export function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number | null>>) {
-  const escapeCell = (value: string | number | null) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+export function downloadCsv(
+  filename: string,
+  headers: string[],
+  rows: Array<Array<string | number | null>>
+) {
+  const escapeCell = (value: string | number | null) =>
+    `"${String(value ?? "").replace(/"/g, '""')}"`;
   const csv = [
     headers.map(escapeCell).join(","),
     ...rows.map((row) => row.map(escapeCell).join(",")),

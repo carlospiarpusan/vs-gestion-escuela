@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { parseExpenseSearch } from "@/lib/expense-search";
-import { EXAMEN_INCOME_CATEGORIES, MATRICULA_INCOME_CATEGORIES, PRACTICA_INCOME_CATEGORIES } from "@/lib/income-view";
+import {
+  EXAMEN_INCOME_CATEGORIES,
+  MATRICULA_INCOME_CATEGORIES,
+  PRACTICA_INCOME_CATEGORIES,
+} from "@/lib/income-view";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 
@@ -50,7 +54,16 @@ type QueryFilters = {
   recurrenteOnly: boolean;
 };
 
-type ReportInclude = "options" | "summary" | "breakdown" | "series" | "ledger" | "receivables" | "payables" | "contracts";
+type ReportInclude =
+  | "options"
+  | "summary"
+  | "breakdown"
+  | "series"
+  | "ledger"
+  | "receivables"
+  | "payables"
+  | "contracts"
+  | "students";
 
 type LedgerRow = {
   id: string;
@@ -78,6 +91,9 @@ type SummaryRow = {
   gasto_promedio: number | string | null;
   gastos_recurrentes_total: number | string | null;
   gastos_recurrentes_count: number | string | null;
+  alumnos_regulares: number | string | null;
+  alumnos_practica: number | string | null;
+  alumnos_aptitud: number | string | null;
 };
 
 type AggregateRow = {
@@ -147,6 +163,24 @@ type ContractOldDebtRow = {
   dias_pendiente: number | string | null;
 };
 
+type StudentReportSqlRow = {
+  id: string;
+  nombre: string;
+  dni: string;
+  tipo_registro: string;
+  categorias: string[] | null;
+  fecha_inscripcion: string | null;
+  created_at: string;
+  valor_total: number | string | null;
+  pago_total: number | string | null;
+};
+
+type StudentsRevenueSqlRow = {
+  tipo_registro: string;
+  total_ingresos: number | string | null;
+  cantidad: number | string | null;
+};
+
 type ContractPendingSqlRow = {
   obligation_id: string;
   nombre: string | null;
@@ -166,7 +200,13 @@ type LedgerCountRow = {
 };
 
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
-const DEFAULT_REPORT_INCLUDES: ReportInclude[] = ["options", "summary", "breakdown", "series", "ledger"];
+const DEFAULT_REPORT_INCLUDES: ReportInclude[] = [
+  "options",
+  "summary",
+  "breakdown",
+  "series",
+  "ledger",
+];
 const ALL_REPORT_INCLUDES: ReportInclude[] = [
   "options",
   "summary",
@@ -177,8 +217,21 @@ const ALL_REPORT_INCLUDES: ReportInclude[] = [
   "payables",
   "contracts",
 ];
-const VEHICULAR_EXPENSE_CATEGORIES = ["combustible", "mantenimiento_vehiculo", "reparaciones", "seguros"];
-const ADMINISTRATIVE_EXPENSE_CATEGORIES = ["alquiler", "servicios", "material_didactico", "marketing", "impuestos", "suministros", "otros"];
+const VEHICULAR_EXPENSE_CATEGORIES = [
+  "combustible",
+  "mantenimiento_vehiculo",
+  "reparaciones",
+  "seguros",
+];
+const ADMINISTRATIVE_EXPENSE_CATEGORIES = [
+  "alquiler",
+  "servicios",
+  "material_didactico",
+  "marketing",
+  "impuestos",
+  "suministros",
+  "otros",
+];
 const PEOPLE_EXPENSE_CATEGORIES = ["nominas", "tramitador"];
 const TRAMITADOR_EXPENSE_CATEGORY = "tramitador";
 
@@ -226,7 +279,11 @@ function parseReportIncludes(value: string | null) {
   return new Set<ReportInclude>(validIncludes.length > 0 ? validIncludes : DEFAULT_REPORT_INCLUDES);
 }
 
-function resolveScope(perfil: AllowedPerfil, requestedSchoolId: string | null, requestedSedeId: string | null): ReportScope {
+function resolveScope(
+  perfil: AllowedPerfil,
+  requestedSchoolId: string | null,
+  requestedSedeId: string | null
+): ReportScope {
   if (perfil.rol === "super_admin") {
     return {
       escuelaId: requestedSchoolId,
@@ -328,16 +385,22 @@ function buildQueryParts({
 
   switch (filters.ingresoView) {
     case "matriculas":
-      ingresosWhere.push(`i.categoria IN (${buildSqlInClause(MATRICULA_INCOME_CATEGORIES, addValue)})`);
+      ingresosWhere.push(
+        `i.categoria IN (${buildSqlInClause(MATRICULA_INCOME_CATEGORIES, addValue)})`
+      );
       standaloneWhere.push("1 = 0");
       break;
     case "practicas":
-      ingresosWhere.push(`i.categoria IN (${buildSqlInClause(PRACTICA_INCOME_CATEGORIES, addValue)})`);
+      ingresosWhere.push(
+        `i.categoria IN (${buildSqlInClause(PRACTICA_INCOME_CATEGORIES, addValue)})`
+      );
       matriculasWhere.push("1 = 0");
       standaloneWhere.push("a.tipo_registro = 'practica_adicional'");
       break;
     case "examenes":
-      ingresosWhere.push(`i.categoria IN (${buildSqlInClause(EXAMEN_INCOME_CATEGORIES, addValue)})`);
+      ingresosWhere.push(
+        `i.categoria IN (${buildSqlInClause(EXAMEN_INCOME_CATEGORIES, addValue)})`
+      );
       matriculasWhere.push("1 = 0");
       standaloneWhere.push("a.tipo_registro = 'aptitud_conductor'");
       break;
@@ -361,12 +424,24 @@ function buildQueryParts({
   }
 
   if (filters.ingresoCategoria) {
-    if (MATRICULA_INCOME_CATEGORIES.includes(filters.ingresoCategoria as (typeof MATRICULA_INCOME_CATEGORIES)[number])) {
+    if (
+      MATRICULA_INCOME_CATEGORIES.includes(
+        filters.ingresoCategoria as (typeof MATRICULA_INCOME_CATEGORIES)[number]
+      )
+    ) {
       standaloneWhere.push("1 = 0");
-    } else if (PRACTICA_INCOME_CATEGORIES.includes(filters.ingresoCategoria as (typeof PRACTICA_INCOME_CATEGORIES)[number])) {
+    } else if (
+      PRACTICA_INCOME_CATEGORIES.includes(
+        filters.ingresoCategoria as (typeof PRACTICA_INCOME_CATEGORIES)[number]
+      )
+    ) {
       matriculasWhere.push("1 = 0");
       standaloneWhere.push("a.tipo_registro = 'practica_adicional'");
-    } else if (EXAMEN_INCOME_CATEGORIES.includes(filters.ingresoCategoria as (typeof EXAMEN_INCOME_CATEGORIES)[number])) {
+    } else if (
+      EXAMEN_INCOME_CATEGORIES.includes(
+        filters.ingresoCategoria as (typeof EXAMEN_INCOME_CATEGORIES)[number]
+      )
+    ) {
       matriculasWhere.push("1 = 0");
       standaloneWhere.push("a.tipo_registro = 'aptitud_conductor'");
     }
@@ -398,10 +473,14 @@ function buildQueryParts({
 
   switch (filters.gastoView) {
     case "vehicular":
-      gastosWhere.push(`g.categoria IN (${buildSqlInClause(VEHICULAR_EXPENSE_CATEGORIES, addValue)})`);
+      gastosWhere.push(
+        `g.categoria IN (${buildSqlInClause(VEHICULAR_EXPENSE_CATEGORIES, addValue)})`
+      );
       break;
     case "administrativo":
-      gastosWhere.push(`g.categoria IN (${buildSqlInClause(ADMINISTRATIVE_EXPENSE_CATEGORIES, addValue)})`);
+      gastosWhere.push(
+        `g.categoria IN (${buildSqlInClause(ADMINISTRATIVE_EXPENSE_CATEGORIES, addValue)})`
+      );
       break;
     case "personal":
       gastosWhere.push(`g.categoria IN (${buildSqlInClause(PEOPLE_EXPENSE_CATEGORIES, addValue)})`);
@@ -571,7 +650,8 @@ function buildQueryParts({
           COALESCE(m.valor_total, 0)::numeric AS valor_esperado,
           COALESCE(pagos.total_cobrado, 0)::numeric AS valor_cobrado,
           GREATEST(COALESCE(m.valor_total, 0) - COALESCE(pagos.total_cobrado, 0), 0)::numeric AS saldo_pendiente,
-          COALESCE(pagos.oldest_pending_date, m.fecha_inscripcion)::date AS fecha_referencia
+          COALESCE(pagos.oldest_pending_date, m.fecha_inscripcion)::date AS fecha_referencia,
+          COALESCE(m.categorias, '{}'::text[]) AS categorias
         FROM matriculas_alumno m
         JOIN alumnos a ON a.id = m.alumno_id
         LEFT JOIN LATERAL (
@@ -596,7 +676,8 @@ function buildQueryParts({
           COALESCE(a.valor_total, 0)::numeric AS valor_esperado,
           COALESCE(pagos.total_cobrado, 0)::numeric AS valor_cobrado,
           GREATEST(COALESCE(a.valor_total, 0) - COALESCE(pagos.total_cobrado, 0), 0)::numeric AS saldo_pendiente,
-          COALESCE(pagos.oldest_pending_date, COALESCE(a.fecha_inscripcion, a.created_at::date))::date AS fecha_referencia
+          COALESCE(pagos.oldest_pending_date, COALESCE(a.fecha_inscripcion, a.created_at::date))::date AS fecha_referencia,
+          COALESCE(a.categorias, '{}'::text[]) AS categorias
         FROM alumnos a
         LEFT JOIN LATERAL (
           SELECT
@@ -654,14 +735,16 @@ function normalizePeriod(value: unknown) {
 
 function appendCtes(baseCte: string, ...extraCtes: string[]) {
   const base = baseCte.trim().replace(/^with\s+/i, "");
-  const extras = extraCtes
-    .map((cte) => cte.trim().replace(/,$/, ""))
-    .filter(Boolean);
+  const extras = extraCtes.map((cte) => cte.trim().replace(/,$/, "")).filter(Boolean);
 
   return `with ${[base, ...extras].join(",\n")}`;
 }
 
-async function getAccessibleOptions(pool: ReturnType<typeof getServerDbPool>, perfil: AllowedPerfil, scope: ReportScope) {
+async function getAccessibleOptions(
+  pool: ReturnType<typeof getServerDbPool>,
+  perfil: AllowedPerfil,
+  scope: ReportScope
+) {
   if (perfil.rol === "super_admin") {
     const schoolsRes = await pool.query<SchoolOption>(
       "select id, nombre from escuelas order by nombre asc"
@@ -795,6 +878,7 @@ async function buildJsonResponse({
   const needsReceivables = includes.has("receivables");
   const needsPayables = includes.has("payables");
   const needsContracts = includes.has("contracts");
+  const needsStudents = includes.has("students");
 
   const [
     summaryRes,
@@ -822,6 +906,8 @@ async function buildJsonResponse({
     contractsPendingCountRes,
     contractsPendingRowsRes,
     options,
+    studentsRevenueRes,
+    studentsRowsRes,
   ] = await Promise.all([
     needsSummary
       ? pool.query<SummaryRow>(
@@ -832,12 +918,13 @@ async function buildJsonResponse({
               coalesce(sum(case when estado = 'pendiente' then monto else 0 end), 0) as ingresos_pendientes,
               coalesce(sum(case when estado = 'anulado' then monto else 0 end), 0) as ingresos_anulados,
               coalesce(avg(case when estado = 'cobrado' then monto end), 0) as ticket_promedio,
-              count(*)::int as total_ingresos,
-              (select coalesce(sum(monto), 0) from filtered_gastos) as gastos_totales,
               (select count(*)::int from filtered_gastos) as total_gastos,
               (select coalesce(avg(monto), 0) from filtered_gastos) as gasto_promedio,
               (select coalesce(sum(monto), 0) from filtered_gastos where recurrente = true) as gastos_recurrentes_total,
-              (select count(*)::int from filtered_gastos where recurrente = true) as gastos_recurrentes_count
+              (select count(*)::int from filtered_gastos where recurrente = true) as gastos_recurrentes_count,
+              (select count(*)::int from filtered_obligations where tipo_registro = 'regular') as alumnos_regulares,
+              (select count(*)::int from filtered_obligations where tipo_registro = 'practica_adicional') as alumnos_practica,
+              (select count(*)::int from filtered_obligations where tipo_registro = 'aptitud_conductor') as alumnos_aptitud
             from filtered_ingresos
           `,
           parts.values
@@ -1044,7 +1131,7 @@ async function buildJsonResponse({
                 categoria,
                 concepto,
                 monto,
-                estado,
+                estado_pago as estado,
                 metodo_pago,
                 numero_factura,
                 contraparte,
@@ -1240,13 +1327,51 @@ async function buildJsonResponse({
     needsOptions
       ? getAccessibleOptions(pool, perfil, scope)
       : Promise.resolve({ escuelas: [], sedes: [] }),
+    needsStudents
+      ? pool.query<StudentsRevenueSqlRow>(
+          `
+            ${cte}
+            select
+              tipo_registro,
+              count(*)::int as cantidad,
+              coalesce(sum(valor_cobrado), 0) as total_ingresos
+            from filtered_obligations
+            group by 1
+          `,
+          parts.values
+        )
+      : Promise.resolve({ rows: [] as StudentsRevenueSqlRow[] }),
+    needsStudents
+      ? pool.query<StudentReportSqlRow>(
+          `
+            ${cte}
+            select
+              obligation_id as id,
+              nombre,
+              documento as dni,
+              tipo_registro,
+              categorias,
+              fecha_registro as fecha_inscripcion,
+              valor_esperado as valor_total,
+              valor_cobrado as pago_total
+            from filtered_obligations
+            order by fecha_registro desc, nombre asc
+            limit 100
+          `,
+          parts.values
+        )
+      : Promise.resolve({ rows: [] as StudentReportSqlRow[] }),
   ]);
+
+  const studentsRevenueRows = (studentsRevenueRes as { rows: StudentsRevenueSqlRow[] }).rows;
+  const studentsDetailRows = (studentsRowsRes as { rows: StudentReportSqlRow[] }).rows;
 
   const summaryRow = summaryRes.rows[0] ?? {};
   const ingresosCobrados = toNumber(summaryRow.ingresos_cobrados);
   const gastosTotales = toNumber(summaryRow.gastos_totales);
   const balanceNeto = ingresosCobrados - gastosTotales;
-  const contractsSummaryRow = contractsSummaryRes.rows[0] ?? {};
+  const contractsSummaryRow =
+    (contractsSummaryRes as { rows: ContractsSummaryRow[] }).rows[0] ?? {};
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
@@ -1269,12 +1394,16 @@ async function buildJsonResponse({
       gastoPromedio: toNumber(summaryRow.gasto_promedio),
       gastosRecurrentesTotal: toNumber(summaryRow.gastos_recurrentes_total),
       gastosRecurrentesCount: Number(summaryRow.gastos_recurrentes_count || 0),
-      cobranzaPorcentaje: ingresosCobrados + toNumber(summaryRow.ingresos_pendientes) > 0
-        ? (ingresosCobrados / (ingresosCobrados + toNumber(summaryRow.ingresos_pendientes))) * 100
-        : 0,
-      totalIngresos: Number(summaryRow.total_ingresos || 0),
+      cobranzaPorcentaje:
+        ingresosCobrados + toNumber(summaryRow.ingresos_pendientes) > 0
+          ? (ingresosCobrados / (ingresosCobrados + toNumber(summaryRow.ingresos_pendientes))) * 100
+          : 0,
       totalGastos: Number(summaryRow.total_gastos || 0),
-      totalMovimientos: Number(summaryRow.total_ingresos || 0) + Number(summaryRow.total_gastos || 0),
+      totalMovimientos:
+        Number(summaryRow.total_ingresos || 0) + Number(summaryRow.total_gastos || 0),
+      alumnosNuevosRegulares: Number(summaryRow.alumnos_regulares || 0),
+      alumnosNuevosPractica: Number(summaryRow.alumnos_practica || 0),
+      alumnosNuevosAptitud: Number(summaryRow.alumnos_aptitud || 0),
     },
     breakdown: {
       ingresosPorCategoria: ingresosCategoriaRes.rows.map((row: AggregateRow) => ({
@@ -1340,98 +1469,143 @@ async function buildJsonResponse({
     },
     ledger: {
       totalCount: needsLedger ? Number(ledgerCountRes.rows[0]?.total || 0) : 0,
-      rows: needsLedger ? ledgerRes.rows.map((row: LedgerRow & { created_at: string }) => ({
-        ...row,
-        fecha: normalizeDateOnly(row.fecha),
-        monto: toNumber(row.monto),
-      })) as LedgerRow[] : [],
+      rows: needsLedger
+        ? (ledgerRes.rows.map((row: LedgerRow & { created_at: string }) => ({
+            ...row,
+            fecha: normalizeDateOnly(row.fecha),
+            monto: toNumber(row.monto),
+          })) as LedgerRow[])
+        : [],
     },
-    receivables: needsReceivables ? {
-      totalPendiente: toNumber(summaryRow.ingresos_pendientes),
-      vencido: receivablesBucketsRes.rows
-        .filter((row: AgingBucketRow) => row.bucket === "Vencido")
-        .reduce((sum, row) => sum + toNumber(row.total), 0),
-      vencePronto: receivablesBucketsRes.rows
-        .filter((row: AgingBucketRow) => row.bucket === "Proximo a vencer")
-        .reduce((sum, row) => sum + toNumber(row.total), 0),
-      alDia: receivablesBucketsRes.rows
-        .filter((row: AgingBucketRow) => row.bucket === "Al dia")
-        .reduce((sum, row) => sum + toNumber(row.total), 0),
-      buckets: receivablesBucketsRes.rows.map((row: AgingBucketRow) => ({
-        bucket: row.bucket,
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      topDeudores: receivablesTopRes.rows.map((row: CounterpartyAggregateRow) => ({
-        nombre: row.nombre || "Sin alumno asociado",
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-    } : undefined,
-    payables: needsPayables ? {
-      totalPendiente: payablesBucketsRes.rows.reduce((sum, row) => sum + toNumber(row.total), 0),
-      vencido: payablesBucketsRes.rows
-        .filter((row: AgingBucketRow) => row.bucket === "Vencido")
-        .reduce((sum, row) => sum + toNumber(row.total), 0),
-      vencePronto: payablesBucketsRes.rows
-        .filter((row: AgingBucketRow) => row.bucket === "Proximo a vencer")
-        .reduce((sum, row) => sum + toNumber(row.total), 0),
-      alDia: payablesBucketsRes.rows
-        .filter((row: AgingBucketRow) => row.bucket === "Al dia")
-        .reduce((sum, row) => sum + toNumber(row.total), 0),
-      buckets: payablesBucketsRes.rows.map((row: AgingBucketRow) => ({
-        bucket: row.bucket,
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      topProveedores: payablesTopRes.rows.map((row: CounterpartyAggregateRow) => ({
-        nombre: row.nombre || "Sin proveedor",
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      topTramitadores: payablesTramitadoresRes.rows.map((row: CounterpartyAggregateRow) => ({
-        nombre: row.nombre || "Sin tramitador",
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-    } : undefined,
-    contracts: needsContracts ? {
-      registros: Number(contractsSummaryRow.registros || 0),
-      totalEsperado: toNumber(contractsSummaryRow.total_esperado),
-      totalCobrado: toNumber(contractsSummaryRow.total_cobrado),
-      totalPendiente: toNumber(contractsSummaryRow.total_pendiente),
-      monthly: contractsMonthlyRes.rows.map((row: ContractsMonthlyRow) => ({
-        periodo: normalizePeriod(row.periodo),
-        registros: Number(row.registros || 0),
-        valorEsperado: toNumber(row.valor_esperado),
-        valorCobrado: toNumber(row.valor_cobrado),
-        saldoPendiente: toNumber(row.saldo_pendiente),
-      })),
-      oldestPending: contractsOldestRes.rows.map((row: ContractOldDebtRow) => ({
-        nombre: row.nombre || "Sin alumno asociado",
-        documento: row.documento || null,
-        referencia: row.referencia || null,
-        tipoRegistro: row.tipo_registro || null,
-        saldoPendiente: toNumber(row.saldo_pendiente),
-        fechaRegistro: normalizeDateOnly(row.fecha_registro),
-        fechaReferencia: normalizeDateOnly(row.fecha_referencia),
-        diasPendiente: Number(row.dias_pendiente || 0),
-      })),
-      pendingCount: Number(contractsPendingCountRes.rows[0]?.total || 0),
-      pendingRows: contractsPendingRowsRes.rows.map((row: ContractPendingSqlRow) => ({
-        obligationId: row.obligation_id,
-        nombre: row.nombre || "Sin alumno asociado",
-        documento: row.documento || null,
-        referencia: row.referencia || null,
-        tipoRegistro: row.tipo_registro || null,
-        fechaRegistro: normalizeDateOnly(row.fecha_registro),
-        fechaReferencia: normalizeDateOnly(row.fecha_referencia),
-        valorEsperado: toNumber(row.valor_esperado),
-        valorCobrado: toNumber(row.valor_cobrado),
-        saldoPendiente: toNumber(row.saldo_pendiente),
-        diasPendiente: Number(row.dias_pendiente || 0),
-      })),
-    } : undefined,
+    receivables: needsReceivables
+      ? {
+          totalPendiente: toNumber(summaryRow.ingresos_pendientes),
+          vencido: receivablesBucketsRes.rows
+            .filter((row: AgingBucketRow) => row.bucket === "Vencido")
+            .reduce((sum, row) => sum + toNumber(row.total), 0),
+          vencePronto: receivablesBucketsRes.rows
+            .filter((row: AgingBucketRow) => row.bucket === "Proximo a vencer")
+            .reduce((sum, row) => sum + toNumber(row.total), 0),
+          alDia: receivablesBucketsRes.rows
+            .filter((row: AgingBucketRow) => row.bucket === "Al dia")
+            .reduce((sum, row) => sum + toNumber(row.total), 0),
+          buckets: receivablesBucketsRes.rows.map((row: AgingBucketRow) => ({
+            bucket: row.bucket,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          })),
+          topDeudores: receivablesTopRes.rows.map((row: CounterpartyAggregateRow) => ({
+            nombre: row.nombre || "Sin alumno asociado",
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          })),
+        }
+      : undefined,
+    payables: needsPayables
+      ? {
+          totalPendiente: payablesBucketsRes.rows.reduce(
+            (sum, row) => sum + toNumber(row.total),
+            0
+          ),
+          vencido: payablesBucketsRes.rows
+            .filter((row: AgingBucketRow) => row.bucket === "Vencido")
+            .reduce((sum, row) => sum + toNumber(row.total), 0),
+          vencePronto: payablesBucketsRes.rows
+            .filter((row: AgingBucketRow) => row.bucket === "Proximo a vencer")
+            .reduce((sum, row) => sum + toNumber(row.total), 0),
+          alDia: payablesBucketsRes.rows
+            .filter((row: AgingBucketRow) => row.bucket === "Al dia")
+            .reduce((sum, row) => sum + toNumber(row.total), 0),
+          buckets: payablesBucketsRes.rows.map((row: AgingBucketRow) => ({
+            bucket: row.bucket,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          })),
+          topProveedores: payablesTopRes.rows.map((row: CounterpartyAggregateRow) => ({
+            nombre: row.nombre || "Sin proveedor",
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          })),
+          topTramitadores: payablesTramitadoresRes.rows.map((row: CounterpartyAggregateRow) => ({
+            nombre: row.nombre || "Sin tramitador",
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          })),
+        }
+      : undefined,
+    contracts: needsContracts
+      ? {
+          registros: Number(contractsSummaryRow.registros || 0),
+          totalEsperado: toNumber(contractsSummaryRow.total_esperado),
+          totalCobrado: toNumber(contractsSummaryRow.total_cobrado),
+          totalPendiente: toNumber(contractsSummaryRow.total_pendiente),
+          monthly: contractsMonthlyRes.rows.map((row: ContractsMonthlyRow) => ({
+            periodo: normalizePeriod(row.periodo),
+            registros: Number(row.registros || 0),
+            valorEsperado: toNumber(row.valor_esperado),
+            valorCobrado: toNumber(row.valor_cobrado),
+            saldoPendiente: toNumber(row.saldo_pendiente),
+          })),
+          oldestPending: contractsOldestRes.rows.map((row: ContractOldDebtRow) => ({
+            nombre: row.nombre || "Sin alumno asociado",
+            documento: row.documento || null,
+            referencia: row.referencia || null,
+            tipoRegistro: row.tipo_registro || null,
+            saldoPendiente: toNumber(row.saldo_pendiente),
+            fechaRegistro: normalizeDateOnly(row.fecha_registro),
+            fechaReferencia: normalizeDateOnly(row.fecha_referencia),
+            diasPendiente: Number(row.dias_pendiente || 0),
+          })),
+          pendingCount: Number(contractsPendingCountRes.rows[0]?.total || 0),
+          pendingRows: contractsPendingRowsRes.rows.map((row: ContractPendingSqlRow) => ({
+            obligationId: row.obligation_id,
+            nombre: row.nombre || "Sin alumno asociado",
+            documento: row.documento || null,
+            referencia: row.referencia || null,
+            tipoRegistro: row.tipo_registro || null,
+            fechaRegistro: normalizeDateOnly(row.fecha_registro),
+            fechaReferencia: normalizeDateOnly(row.fecha_referencia),
+            valorEsperado: toNumber(row.valor_esperado),
+            valorCobrado: toNumber(row.valor_cobrado),
+            saldoPendiente: toNumber(row.saldo_pendiente),
+            diasPendiente: Number(row.dias_pendiente || 0),
+          })),
+        }
+      : undefined,
+    students: needsStudents
+      ? {
+          countRegulares: toNumber(
+            studentsRevenueRows.find((r) => r.tipo_registro === "regular")?.cantidad
+          ),
+          totalIngresosRegulares: toNumber(
+            studentsRevenueRows.find((r) => r.tipo_registro === "regular")?.total_ingresos
+          ),
+          countPractica: toNumber(
+            studentsRevenueRows.find((r) => r.tipo_registro === "practica_adicional")?.cantidad
+          ),
+          totalIngresosPractica: toNumber(
+            studentsRevenueRows.find((r) => r.tipo_registro === "practica_adicional")
+              ?.total_ingresos
+          ),
+          countAptitud: toNumber(
+            studentsRevenueRows.find((r) => r.tipo_registro === "aptitud_conductor")?.cantidad
+          ),
+          totalIngresosAptitud: toNumber(
+            studentsRevenueRows.find((r) => r.tipo_registro === "aptitud_conductor")?.total_ingresos
+          ),
+          rows: studentsDetailRows.map((row) => ({
+            id: row.id,
+            nombre: row.nombre,
+            dni: row.dni,
+            tipo_registro: row.tipo_registro,
+            categorias: row.categorias || [],
+            fecha_inscripcion: normalizeDateOnly(row.fecha_inscripcion),
+            valor_total: toNumber(row.valor_total),
+            total_pagado: toNumber(row.pago_total),
+            saldo_pendiente: Math.max(0, toNumber(row.valor_total) - toNumber(row.pago_total)),
+          })),
+        }
+      : undefined,
   });
 }
 
@@ -1500,7 +1674,9 @@ async function buildCsvResponse({
       "Contraparte",
       "Documento",
       "Contrato",
-    ].map(formatCsvCell).join(","),
+    ]
+      .map(formatCsvCell)
+      .join(","),
     ...ledgerRes.rows.map((row: LedgerRow & { created_at: string }) =>
       [
         normalizeDateOnly(row.fecha),
@@ -1514,7 +1690,9 @@ async function buildCsvResponse({
         row.contraparte,
         row.documento,
         row.contrato,
-      ].map((value) => formatCsvCell(value as string | number | null)).join(",")
+      ]
+        .map((value) => formatCsvCell(value as string | number | null))
+        .join(",")
     ),
   ];
 
@@ -1585,9 +1763,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("[API REPORTES CONTABLES] Error:", error);
-    return NextResponse.json(
-      { error: "No se pudo generar el informe contable." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "No se pudo generar el informe contable." }, { status: 500 });
   }
 }

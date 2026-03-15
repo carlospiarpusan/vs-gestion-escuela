@@ -119,7 +119,11 @@ interface SchoolOverview extends PlatformEscuela {
 
 /* ─────────────────── helpers ─────────────────── */
 const fmt = (n: number) =>
-  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(n);
 
 const ESTADO_PAGO: Record<string, string> = {
   cobrado: "Pagado",
@@ -246,7 +250,8 @@ function AlumnoDashboard() {
       .reduce((sum, matricula) => sum + Number(matricula.valor_total || 0), 0);
   }, [alumno?.valor_total, matriculas]);
   const totalPendiente = Math.max(valorTotal - totalPagado, 0);
-  const porcentajePagado = valorTotal > 0 ? Math.min(100, Math.round((totalPagado / valorTotal) * 100)) : 0;
+  const porcentajePagado =
+    valorTotal > 0 ? Math.min(100, Math.round((totalPagado / valorTotal) * 100)) : 0;
   const resumenMatriculas = useMemo(
     () =>
       matriculas.map((matricula) => {
@@ -271,7 +276,7 @@ function AlumnoDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="w-8 h-8 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#0071e3] border-t-transparent" />
       </div>
     );
   }
@@ -280,19 +285,19 @@ function AlumnoDashboard() {
     <div className="animate-fade-in">
       {/* Bienvenida */}
       <div className="mb-8">
-        <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
+        <h2 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] sm:text-4xl dark:text-[#f5f5f7]">
           Hola, {nombre}
         </h2>
-        <p className="text-[#86868b] mt-2 text-lg font-medium">Tu estado de cuenta</p>
+        <p className="mt-2 text-lg font-medium text-[#86868b]">Tu estado de cuenta</p>
       </div>
 
       {/* Resumen financiero */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {/* Valor total curso */}
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 border border-gray-100 dark:border-gray-800 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <div className="mb-2 flex items-center justify-between">
             <span className="text-xs text-[#86868b]">Valor del curso</span>
-            <div className="w-8 h-8 rounded-xl bg-[#0071e3]/10 flex items-center justify-center">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#0071e3]/10">
               <BookOpen size={15} className="text-[#0071e3]" />
             </div>
           </div>
@@ -302,21 +307,23 @@ function AlumnoDashboard() {
         </div>
 
         {/* Pagado */}
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 border border-gray-100 dark:border-gray-800 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <div className="mb-2 flex items-center justify-between">
             <span className="text-xs text-[#86868b]">Total pagado</span>
-            <div className="w-8 h-8 rounded-xl bg-green-500/10 flex items-center justify-center">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-green-500/10">
               <CheckCircle size={15} className="text-green-500" />
             </div>
           </div>
-          <p className="text-2xl font-bold text-green-600 dark:text-green-400">{fmt(totalPagado)}</p>
+          <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+            {fmt(totalPagado)}
+          </p>
         </div>
 
         {/* Pendiente */}
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 border border-gray-100 dark:border-gray-800 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <div className="mb-2 flex items-center justify-between">
             <span className="text-xs text-[#86868b]">Saldo pendiente</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10">
               <Clock size={15} className="text-amber-500" />
             </div>
           </div>
@@ -328,18 +335,20 @@ function AlumnoDashboard() {
 
       {/* Barra de progreso de pago */}
       {valorTotal > 0 && (
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 border border-gray-100 dark:border-gray-800 shadow-sm mb-8">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Progreso de pago</span>
+        <div className="mb-8 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+              Progreso de pago
+            </span>
             <span className="text-sm font-semibold text-[#0071e3]">{porcentajePagado}%</span>
           </div>
-          <div className="w-full h-2.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
             <div
-              className="h-full bg-[#0071e3] rounded-full transition-all duration-700"
+              className="h-full rounded-full bg-[#0071e3] transition-all duration-700"
               style={{ width: `${porcentajePagado}%` }}
             />
           </div>
-          <div className="flex justify-between mt-2">
+          <div className="mt-2 flex justify-between">
             <span className="text-xs text-[#86868b]">{fmt(totalPagado)} pagado</span>
             <span className="text-xs text-[#86868b]">{fmt(valorTotal)} total</span>
           </div>
@@ -348,63 +357,78 @@ function AlumnoDashboard() {
 
       {resumenMatriculas.length > 0 && (
         <div className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="mb-4 flex items-center gap-2">
             <BookOpen size={16} className="text-[#0071e3]" />
             <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tus cursos</h3>
           </div>
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {resumenMatriculas.map((matricula) => (
               <div
                 key={matricula.id}
-                className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm"
+                className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]"
               >
-                <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      {matricula.numero_contrato ? `Contrato ${matricula.numero_contrato}` : "Curso sin contrato"}
+                      {matricula.numero_contrato
+                        ? `Contrato ${matricula.numero_contrato}`
+                        : "Curso sin contrato"}
                     </p>
                     <p className="text-xs text-[#86868b]">
                       {matricula.fecha_inscripcion
-                        ? new Date(matricula.fecha_inscripcion + "T00:00:00").toLocaleDateString("es-CO", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })
+                        ? new Date(matricula.fecha_inscripcion + "T00:00:00").toLocaleDateString(
+                            "es-CO",
+                            {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            }
+                          )
                         : "Fecha no disponible"}
                     </p>
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-[#0071e3]/10 text-[#0071e3]">
+                  <span className="rounded-full bg-[#0071e3]/10 px-2 py-0.5 text-[10px] font-medium text-[#0071e3]">
                     {matricula.estado}
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-1.5 mb-4">
+                <div className="mb-4 flex flex-wrap gap-1.5">
                   {(matricula.categorias ?? []).map((categoria) => (
                     <span
                       key={`${matricula.id}-${categoria}`}
-                      className="px-2 py-0.5 text-[10px] rounded-full bg-gray-100 dark:bg-gray-800 text-[#1d1d1f] dark:text-[#f5f5f7] font-medium"
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-[#1d1d1f] dark:bg-gray-800 dark:text-[#f5f5f7]"
                     >
                       {categoria}
                     </span>
                   ))}
                 </div>
                 <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="rounded-2xl bg-gray-50 dark:bg-[#0a0a0a] p-3">
-                    <p className="text-[10px] uppercase tracking-wider text-[#86868b] mb-1">Valor</p>
+                  <div className="rounded-2xl bg-gray-50 p-3 dark:bg-[#0a0a0a]">
+                    <p className="mb-1 text-[10px] tracking-wider text-[#86868b] uppercase">
+                      Valor
+                    </p>
                     <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                       {matricula.valor_total ? fmt(Number(matricula.valor_total)) : "—"}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-green-50 dark:bg-green-900/20 p-3">
-                    <p className="text-[10px] uppercase tracking-wider text-green-600 dark:text-green-400 mb-1">Abonos</p>
+                  <div className="rounded-2xl bg-green-50 p-3 dark:bg-green-900/20">
+                    <p className="mb-1 text-[10px] tracking-wider text-green-600 uppercase dark:text-green-400">
+                      Abonos
+                    </p>
                     <p className="text-sm font-semibold text-green-700 dark:text-green-400">
                       {fmt(matricula.total_pagado)}
                     </p>
                   </div>
-                  <div className={`rounded-2xl p-3 ${matricula.saldo_pendiente <= 0 ? "bg-green-50 dark:bg-green-900/20" : "bg-amber-50 dark:bg-amber-900/20"}`}>
-                    <p className={`text-[10px] uppercase tracking-wider mb-1 ${matricula.saldo_pendiente <= 0 ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}>
+                  <div
+                    className={`rounded-2xl p-3 ${matricula.saldo_pendiente <= 0 ? "bg-green-50 dark:bg-green-900/20" : "bg-amber-50 dark:bg-amber-900/20"}`}
+                  >
+                    <p
+                      className={`mb-1 text-[10px] tracking-wider uppercase ${matricula.saldo_pendiente <= 0 ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}
+                    >
                       {matricula.saldo_pendiente <= 0 ? "Al día" : "Pendiente"}
                     </p>
-                    <p className={`text-sm font-semibold ${matricula.saldo_pendiente <= 0 ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}`}>
+                    <p
+                      className={`text-sm font-semibold ${matricula.saldo_pendiente <= 0 ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}`}
+                    >
                       {fmt(matricula.saldo_pendiente)}
                     </p>
                   </div>
@@ -415,21 +439,25 @@ function AlumnoDashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Historial de abonos */}
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+        <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-6 py-4 dark:border-gray-800">
             <CreditCard size={16} className="text-[#0071e3]" />
-            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Historial de abonos</h3>
+            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              Historial de abonos
+            </h3>
           </div>
           {ingresos.length === 0 ? (
-            <p className="text-center text-sm text-[#86868b] py-10">Sin registros de abonos</p>
+            <p className="py-10 text-center text-sm text-[#86868b]">Sin registros de abonos</p>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-gray-800 max-h-80 overflow-y-auto">
+            <div className="max-h-80 divide-y divide-gray-100 overflow-y-auto dark:divide-gray-800">
               {ingresos.map((ing) => (
-                <div key={ing.id} className="px-6 py-3 flex items-center justify-between gap-3">
+                <div key={ing.id} className="flex items-center justify-between gap-3 px-6 py-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{ing.concepto}</p>
+                    <p className="truncate text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {ing.concepto}
+                    </p>
                     <p className="text-xs text-[#86868b]">
                       {new Date(ing.fecha + "T00:00:00").toLocaleDateString("es-CO", {
                         day: "numeric",
@@ -441,16 +469,22 @@ function AlumnoDashboard() {
                         ? (() => {
                             const matricula = matriculasById.get(ing.matricula_id);
                             if (!matricula) return "";
-                            if (matricula.numero_contrato) return ` · Contrato ${matricula.numero_contrato}`;
-                            if ((matricula.categorias ?? []).length > 0) return ` · ${(matricula.categorias ?? []).join(", ")}`;
+                            if (matricula.numero_contrato)
+                              return ` · Contrato ${matricula.numero_contrato}`;
+                            if ((matricula.categorias ?? []).length > 0)
+                              return ` · ${(matricula.categorias ?? []).join(", ")}`;
                             return "";
                           })()
                         : ""}
                     </p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{fmt(Number(ing.monto))}</p>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${ESTADO_COLOR[ing.estado]}`}>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {fmt(Number(ing.monto))}
+                    </p>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${ESTADO_COLOR[ing.estado]}`}
+                    >
                       {ESTADO_PAGO[ing.estado] ?? ing.estado}
                     </span>
                   </div>
@@ -461,23 +495,29 @@ function AlumnoDashboard() {
         </div>
 
         {/* Evaluaciones realizadas */}
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+        <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-6 py-4 dark:border-gray-800">
             <FileText size={16} className="text-[#0071e3]" />
-            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Evaluaciones realizadas</h3>
+            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              Evaluaciones realizadas
+            </h3>
           </div>
           {examenes.length === 0 ? (
-            <p className="text-center text-sm text-[#86868b] py-10">Aún no tienes evaluaciones registradas</p>
+            <p className="py-10 text-center text-sm text-[#86868b]">
+              Aún no tienes evaluaciones registradas
+            </p>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-gray-800 max-h-80 overflow-y-auto">
+            <div className="max-h-80 divide-y divide-gray-100 overflow-y-auto dark:divide-gray-800">
               {examenes.map((examen) => (
-                <div key={examen.id} className="px-6 py-3 flex items-start justify-between gap-3">
+                <div key={examen.id} className="flex items-start justify-between gap-3 px-6 py-3">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
                         {TIPO_EXAMEN[examen.tipo]}
                       </p>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${RESULTADO_COLOR[examen.resultado]}`}>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${RESULTADO_COLOR[examen.resultado]}`}
+                      >
                         {RESULTADO_LABEL[examen.resultado]}
                       </span>
                     </div>
@@ -495,10 +535,10 @@ function AlumnoDashboard() {
                       </p>
                     )}
                     {examen.notas && (
-                      <p className="text-xs text-[#86868b] truncate">{examen.notas}</p>
+                      <p className="truncate text-xs text-[#86868b]">{examen.notas}</p>
                     )}
                   </div>
-                  <span className="text-xs font-medium text-[#0071e3] shrink-0">
+                  <span className="shrink-0 text-xs font-medium text-[#0071e3]">
                     Intento {examen.intentos}
                   </span>
                 </div>
@@ -565,6 +605,7 @@ function SuperAdminDashboard() {
             supabase
               .from("alumnos")
               .select("id, escuela_id")
+              .eq("tipo_registro", "regular")
               .order("created_at", { ascending: false })
               .range(from, to)
               .then(({ data, error }) => ({ data: (data as PlatformAlumno[]) ?? [], error }))
@@ -577,13 +618,23 @@ function SuperAdminDashboard() {
               .eq("estado", "cobrado")
               .order("fecha", { ascending: false })
               .range(from, to)
-              .then(({ data, error }) => ({ data: (data as { monto: number | string }[]) ?? [], error }))
+              .then(({ data, error }) => ({
+                data: (data as { monto: number | string }[]) ?? [],
+                error,
+              }))
           ),
         ]);
 
-        const sedesResumen = new Map<string, { total: number; activas: number; principal: boolean }>();
+        const sedesResumen = new Map<
+          string,
+          { total: number; activas: number; principal: boolean }
+        >();
         for (const sede of sedes) {
-          const actual = sedesResumen.get(sede.escuela_id) ?? { total: 0, activas: 0, principal: false };
+          const actual = sedesResumen.get(sede.escuela_id) ?? {
+            total: 0,
+            activas: 0,
+            principal: false,
+          };
           actual.total += 1;
           if (sede.estado === "activa") actual.activas += 1;
           if (sede.es_principal) actual.principal = true;
@@ -598,11 +649,18 @@ function SuperAdminDashboard() {
 
         const alumnosPorEscuela = new Map<string, number>();
         for (const alumno of alumnos) {
-          alumnosPorEscuela.set(alumno.escuela_id, (alumnosPorEscuela.get(alumno.escuela_id) ?? 0) + 1);
+          alumnosPorEscuela.set(
+            alumno.escuela_id,
+            (alumnosPorEscuela.get(alumno.escuela_id) ?? 0) + 1
+          );
         }
 
         const overviews = escuelas.map((escuela) => {
-          const sedesEscuela = sedesResumen.get(escuela.id) ?? { total: 0, activas: 0, principal: false };
+          const sedesEscuela = sedesResumen.get(escuela.id) ?? {
+            total: 0,
+            activas: 0,
+            principal: false,
+          };
           const alumnosTotal = alumnosPorEscuela.get(escuela.id) ?? 0;
           const adminsActivos = adminsPorEscuela.get(escuela.id) ?? 0;
           const capacidadPct =
@@ -619,11 +677,10 @@ function SuperAdminDashboard() {
           };
         });
 
-        const ingresosMes =
-          ingresosMesRows.reduce((sum, ingreso) => {
-            const parsed = Number(ingreso.monto);
-            return sum + (Number.isNaN(parsed) ? 0 : parsed);
-          }, 0);
+        const ingresosMes = ingresosMesRows.reduce((sum, ingreso) => {
+          const parsed = Number(ingreso.monto);
+          return sum + (Number.isNaN(parsed) ? 0 : parsed);
+        }, 0);
 
         setStats({
           escuelas: escuelas.length,
@@ -663,7 +720,12 @@ function SuperAdminDashboard() {
   }, [schoolOverviews]);
 
   const platformAlerts = useMemo(() => {
-    const alerts: Array<{ title: string; detail: string; href: string; tone: "warn" | "danger" | "info" }> = [];
+    const alerts: Array<{
+      title: string;
+      detail: string;
+      href: string;
+      tone: "warn" | "danger" | "info";
+    }> = [];
 
     for (const school of schoolOverviews) {
       if (school.estado === "suspendida") {
@@ -711,18 +773,54 @@ function SuperAdminDashboard() {
   }, [schoolOverviews]);
 
   const statCards = [
-    { label: "Escuelas", value: stats.escuelas.toString(), helper: `${stats.escuelasActivas} activas`, icon: <Building2 size={18} />, color: "#0071e3" },
-    { label: "Sedes activas", value: stats.sedesActivas.toString(), helper: "Cobertura operativa", icon: <MapPin size={18} />, color: "#28c840" },
-    { label: "Admins de escuela", value: stats.adminsEscuela.toString(), helper: "Accesos vigentes", icon: <UserCog size={18} />, color: "#ff9f0a" },
-    { label: "Alumnos totales", value: stats.alumnos.toString(), helper: "Base activa del sistema", icon: <Users size={18} />, color: "#bf5af2" },
-    { label: "Ingresos del mes", value: fmt(stats.ingresosMes), helper: "Cobrado en todas las escuelas", icon: <DollarSign size={18} />, color: "#10b981" },
-    { label: "Alertas", value: platformAlerts.length.toString(), helper: "Escuelas para revisar", icon: <ShieldAlert size={18} />, color: "#ef4444" },
+    {
+      label: "Escuelas",
+      value: stats.escuelas.toString(),
+      helper: `${stats.escuelasActivas} activas`,
+      icon: <Building2 size={18} />,
+      color: "#0071e3",
+    },
+    {
+      label: "Sedes activas",
+      value: stats.sedesActivas.toString(),
+      helper: "Cobertura operativa",
+      icon: <MapPin size={18} />,
+      color: "#28c840",
+    },
+    {
+      label: "Admins de escuela",
+      value: stats.adminsEscuela.toString(),
+      helper: "Accesos vigentes",
+      icon: <UserCog size={18} />,
+      color: "#ff9f0a",
+    },
+    {
+      label: "Alumnos totales",
+      value: stats.alumnos.toString(),
+      helper: "Base activa del sistema",
+      icon: <Users size={18} />,
+      color: "#bf5af2",
+    },
+    {
+      label: "Ingresos del mes",
+      value: fmt(stats.ingresosMes),
+      helper: "Cobrado en todas las escuelas",
+      icon: <DollarSign size={18} />,
+      color: "#10b981",
+    },
+    {
+      label: "Alertas",
+      value: platformAlerts.length.toString(),
+      helper: "Escuelas para revisar",
+      icon: <ShieldAlert size={18} />,
+      color: "#ef4444",
+    },
   ];
 
   return (
     <div>
-      <div className="mb-8 animate-fade-in">
-        <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
+      <div className="animate-fade-in mb-8">
+        <h2 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] sm:text-4xl dark:text-[#f5f5f7]">
           Control central de la plataforma
         </h2>
         <p className="mt-2 text-lg font-medium text-[#86868b]">
@@ -730,7 +828,7 @@ function SuperAdminDashboard() {
         </p>
       </div>
 
-      <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 animate-fade-in delay-100">
+      <div className="animate-fade-in mb-10 grid grid-cols-1 gap-4 delay-100 sm:grid-cols-2 xl:grid-cols-3">
         {statCards.map((stat) => (
           <div
             key={stat.label}
@@ -784,7 +882,10 @@ function SuperAdminDashboard() {
             {loading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((item) => (
-                  <div key={item} className="h-16 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />
+                  <div
+                    key={item}
+                    className="h-16 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800"
+                  />
                 ))}
               </div>
             ) : recentSchools.length === 0 ? (
@@ -800,10 +901,12 @@ function SuperAdminDashboard() {
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{school.nombre}</p>
+                        <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                          {school.nombre}
+                        </p>
                         <p className="mt-1 text-xs text-[#86868b]">
-                          Plan {school.plan} · {school.alumnosTotal} alumnos · {school.sedesActivas}/
-                          {Math.max(school.sedesTotal, 0)} sedes activas
+                          Plan {school.plan} · {school.alumnosTotal} alumnos · {school.sedesActivas}
+                          /{Math.max(school.sedesTotal, 0)} sedes activas
                         </p>
                       </div>
                       <span
@@ -821,10 +924,11 @@ function SuperAdminDashboard() {
                     <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-[#86868b] sm:grid-cols-4">
                       <span>Admins activos: {school.adminsActivos}</span>
                       <span>Sede principal: {school.hasPrincipalSede ? "Sí" : "No"}</span>
-                      <span>Capacidad: {school.max_alumnos > 0 ? `${school.capacidadPct}%` : "Sin límite"}</span>
                       <span>
-                        Alta: {new Date(school.created_at).toLocaleDateString("es-CO")}
+                        Capacidad:{" "}
+                        {school.max_alumnos > 0 ? `${school.capacidadPct}%` : "Sin límite"}
                       </span>
+                      <span>Alta: {new Date(school.created_at).toLocaleDateString("es-CO")}</span>
                     </div>
                   </div>
                 ))}
@@ -880,7 +984,10 @@ function SuperAdminDashboard() {
             <div className="mt-5 space-y-3">
               {loading ? (
                 [1, 2, 3].map((item) => (
-                  <div key={item} className="h-20 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />
+                  <div
+                    key={item}
+                    className="h-20 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800"
+                  />
                 ))
               ) : platformAlerts.length === 0 ? (
                 <div className="rounded-2xl bg-green-50 px-4 py-5 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
@@ -904,7 +1011,9 @@ function SuperAdminDashboard() {
                         <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                           {alert.title}
                         </p>
-                        <p className="mt-1 text-sm text-[#6e6e73] dark:text-[#c7c7cc]">{alert.detail}</p>
+                        <p className="mt-1 text-sm text-[#6e6e73] dark:text-[#c7c7cc]">
+                          {alert.detail}
+                        </p>
                       </div>
                       <ArrowRight size={16} className="mt-1 shrink-0 text-[#0071e3]" />
                     </div>
@@ -925,7 +1034,10 @@ function SuperAdminDashboard() {
             <div className="mt-5 space-y-4">
               {loading ? (
                 [1, 2, 3].map((item) => (
-                  <div key={item} className="h-12 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />
+                  <div
+                    key={item}
+                    className="h-12 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800"
+                  />
                 ))
               ) : planDistribution.length === 0 ? (
                 <div className="rounded-2xl bg-gray-50 px-4 py-5 text-sm text-[#86868b] dark:bg-[#0a0a0a]">
@@ -933,11 +1045,12 @@ function SuperAdminDashboard() {
                 </div>
               ) : (
                 planDistribution.map((item) => {
-                  const pct = stats.escuelas > 0 ? Math.round((item.count / stats.escuelas) * 100) : 0;
+                  const pct =
+                    stats.escuelas > 0 ? Math.round((item.count / stats.escuelas) * 100) : 0;
                   return (
                     <div key={item.plan}>
                       <div className="mb-2 flex items-center justify-between text-sm">
-                        <span className="font-medium capitalize text-[#1d1d1f] dark:text-[#f5f5f7]">
+                        <span className="font-medium text-[#1d1d1f] capitalize dark:text-[#f5f5f7]">
                           {item.plan}
                         </span>
                         <span className="text-[#86868b]">
@@ -982,44 +1095,59 @@ function AdminDashboard() {
         const primerDiaMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
           .toISOString()
           .split("T")[0];
-        const primerDiaSiguienteMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1)
+        const primerDiaSiguienteMes = new Date(
+          new Date().getFullYear(),
+          new Date().getMonth() + 1,
+          1
+        )
           .toISOString()
           .split("T")[0];
 
-        const [matriculasRows, alumnosLegacyRows, clasesRes, examenesRes, ingresosRows] = await Promise.all([
-          fetchAllSupabaseRows<{ alumno_id: string | null }>((from, to) =>
+        const [matriculasRows, alumnosLegacyRows, clasesRes, examenesRes, ingresosRows] =
+          await Promise.all([
+            fetchAllSupabaseRows<{ alumno_id: string | null }>((from, to) =>
+              supabase
+                .from("matriculas_alumno")
+                .select("alumno_id")
+                .gte("fecha_inscripcion", primerDiaMes)
+                .lt("fecha_inscripcion", primerDiaSiguienteMes)
+                .order("fecha_inscripcion", { ascending: false })
+                .range(from, to)
+                .then(({ data, error }) => ({
+                  data: (data as { alumno_id: string | null }[]) ?? [],
+                  error,
+                }))
+            ),
+            fetchAllSupabaseRows<{ id: string }>((from, to) =>
+              supabase
+                .from("alumnos")
+                .select("id")
+                .gte("fecha_inscripcion", primerDiaMes)
+                .lt("fecha_inscripcion", primerDiaSiguienteMes)
+                .eq("tipo_registro", "regular")
+                .order("created_at", { ascending: false })
+                .range(from, to)
+                .then(({ data, error }) => ({ data: (data as { id: string }[]) ?? [], error }))
+            ),
+            supabase.from("clases").select("id", { count: "exact", head: true }).eq("fecha", hoy),
             supabase
-              .from("matriculas_alumno")
-              .select("alumno_id")
-              .gte("fecha_inscripcion", primerDiaMes)
-              .lt("fecha_inscripcion", primerDiaSiguienteMes)
-              .order("fecha_inscripcion", { ascending: false })
-              .range(from, to)
-              .then(({ data, error }) => ({ data: (data as { alumno_id: string | null }[]) ?? [], error }))
-          ),
-          fetchAllSupabaseRows<{ id: string }>((from, to) =>
-            supabase
-              .from("alumnos")
-              .select("id")
-              .gte("fecha_inscripcion", primerDiaMes)
-              .lt("fecha_inscripcion", primerDiaSiguienteMes)
-              .order("created_at", { ascending: false })
-              .range(from, to)
-              .then(({ data, error }) => ({ data: (data as { id: string }[]) ?? [], error }))
-          ),
-          supabase.from("clases").select("id", { count: "exact", head: true }).eq("fecha", hoy),
-          supabase.from("examenes").select("id", { count: "exact", head: true }).eq("resultado", "pendiente"),
-          fetchAllSupabaseRows<{ monto: number | string }>((from, to) =>
-            supabase
-              .from("ingresos")
-              .select("monto")
-              .gte("fecha", primerDiaMes)
-              .eq("estado", "cobrado")
-              .order("fecha", { ascending: false })
-              .range(from, to)
-              .then(({ data, error }) => ({ data: (data as { monto: number | string }[]) ?? [], error }))
-          ),
-        ]);
+              .from("examenes")
+              .select("id", { count: "exact", head: true })
+              .eq("resultado", "pendiente"),
+            fetchAllSupabaseRows<{ monto: number | string }>((from, to) =>
+              supabase
+                .from("ingresos")
+                .select("monto")
+                .gte("fecha", primerDiaMes)
+                .eq("estado", "cobrado")
+                .order("fecha", { ascending: false })
+                .range(from, to)
+                .then(({ data, error }) => ({
+                  data: (data as { monto: number | string }[]) ?? [],
+                  error,
+                }))
+            ),
+          ]);
 
         const alumnosDelMes = new Set<string>();
         for (const matricula of matriculasRows) {
@@ -1029,11 +1157,10 @@ function AdminDashboard() {
           alumnosDelMes.add(alumno.id);
         }
 
-        const totalIngresos =
-          ingresosRows.reduce((sum, i) => {
-            const parsed = Number(i.monto);
-            return sum + (isNaN(parsed) ? 0 : parsed);
-          }, 0);
+        const totalIngresos = ingresosRows.reduce((sum, i) => {
+          const parsed = Number(i.monto);
+          return sum + (isNaN(parsed) ? 0 : parsed);
+        }, 0);
 
         setStats({
           alumnos: alumnosDelMes.size,
@@ -1053,9 +1180,24 @@ function AdminDashboard() {
   const nombre = perfil?.nombre || "Usuario";
 
   const statCards = [
-    { label: "Alumnos del Mes", value: stats.alumnos.toString(), icon: <Users size={20} />, color: "#0071e3" },
-    { label: "Clases Hoy", value: stats.clasesHoy.toString(), icon: <Calendar size={20} />, color: "#28c840" },
-    { label: "Exámenes Pendientes", value: stats.examenesPendientes.toString(), icon: <FileText size={20} />, color: "#ff9f0a" },
+    {
+      label: "Alumnos del Mes",
+      value: stats.alumnos.toString(),
+      icon: <Users size={20} />,
+      color: "#0071e3",
+    },
+    {
+      label: "Clases Hoy",
+      value: stats.clasesHoy.toString(),
+      icon: <Calendar size={20} />,
+      color: "#28c840",
+    },
+    {
+      label: "Exámenes Pendientes",
+      value: stats.examenesPendientes.toString(),
+      icon: <FileText size={20} />,
+      color: "#ff9f0a",
+    },
     {
       label: "Ingresos del Mes",
       value: `$${stats.ingresosMes.toLocaleString("es-CO")}`,
@@ -1066,41 +1208,45 @@ function AdminDashboard() {
 
   return (
     <div>
-      <div className="mb-8 animate-fade-in">
-        <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
+      <div className="animate-fade-in mb-8">
+        <h2 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] sm:text-4xl dark:text-[#f5f5f7]">
           Hola, {nombre}
         </h2>
-        <p className="text-[#86868b] mt-2 text-lg font-medium">Resumen de tu escuela de conducción</p>
+        <p className="mt-2 text-lg font-medium text-[#86868b]">
+          Resumen de tu escuela de conducción
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 animate-fade-in delay-100">
+      <div className="animate-fade-in mb-10 grid grid-cols-1 gap-6 delay-100 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((stat) => (
           <div
             key={stat.label}
-            className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-6 hover:scale-[1.02] transition-transform duration-300 shadow-sm border border-gray-100 dark:border-gray-800"
+            className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm transition-transform duration-300 hover:scale-[1.02] dark:border-gray-800 dark:bg-[#1d1d1f]"
           >
             {loadingStats ? (
-              <div className="h-9 w-16 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />
+              <div className="h-9 w-16 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
             ) : (
               <div className="flex items-center justify-between">
                 <p className="text-2xl font-bold" style={{ color: stat.color }}>
                   {stat.value}
                 </p>
-                <div className="p-2 rounded-xl" style={{ backgroundColor: stat.color + "15" }}>
+                <div className="rounded-xl p-2" style={{ backgroundColor: stat.color + "15" }}>
                   <span style={{ color: stat.color }}>{stat.icon}</span>
                 </div>
               </div>
             )}
-            <p className="text-xs text-[#86868b] mt-2">{stat.label}</p>
+            <p className="mt-2 text-xs text-[#86868b]">{stat.label}</p>
           </div>
         ))}
       </div>
 
-      <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-10 text-center animate-fade-in delay-200 border border-gray-100 dark:border-gray-800">
-        <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Panel de Gestión</h3>
-        <p className="text-sm text-[#86868b] max-w-md mx-auto">
-          Usa el menú lateral para navegar entre los módulos: alumnos, instructores, vehículos, clases, exámenes y
-          finanzas.
+      <div className="animate-fade-in rounded-3xl border border-gray-100 bg-white p-10 text-center delay-200 dark:border-gray-800 dark:bg-[#1d1d1f]">
+        <h3 className="mb-2 text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+          Panel de Gestión
+        </h3>
+        <p className="mx-auto max-w-md text-sm text-[#86868b]">
+          Usa el menú lateral para navegar entre los módulos: alumnos, instructores, vehículos,
+          clases, exámenes y finanzas.
         </p>
       </div>
     </div>
