@@ -38,6 +38,7 @@ type QueryParts = {
   filteredIngresosCte: string;
   filteredGastosCte: string;
   filteredObligationsCte: string;
+  allObligationsCte: string;
 };
 
 type QueryFilters = {
@@ -326,6 +327,8 @@ function buildQueryParts({
   const gastosWhere: string[] = [];
   const matriculasWhere: string[] = [];
   const standaloneWhere: string[] = [];
+  const carteraMatriculasWhere: string[] = [];
+  const carteraStandaloneWhere: string[] = [];
   const expenseSearch = parseExpenseSearch(search);
 
   const addValue = (value: string) => {
@@ -339,6 +342,8 @@ function buildQueryParts({
     gastosWhere.push(`g.escuela_id = ${ref}`);
     matriculasWhere.push(`m.escuela_id = ${ref}`);
     standaloneWhere.push(`a.escuela_id = ${ref}`);
+    carteraMatriculasWhere.push(`m.escuela_id = ${ref}`);
+    carteraStandaloneWhere.push(`a.escuela_id = ${ref}`);
   }
 
   if (scope.sedeId) {
@@ -347,6 +352,8 @@ function buildQueryParts({
     gastosWhere.push(`g.sede_id = ${ref}`);
     matriculasWhere.push(`m.sede_id = ${ref}`);
     standaloneWhere.push(`a.sede_id = ${ref}`);
+    carteraMatriculasWhere.push(`m.sede_id = ${ref}`);
+    carteraStandaloneWhere.push(`a.sede_id = ${ref}`);
   }
 
   const fromRef = addValue(from);
@@ -366,6 +373,8 @@ function buildQueryParts({
     ingresosWhere.push(`i.alumno_id = ${ref}`);
     matriculasWhere.push(`m.alumno_id = ${ref}`);
     standaloneWhere.push(`a.id = ${ref}`);
+    carteraMatriculasWhere.push(`m.alumno_id = ${ref}`);
+    carteraStandaloneWhere.push(`a.id = ${ref}`);
   }
 
   if (filters.ingresoCategoria) {
@@ -691,6 +700,60 @@ function buildQueryParts({
           AND ${standaloneWhere.join(" AND ")}
       )
     `,
+    allObligationsCte: `
+    all_obligations AS (
+        SELECT
+          ('matricula:' || m.id::text) AS obligation_id,
+          m.alumno_id,
+          'regular'::text AS tipo_registro,
+          m.fecha_inscripcion::date AS fecha_registro,
+          m.numero_contrato AS referencia,
+          COALESCE(NULLIF(TRIM(CONCAT(a.nombre, ' ', a.apellidos)), ''), 'Sin alumno asociado') AS nombre,
+          a.dni AS documento,
+          COALESCE(m.valor_total, 0)::numeric AS valor_esperado,
+          COALESCE(pagos.total_cobrado, 0)::numeric AS valor_cobrado,
+          GREATEST(COALESCE(m.valor_total, 0) - COALESCE(pagos.total_cobrado, 0), 0)::numeric AS saldo_pendiente,
+          COALESCE(pagos.oldest_pending_date, m.fecha_inscripcion)::date AS fecha_referencia,
+          COALESCE(m.categorias, '{}'::text[]) AS categorias
+        FROM matriculas_alumno m
+        JOIN alumnos a ON a.id = m.alumno_id
+        LEFT JOIN LATERAL (
+          SELECT
+            COALESCE(SUM(CASE WHEN i.estado = 'cobrado' THEN i.monto ELSE 0 END), 0) AS total_cobrado,
+            MIN(CASE WHEN i.estado = 'pendiente' THEN COALESCE(i.fecha_vencimiento, i.fecha) END) AS oldest_pending_date
+          FROM ingresos i
+          WHERE i.matricula_id = m.id
+        ) pagos ON true
+        WHERE ${carteraMatriculasWhere.length ? carteraMatriculasWhere.join(" AND ") : "1 = 1"}
+
+        UNION ALL
+
+        SELECT
+          ('alumno:' || a.id::text) AS obligation_id,
+          a.id AS alumno_id,
+          a.tipo_registro::text AS tipo_registro,
+          COALESCE(a.fecha_inscripcion, a.created_at::date) AS fecha_registro,
+          a.numero_contrato AS referencia,
+          COALESCE(NULLIF(TRIM(CONCAT(a.nombre, ' ', a.apellidos)), ''), 'Sin alumno asociado') AS nombre,
+          a.dni AS documento,
+          COALESCE(a.valor_total, 0)::numeric AS valor_esperado,
+          COALESCE(pagos.total_cobrado, 0)::numeric AS valor_cobrado,
+          GREATEST(COALESCE(a.valor_total, 0) - COALESCE(pagos.total_cobrado, 0), 0)::numeric AS saldo_pendiente,
+          COALESCE(pagos.oldest_pending_date, COALESCE(a.fecha_inscripcion, a.created_at::date))::date AS fecha_referencia,
+          COALESCE(a.categorias, '{}'::text[]) AS categorias
+        FROM alumnos a
+        LEFT JOIN LATERAL (
+          SELECT
+            COALESCE(SUM(CASE WHEN i.estado = 'cobrado' THEN i.monto ELSE 0 END), 0) AS total_cobrado,
+            MIN(CASE WHEN i.estado = 'pendiente' THEN COALESCE(i.fecha_vencimiento, i.fecha) END) AS oldest_pending_date
+          FROM ingresos i
+          WHERE i.alumno_id = a.id
+            AND i.matricula_id IS NULL
+        ) pagos ON true
+        WHERE a.tipo_registro IN ('aptitud_conductor', 'practica_adicional')
+          AND ${carteraStandaloneWhere.length ? carteraStandaloneWhere.join(" AND ") : "1 = 1"}
+      )
+    `,
   };
 }
 
@@ -825,7 +888,7 @@ async function buildJsonResponse({
   to: string;
   includes: Set<ReportInclude>;
 }) {
-  const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`;
+  const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}, ${parts.allObligationsCte}`;
   const dailySeriesCte = appendCtes(
     cte,
     `
@@ -1246,7 +1309,7 @@ async function buildJsonResponse({
               coalesce(sum(valor_esperado), 0) as total_esperado,
               coalesce(sum(valor_cobrado), 0) as total_cobrado,
               coalesce(sum(saldo_pendiente), 0) as total_pendiente
-            from filtered_obligations
+            from all_obligations
           `,
           parts.values
         )
@@ -1281,7 +1344,7 @@ async function buildJsonResponse({
               fecha_registro,
               fecha_referencia,
               greatest((current_date - fecha_referencia::date), 0)::int as dias_pendiente
-            from filtered_obligations
+            from all_obligations
             where saldo_pendiente > 0
             order by dias_pendiente desc, saldo_pendiente desc, fecha_referencia asc
             limit 12
@@ -1294,7 +1357,7 @@ async function buildJsonResponse({
           `
             ${cte}
             select count(*)::int as total
-            from filtered_obligations
+            from all_obligations
             where saldo_pendiente > 0
           `,
           parts.values
@@ -1316,7 +1379,7 @@ async function buildJsonResponse({
               valor_cobrado,
               saldo_pendiente,
               greatest((current_date - fecha_referencia::date), 0)::int as dias_pendiente
-            from filtered_obligations
+            from all_obligations
             where saldo_pendiente > 0
             order by dias_pendiente desc, saldo_pendiente desc, fecha_referencia asc
             limit ${limitRef} offset ${offsetRef}
