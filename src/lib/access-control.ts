@@ -8,18 +8,59 @@ type RouteRule = {
 const DASHBOARD_ROUTE_RULES: RouteRule[] = [
   { prefix: "/dashboard/escuelas", roles: ["super_admin"] },
   { prefix: "/dashboard/administrativos", roles: ["super_admin", "admin_escuela", "admin_sede"] },
-  { prefix: "/dashboard/alumnos", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "recepcion"] },
-  { prefix: "/dashboard/instructores", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
-  { prefix: "/dashboard/vehiculos", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"] },
-  { prefix: "/dashboard/bitacora", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"] },
-  { prefix: "/dashboard/mantenimiento", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
+  {
+    prefix: "/dashboard/alumnos",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "recepcion"],
+  },
+  {
+    prefix: "/dashboard/instructores",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
+    prefix: "/dashboard/vehiculos",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
+  },
+  {
+    prefix: "/dashboard/bitacora",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
+  },
+  {
+    prefix: "/dashboard/mantenimiento",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
   { prefix: "/dashboard/categorias", roles: ["super_admin", "admin_escuela", "admin_sede"] },
-  { prefix: "/dashboard/clases", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
-  { prefix: "/dashboard/horas", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"] },
-  { prefix: "/dashboard/examenes", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "alumno"] },
-  { prefix: "/dashboard/ingresos", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
-  { prefix: "/dashboard/gastos", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
-  { prefix: "/dashboard/informes", roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] },
+  {
+    prefix: "/dashboard/clases",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
+    prefix: "/dashboard/horas",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
+  },
+  {
+    prefix: "/dashboard/examenes",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "alumno"],
+  },
+  {
+    prefix: "/dashboard/ingresos",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
+    prefix: "/dashboard/cartera",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
+    prefix: "/dashboard/caja-diaria",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
+    prefix: "/dashboard/gastos",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
+    prefix: "/dashboard/informes",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
   { prefix: "/dashboard/sedes", roles: ["super_admin", "admin_escuela", "admin_sede"] },
 ];
 
