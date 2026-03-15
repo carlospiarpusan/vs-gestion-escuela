@@ -390,6 +390,12 @@ function buildQueryParts({
   if (filters.ingresoMetodo) {
     const ref = addValue(filters.ingresoMetodo);
     ingresosWhere.push(`i.metodo_pago = ${ref}`);
+    matriculasWhere.push(
+      `EXISTS (SELECT 1 FROM ingresos i2 WHERE i2.matricula_id = m.id AND i2.metodo_pago = ${ref})`
+    );
+    standaloneWhere.push(
+      `EXISTS (SELECT 1 FROM ingresos i2 WHERE i2.alumno_id = a.id AND i2.matricula_id IS NULL AND i2.metodo_pago = ${ref})`
+    );
   }
 
   switch (filters.ingresoView) {
@@ -1002,7 +1008,7 @@ async function buildJsonResponse({
               coalesce(sum(case when estado = 'pendiente' then monto else 0 end), 0) as ingresos_pendientes,
               coalesce(sum(case when estado = 'anulado' then monto else 0 end), 0) as ingresos_anulados,
               coalesce(avg(case when estado = 'cobrado' then monto end), 0) as ticket_promedio,
-              coalesce(sum(monto), 0) as total_ingresos,
+              count(*)::int as total_ingresos,
               (select coalesce(sum(monto), 0) from filtered_gastos) as gastos_totales,
               (select count(*)::int from filtered_gastos) as total_gastos,
               (select coalesce(avg(monto), 0) from filtered_gastos) as gasto_promedio,
@@ -1332,7 +1338,7 @@ async function buildJsonResponse({
               coalesce(sum(valor_esperado), 0) as total_esperado,
               coalesce(sum(valor_cobrado), 0) as total_cobrado,
               coalesce(sum(saldo_pendiente), 0) as total_pendiente
-            from all_obligations
+            from filtered_obligations
             where saldo_pendiente > 0
           `,
           parts.values
@@ -1368,7 +1374,7 @@ async function buildJsonResponse({
               fecha_registro,
               fecha_referencia,
               greatest((current_date - fecha_referencia::date), 0)::int as dias_pendiente
-            from all_obligations
+            from filtered_obligations
             where saldo_pendiente > 0
             order by dias_pendiente desc, saldo_pendiente desc, fecha_referencia asc
             limit 12
@@ -1381,7 +1387,7 @@ async function buildJsonResponse({
           `
             ${cte}
             select count(*)::int as total
-            from all_obligations
+            from filtered_obligations
             where saldo_pendiente > 0
           `,
           parts.values
@@ -1403,7 +1409,7 @@ async function buildJsonResponse({
               valor_cobrado,
               saldo_pendiente,
               greatest((current_date - fecha_referencia::date), 0)::int as dias_pendiente
-            from all_obligations
+            from filtered_obligations
             where saldo_pendiente > 0
             order by dias_pendiente desc, saldo_pendiente desc, fecha_referencia asc
             limit ${limitRef} offset ${offsetRef}
@@ -1423,7 +1429,7 @@ async function buildJsonResponse({
               end as bucket,
               count(*)::int as cantidad,
               coalesce(sum(saldo_pendiente), 0) as total
-            from all_obligations
+            from filtered_obligations
             where saldo_pendiente > 0
             group by 1
             order by min(fecha_referencia) asc
@@ -1439,7 +1445,7 @@ async function buildJsonResponse({
               nombre,
               count(*)::int as cantidad,
               coalesce(sum(saldo_pendiente), 0) as total
-            from all_obligations
+            from filtered_obligations
             where saldo_pendiente > 0
             group by 1
             order by total desc, cantidad desc, nombre asc
@@ -1522,6 +1528,7 @@ async function buildJsonResponse({
         ingresosCobrados + toNumber(summaryRow.ingresos_pendientes) > 0
           ? (ingresosCobrados / (ingresosCobrados + toNumber(summaryRow.ingresos_pendientes))) * 100
           : 0,
+      totalIngresos: Number(summaryRow.total_ingresos || 0),
       totalGastos: Number(summaryRow.total_gastos || 0),
       totalMovimientos:
         Number(summaryRow.total_ingresos || 0) + Number(summaryRow.total_gastos || 0),

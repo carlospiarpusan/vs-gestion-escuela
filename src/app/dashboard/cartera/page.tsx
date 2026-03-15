@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { createClient } from "@/lib/supabase";
-import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import {
   AccountingChipTabs,
   AccountingMiniList,
@@ -27,12 +25,11 @@ import {
   MONTH_OPTIONS,
 } from "@/lib/accounting-dashboard";
 import { INCOME_VIEW_ITEMS, type IncomeView } from "@/lib/income-view";
-import type { Alumno, MetodoPago } from "@/types/database";
+import type { MetodoPago } from "@/types/database";
 import { AlertTriangle, BookOpen, Clock3, Download, Wallet, X } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
-type AlumnoOption = Pick<Alumno, "id" | "nombre" | "apellidos">;
 type CarteraTableRow = AccountingContractPendingRow & { id: string };
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -71,7 +68,6 @@ export default function CarteraPage() {
   // ─── Filters ──────────────────────────────────────────────────────
 
   const [activeView, setActiveView] = useState<IncomeView>("all");
-  const [filtroAlumno, setFiltroAlumno] = useState("");
   const [filtroYear, setFiltroYear] = useState(String(currentYear));
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroMetodo, setFiltroMetodo] = useState("");
@@ -84,14 +80,9 @@ export default function CarteraPage() {
       : MONTH_OPTIONS;
 
   const hayFiltros =
-    filtroAlumno ||
-    activeView !== "all" ||
-    filtroMetodo ||
-    filtroYear !== String(currentYear) ||
-    filtroMes;
+    activeView !== "all" || filtroMetodo || filtroYear !== String(currentYear) || filtroMes;
 
   const limpiarFiltros = () => {
-    setFiltroAlumno("");
     setActiveView("all");
     setFiltroYear(String(currentYear));
     setFiltroMes("");
@@ -99,39 +90,6 @@ export default function CarteraPage() {
     setSearchTerm("");
     setCurrentPage(0);
   };
-
-  // ─── Catalogs ─────────────────────────────────────────────────────
-
-  const [alumnos, setAlumnos] = useState<AlumnoOption[]>([]);
-  const catalogFetchIdRef = useRef(0);
-
-  useEffect(() => {
-    if (!perfil?.escuela_id) return;
-    const escuelaId = perfil.escuela_id;
-    const fetchId = ++catalogFetchIdRef.current;
-    const supabase = createClient();
-
-    const load = async () => {
-      try {
-        const a = await fetchAllSupabaseRows<AlumnoOption>((from, to) =>
-          supabase
-            .from("alumnos")
-            .select("id, nombre, apellidos")
-            .eq("escuela_id", escuelaId)
-            .order("nombre", { ascending: true })
-            .order("apellidos", { ascending: true })
-            .range(from, to)
-            .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
-        );
-        if (fetchId !== catalogFetchIdRef.current) return;
-        setAlumnos(a);
-      } catch (err) {
-        console.error("[CarteraPage] Error cargando alumnos:", err);
-      }
-    };
-
-    void load();
-  }, [perfil?.escuela_id]);
 
   // ─── Data ─────────────────────────────────────────────────────────
 
@@ -157,7 +115,6 @@ export default function CarteraPage() {
         include: "contracts",
       });
 
-      if (filtroAlumno) params.set("alumno_id", filtroAlumno);
       if (activeView !== "all") params.set("ingreso_view", activeView);
       if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
       if (searchTerm) params.set("q", searchTerm);
@@ -178,7 +135,6 @@ export default function CarteraPage() {
     void load();
   }, [
     perfil?.escuela_id,
-    filtroAlumno,
     activeView,
     filtroYear,
     filtroMes,
@@ -224,7 +180,6 @@ export default function CarteraPage() {
         pageSize: "10000",
         include: "contracts",
       });
-      if (filtroAlumno) params.set("alumno_id", filtroAlumno);
       if (activeView !== "all") params.set("ingreso_view", activeView);
       if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
       if (searchTerm) params.set("q", searchTerm);
@@ -263,15 +218,7 @@ export default function CarteraPage() {
     } finally {
       setExporting(false);
     }
-  }, [
-    perfil?.escuela_id,
-    filtroAlumno,
-    activeView,
-    filtroYear,
-    filtroMes,
-    filtroMetodo,
-    searchTerm,
-  ]);
+  }, [perfil?.escuela_id, activeView, filtroYear, filtroMes, filtroMetodo, searchTerm]);
 
   // ─── Columns ──────────────────────────────────────────────────────
 
@@ -387,25 +334,7 @@ export default function CarteraPage() {
           }}
         />
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <label className={labelCls}>Alumno</label>
-            <select
-              value={filtroAlumno}
-              onChange={(e) => {
-                setFiltroAlumno(e.target.value);
-                setCurrentPage(0);
-              }}
-              className={inputCls}
-            >
-              <option value="">Todos</option>
-              {alumnos.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.nombre} {a.apellidos}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <label className={labelCls}>Año</label>
             <select
