@@ -657,7 +657,7 @@ export default function InformesPage() {
               eyebrow="Cobranza"
               label="Cartera pendiente"
               value={
-                loading ? "..." : formatAccountingMoney(report?.receivables?.totalPendiente || 0)
+                loading ? "..." : formatAccountingMoney(report?.contracts?.totalPendiente || 0)
               }
               detail="Saldo por cobrar del periodo filtrado."
               tone="warning"
