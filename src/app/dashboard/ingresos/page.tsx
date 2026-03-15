@@ -726,6 +726,7 @@ export default function IngresosPage() {
     activeView,
     activeSection,
     currentPage,
+    reloadKey,
   ]);
 
   useEffect(() => {
@@ -781,6 +782,7 @@ export default function IngresosPage() {
     filtroYear,
     searchTerm,
     activeView,
+    reloadKey,
   ]);
 
   const matriculasDisponibles = useMemo(

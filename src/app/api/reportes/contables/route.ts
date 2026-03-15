@@ -398,6 +398,7 @@ function buildQueryParts({
         `i.categoria IN (${buildSqlInClause(MATRICULA_INCOME_CATEGORIES, addValue)})`
       );
       standaloneWhere.push("1 = 0");
+      carteraStandaloneWhere.push("1 = 0");
       break;
     case "practicas":
       ingresosWhere.push(
@@ -405,6 +406,8 @@ function buildQueryParts({
       );
       matriculasWhere.push("1 = 0");
       standaloneWhere.push("a.tipo_registro = 'practica_adicional'");
+      carteraMatriculasWhere.push("1 = 0");
+      carteraStandaloneWhere.push("a.tipo_registro = 'practica_adicional'");
       break;
     case "examenes":
       ingresosWhere.push(
@@ -412,6 +415,8 @@ function buildQueryParts({
       );
       matriculasWhere.push("1 = 0");
       standaloneWhere.push("a.tipo_registro = 'aptitud_conductor'");
+      carteraMatriculasWhere.push("1 = 0");
+      carteraStandaloneWhere.push("a.tipo_registro = 'aptitud_conductor'");
       break;
     case "cobrado":
       ingresosWhere.push(`i.estado = ${addValue("cobrado")}`);
@@ -541,6 +546,20 @@ function buildQueryParts({
       )`
     );
     standaloneWhere.push(
+      `(
+        COALESCE(NULLIF(TRIM(CONCAT(a.nombre, ' ', a.apellidos)), ''), '') ILIKE ${ref}
+        OR COALESCE(a.dni, '') ILIKE ${ref}
+        OR COALESCE(a.numero_contrato, '') ILIKE ${ref}
+      )`
+    );
+    carteraMatriculasWhere.push(
+      `(
+        COALESCE(NULLIF(TRIM(CONCAT(a.nombre, ' ', a.apellidos)), ''), '') ILIKE ${ref}
+        OR COALESCE(a.dni, '') ILIKE ${ref}
+        OR COALESCE(m.numero_contrato, '') ILIKE ${ref}
+      )`
+    );
+    carteraStandaloneWhere.push(
       `(
         COALESCE(NULLIF(TRIM(CONCAT(a.nombre, ' ', a.apellidos)), ''), '') ILIKE ${ref}
         OR COALESCE(a.dni, '') ILIKE ${ref}
