@@ -157,6 +157,21 @@ export type AccountingStudentsSummary = {
   rows: AccountingStudentReportRow[];
 };
 
+export type AccountingLedgerRow = {
+  id: string;
+  fecha: string;
+  tipo: "ingreso" | "gasto";
+  categoria: string;
+  concepto: string;
+  monto: number;
+  estado: string;
+  metodo_pago: string | null;
+  numero_factura: string | null;
+  contraparte: string | null;
+  documento: string | null;
+  contrato: string | null;
+};
+
 export type AccountingReportResponse = {
   options: {
     escuelas: AccountingOptionSchool[];
@@ -177,6 +192,10 @@ export type AccountingReportResponse = {
   series: {
     diaria: AccountingDailySeriesRow[];
     mensual: AccountingMonthlySeriesRow[];
+  };
+  ledger: {
+    totalCount: number;
+    rows: AccountingLedgerRow[];
   };
   receivables?: AccountingReceivablesSummary;
   payables?: AccountingPayablesSummary;

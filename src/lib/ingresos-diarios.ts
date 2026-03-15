@@ -1,21 +1,21 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EstadoIngreso } from "@/types/database";
-import { applyIncomeViewToSupabaseQuery, type IncomeView } from "@/lib/income-view";
 import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 
-export interface IngresosDiariosFilters {
+// ─── Types ───────────────────────────────────────────────────────────
+
+export type IngresosDiariosFilters = {
   escuelaId: string;
   alumnoId?: string;
   metodoPago?: string;
   categoria?: string;
   estado?: EstadoIngreso;
-  view?: IncomeView;
   mes?: string;
-  year?: number;
+  year: number;
   search?: string;
-}
+};
 
-export interface IngresoDiarioRow {
+export type IngresoDiarioRow = {
   id: string;
   fecha: string;
   movimientos: number;
@@ -23,9 +23,9 @@ export interface IngresoDiarioRow {
   total_pendiente: number;
   total_anulado: number;
   total_registrado: number;
-}
+};
 
-export interface IngresoDiarioStats {
+export type IngresoDiarioStats = {
   totalCobrado: number;
   totalPendiente: number;
   totalAnulado: number;
@@ -33,149 +33,120 @@ export interface IngresoDiarioStats {
   promedioCobradoPorDia: number;
   mejorDiaFecha: string | null;
   mejorDiaMonto: number;
-}
-
-export interface IngresosDiariosResult {
-  rows: IngresoDiarioRow[];
-  stats: IngresoDiarioStats;
-}
-
-type IngresoResumenSource = {
-  fecha: string;
-  monto: number | string;
-  estado: EstadoIngreso;
 };
 
-function applyDateFilter<T extends { gte: (...args: unknown[]) => T; lt: (...args: unknown[]) => T }>(
-  query: T,
-  year: number,
-  mes?: string
-) {
-  if (!mes) {
-    return query.gte("fecha", `${year}-01-01`).lt("fecha", `${year + 1}-01-01`);
-  }
+// ─── Helpers ─────────────────────────────────────────────────────────
 
-  const startDate = `${year}-${mes}-01`;
-  const endMonth = Number(mes);
-  const endDate = endMonth === 12
-    ? `${year + 1}-01-01`
-    : `${year}-${String(endMonth + 1).padStart(2, "0")}-01`;
+type RawIngreso = { fecha: string; monto: number | string; estado: EstadoIngreso };
 
-  return query.gte("fecha", startDate).lt("fecha", endDate);
+function buildDateRange(year: number, mes?: string) {
+  if (!mes) return { from: `${year}-01-01`, to: `${year + 1}-01-01` };
+  const m = Number(mes);
+  const from = `${year}-${mes}-01`;
+  const to = m === 12 ? `${year + 1}-01-01` : `${year}-${String(m + 1).padStart(2, "0")}-01`;
+  return { from, to };
 }
 
-function aggregateRows(rows: IngresoResumenSource[]): IngresosDiariosResult {
+function aggregate(raw: RawIngreso[]) {
   const byDate = new Map<string, IngresoDiarioRow>();
 
-  for (const row of rows) {
-    const fecha = row.fecha;
-    const monto = Number(row.monto || 0);
-    const current = byDate.get(fecha) ?? {
-      id: fecha,
-      fecha,
+  for (const r of raw) {
+    const m = Number(r.monto || 0);
+    const d = byDate.get(r.fecha) ?? {
+      id: r.fecha,
+      fecha: r.fecha,
       movimientos: 0,
       total_cobrado: 0,
       total_pendiente: 0,
       total_anulado: 0,
       total_registrado: 0,
     };
-
-    current.movimientos += 1;
-    current.total_registrado += monto;
-
-    if (row.estado === "cobrado") current.total_cobrado += monto;
-    if (row.estado === "pendiente") current.total_pendiente += monto;
-    if (row.estado === "anulado") current.total_anulado += monto;
-
-    byDate.set(fecha, current);
+    d.movimientos += 1;
+    d.total_registrado += m;
+    if (r.estado === "cobrado") d.total_cobrado += m;
+    else if (r.estado === "pendiente") d.total_pendiente += m;
+    else if (r.estado === "anulado") d.total_anulado += m;
+    byDate.set(r.fecha, d);
   }
 
-  const orderedRows = Array.from(byDate.values()).sort((a, b) => b.fecha.localeCompare(a.fecha));
-  const totalCobrado = orderedRows.reduce((sum, row) => sum + row.total_cobrado, 0);
-  const totalPendiente = orderedRows.reduce((sum, row) => sum + row.total_pendiente, 0);
-  const totalAnulado = orderedRows.reduce((sum, row) => sum + row.total_anulado, 0);
-  const mejorDia = orderedRows.reduce<IngresoDiarioRow | null>(
-    (best, row) => (!best || row.total_cobrado > best.total_cobrado ? row : best),
-    null
-  );
+  const rows = Array.from(byDate.values()).sort((a, b) => b.fecha.localeCompare(a.fecha));
 
-  return {
-    rows: orderedRows,
-    stats: {
-      totalCobrado,
-      totalPendiente,
-      totalAnulado,
-      diasConMovimientos: orderedRows.length,
-      promedioCobradoPorDia: orderedRows.length > 0 ? totalCobrado / orderedRows.length : 0,
-      mejorDiaFecha: mejorDia?.fecha ?? null,
-      mejorDiaMonto: mejorDia?.total_cobrado ?? 0,
-    },
+  let totalCobrado = 0;
+  let totalPendiente = 0;
+  let totalAnulado = 0;
+  let mejorDia: IngresoDiarioRow | null = null;
+
+  for (const r of rows) {
+    totalCobrado += r.total_cobrado;
+    totalPendiente += r.total_pendiente;
+    totalAnulado += r.total_anulado;
+    if (!mejorDia || r.total_cobrado > mejorDia.total_cobrado) mejorDia = r;
+  }
+
+  const stats: IngresoDiarioStats = {
+    totalCobrado,
+    totalPendiente,
+    totalAnulado,
+    diasConMovimientos: rows.length,
+    promedioCobradoPorDia: rows.length > 0 ? totalCobrado / rows.length : 0,
+    mejorDiaFecha: mejorDia?.fecha ?? null,
+    mejorDiaMonto: mejorDia?.total_cobrado ?? 0,
   };
+
+  return { rows, stats };
 }
+
+// ─── Main ────────────────────────────────────────────────────────────
 
 export async function fetchIngresosDiariosCalculados(
   supabase: SupabaseClient,
   filters: IngresosDiariosFilters
-): Promise<IngresosDiariosResult> {
-  const year = filters.year ?? new Date().getFullYear();
+) {
+  const { from, to } = buildDateRange(filters.year, filters.mes);
   const search = filters.search?.trim() ?? "";
-  let matchedAlumnoIds: string[] = [];
 
+  let matchedAlumnoIds: string[] = [];
   if (search) {
     const pattern = `%${search}%`;
-    const matchedAlumnos = await fetchAllSupabaseRows<{ id: string }>((from, to) =>
+    const matched = await fetchAllSupabaseRows<{ id: string }>((f, t) =>
       supabase
         .from("alumnos")
         .select("id")
         .eq("escuela_id", filters.escuelaId)
-        .ilike("dni", pattern)
-        .order("created_at", { ascending: false })
-        .range(from, to)
+        .or(`dni.ilike.${pattern},nombre.ilike.${pattern},apellidos.ilike.${pattern}`)
+        .range(f, t)
         .then(({ data, error }) => ({ data: (data as { id: string }[]) ?? [], error }))
     );
-    matchedAlumnoIds = matchedAlumnos.map((alumno) => alumno.id);
+    matchedAlumnoIds = matched.map((a) => a.id);
   }
 
-  const rows = await fetchAllSupabaseRows<IngresoResumenSource>((from, to) => {
-    let query = supabase
+  const raw = await fetchAllSupabaseRows<RawIngreso>((f, t) => {
+    let q = supabase
       .from("ingresos")
       .select("fecha, monto, estado")
-      .eq("escuela_id", filters.escuelaId);
+      .eq("escuela_id", filters.escuelaId)
+      .gte("fecha", from)
+      .lt("fecha", to);
 
-    if (filters.alumnoId) {
-      query = query.eq("alumno_id", filters.alumnoId);
-    }
-
-    if (filters.metodoPago) {
-      query = query.eq("metodo_pago", filters.metodoPago);
-    }
-
-    if (filters.categoria) {
-      query = query.eq("categoria", filters.categoria);
-    }
-
-    if (filters.estado) {
-      query = query.eq("estado", filters.estado);
-    }
-
-    query = applyIncomeViewToSupabaseQuery(query, filters.view || "all");
-
-    query = applyDateFilter(query, year, filters.mes);
+    if (filters.alumnoId) q = q.eq("alumno_id", filters.alumnoId);
+    if (filters.metodoPago) q = q.eq("metodo_pago", filters.metodoPago);
+    if (filters.categoria) q = q.eq("categoria", filters.categoria);
+    if (filters.estado) q = q.eq("estado", filters.estado);
 
     if (search) {
       const pattern = `%${search}%`;
       if (matchedAlumnoIds.length > 0) {
-        query = query.or(`concepto.ilike.${pattern},alumno_id.in.(${matchedAlumnoIds.join(",")})`);
+        q = q.or(`concepto.ilike.${pattern},alumno_id.in.(${matchedAlumnoIds.join(",")})`);
       } else {
-        query = query.or(`concepto.ilike.${pattern}`);
+        q = q.or(`concepto.ilike.${pattern}`);
       }
     }
 
-    return query
+    return q
       .order("fecha", { ascending: false })
-      .range(from, to)
-      .then(({ data, error }) => ({ data: (data as IngresoResumenSource[]) ?? [], error }));
+      .range(f, t)
+      .then(({ data, error }) => ({ data: (data as RawIngreso[]) ?? [], error }));
   });
 
-  return aggregateRows(rows);
+  return aggregate(raw);
 }

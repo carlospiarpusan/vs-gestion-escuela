@@ -1,16 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
+import { useAuth } from "@/hooks/useAuth";
+import { createClient } from "@/lib/supabase";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import {
   AccountingChipTabs,
   AccountingMiniList,
   AccountingPanel,
   AccountingStatCard,
+  AccountingWorkspaceHeader,
 } from "@/components/dashboard/accounting/AccountingWorkspace";
+import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
 import DataTable from "@/components/dashboard/DataTable";
 import {
   type AccountingBreakdownRow,
+  type AccountingContractPendingRow,
   type AccountingReportResponse,
   downloadCsv,
   fetchAccountingReport,
@@ -18,39 +23,92 @@ import {
   formatCompactDate,
 } from "@/lib/accounting-dashboard";
 import { INCOME_VIEW_ITEMS, type IncomeView } from "@/lib/income-view";
-import { AlertTriangle, BookOpen, Clock3, Wallet } from "lucide-react";
-import {
-  type CarteraSectionProps,
-  type CarteraTableRow,
-  getShare,
-  inputCls,
-  labelCls,
-  PAGE_SIZE,
-} from "./shared";
+import type { Alumno } from "@/types/database";
+import { AlertTriangle, BookOpen, Clock3, Download, Wallet, X } from "lucide-react";
+
+// ─── Types ───────────────────────────────────────────────────────────
+
+type AlumnoOption = Pick<Alumno, "id" | "nombre" | "apellidos">;
+type CarteraTableRow = AccountingContractPendingRow & { id: string };
+
+// ─── Constants ───────────────────────────────────────────────────────
+
+const inputCls = "apple-input";
+const labelCls = "apple-label";
+const PAGE_SIZE = 10;
 
 const VIEW_ITEMS = INCOME_VIEW_ITEMS.filter(
   (v) => v.id === "all" || v.id === "matriculas" || v.id === "practicas" || v.id === "examenes"
 );
 
-export default function CarteraSection({
-  escuelaId,
-  alumnos,
-  reloadKey,
-  exportCsvRef,
-}: CarteraSectionProps) {
+function getShare(value: number, total: number) {
+  if (total <= 0) return "0%";
+  return `${Math.round((value / total) * 100)}%`;
+}
+
+// ─── Component ───────────────────────────────────────────────────────
+
+export default function CarteraPage() {
+  const { perfil } = useAuth();
+
+  // ─── Filters ──────────────────────────────────────────────────────
+
   const [activeView, setActiveView] = useState<IncomeView>("all");
   const [filtroAlumno, setFiltroAlumno] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(0);
+
+  const hayFiltros = filtroAlumno || activeView !== "all";
+
+  const limpiarFiltros = () => {
+    setFiltroAlumno("");
+    setActiveView("all");
+    setSearchTerm("");
+    setCurrentPage(0);
+  };
+
+  // ─── Catalogs ─────────────────────────────────────────────────────
+
+  const [alumnos, setAlumnos] = useState<AlumnoOption[]>([]);
+  const catalogFetchIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!perfil?.escuela_id) return;
+    const escuelaId = perfil.escuela_id;
+    const fetchId = ++catalogFetchIdRef.current;
+    const supabase = createClient();
+
+    const load = async () => {
+      try {
+        const a = await fetchAllSupabaseRows<AlumnoOption>((from, to) =>
+          supabase
+            .from("alumnos")
+            .select("id, nombre, apellidos")
+            .eq("escuela_id", escuelaId)
+            .order("nombre", { ascending: true })
+            .order("apellidos", { ascending: true })
+            .range(from, to)
+            .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
+        );
+        if (fetchId !== catalogFetchIdRef.current) return;
+        setAlumnos(a);
+      } catch (err) {
+        console.error("[CarteraPage] Error cargando alumnos:", err);
+      }
+    };
+
+    void load();
+  }, [perfil?.escuela_id]);
+
+  // ─── Data ─────────────────────────────────────────────────────────
 
   const [report, setReport] = useState<AccountingReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const fetchIdRef = useRef(0);
 
-  // ─── Fetch contracts ──────────────────────────────────────────────
-
   useEffect(() => {
+    if (!perfil?.escuela_id) return;
     const fetchId = ++fetchIdRef.current;
 
     const load = async () => {
@@ -83,15 +141,15 @@ export default function CarteraSection({
     };
 
     void load();
-  }, [escuelaId, filtroAlumno, activeView, searchTerm, currentPage, reloadKey]);
+  }, [perfil?.escuela_id, filtroAlumno, activeView, searchTerm, currentPage]);
 
   // ─── Export CSV ───────────────────────────────────────────────────
 
-  const handleExportCsv = useCallback(async () => {
+  const handleExportCsv = useCallback(() => {
     const allRows = report?.contracts?.pendingRows || [];
     if (allRows.length === 0) return;
     downloadCsv(
-      `cartera-pendiente.csv`,
+      "cartera-pendiente.csv",
       [
         "Registro",
         "Alumno",
@@ -117,13 +175,6 @@ export default function CarteraSection({
     );
   }, [report?.contracts?.pendingRows]);
 
-  useEffect(() => {
-    exportCsvRef.current = handleExportCsv;
-    return () => {
-      exportCsvRef.current = null;
-    };
-  }, [handleExportCsv, exportCsvRef]);
-
   // ─── Derived data ─────────────────────────────────────────────────
 
   const contracts = report?.contracts;
@@ -143,8 +194,6 @@ export default function CarteraSection({
     .reduce((s, r) => s + Number(r.saldoPendiente || 0), 0);
   const buckets = contracts?.buckets || [];
   const topDeudores = contracts?.topDeudores || [];
-
-  const hayFiltros = filtroAlumno || activeView !== "all";
 
   // ─── Columns ──────────────────────────────────────────────────────
 
@@ -228,8 +277,27 @@ export default function CarteraSection({
 
   // ─── Render ───────────────────────────────────────────────────────
 
+  if (!perfil?.escuela_id) return null;
+
   return (
-    <>
+    <div>
+      <AccountingWorkspaceHeader
+        badge="Cuentas por cobrar"
+        title="Cartera"
+        description="Seguimiento de deuda pendiente, antigüedad y deudores."
+        actions={
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            disabled={rows.length === 0}
+            className="inline-flex items-center gap-2 rounded-2xl border border-[#0071e3]/20 bg-[#0071e3]/5 px-4 py-2.5 text-sm font-semibold text-[#0071e3] transition-colors hover:bg-[#0071e3]/10 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]"
+          >
+            <Download size={16} />
+            Exportar CSV
+          </button>
+        }
+      />
+
       {/* View chips + filtro alumno */}
       <div className="mb-4 space-y-3 rounded-2xl border border-gray-100 bg-white p-4 sm:p-6 dark:border-gray-800 dark:bg-[#1d1d1f]">
         <AccountingChipTabs
@@ -264,10 +332,19 @@ export default function CarteraSection({
 
         {hayFiltros && (
           <div className="flex items-center justify-between border-t border-gray-100 pt-3 dark:border-gray-800">
-            <p className="text-xs text-[#86868b]">
-              {totalCount} registro{totalCount !== 1 ? "s" : ""} encontrado
-              {totalCount !== 1 ? "s" : ""}
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-[#86868b]">
+                {totalCount} registro{totalCount !== 1 ? "s" : ""} encontrado
+                {totalCount !== 1 ? "s" : ""}
+              </p>
+              <button
+                onClick={limpiarFiltros}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-[#86868b] transition-colors hover:bg-red-50 hover:text-red-500 dark:border-gray-700 dark:hover:bg-red-900/20"
+              >
+                <X size={12} />
+                Limpiar
+              </button>
+            </div>
             <p className="text-sm font-semibold text-green-600 dark:text-green-400">
               Total página: {formatAccountingMoney(pageTotal)}
             </p>
@@ -424,6 +501,6 @@ export default function CarteraSection({
           pageSize={PAGE_SIZE}
         />
       </div>
-    </>
+    </div>
   );
 }

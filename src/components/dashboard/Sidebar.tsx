@@ -136,6 +136,18 @@ const navItems: NavItem[] = [
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
   },
   {
+    label: "Cartera",
+    href: "/dashboard/cartera",
+    icon: <Landmark size={18} />,
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
+    label: "Caja diaria",
+    href: "/dashboard/caja-diaria",
+    icon: <Wallet size={18} />,
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
     label: "Gastos",
     href: "/dashboard/gastos",
     icon: <TrendingDown size={18} />,
@@ -213,27 +225,19 @@ const reportsNavItems = [
   },
 ];
 
-const incomeNavItems = [
+const incomeNavItems: Array<{
+  label: string;
+  href: string;
+  icon: React.ReactNode;
+  roles: Rol[];
+  section: string;
+}> = [
   {
-    label: "Libro de ingresos",
-    href: "/dashboard/ingresos?section=libro",
+    label: "Libro contable",
+    href: "/dashboard/ingresos",
     icon: <ReceiptText size={16} />,
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] as Rol[],
-    section: "libro",
-  },
-  {
-    label: "Cartera",
-    href: "/dashboard/ingresos?section=cartera",
-    icon: <Landmark size={16} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] as Rol[],
-    section: "cartera",
-  },
-  {
-    label: "Caja diaria",
-    href: "/dashboard/ingresos?section=caja",
-    icon: <Wallet size={16} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] as Rol[],
-    section: "caja",
+    section: "libro-contable",
   },
 ];
 

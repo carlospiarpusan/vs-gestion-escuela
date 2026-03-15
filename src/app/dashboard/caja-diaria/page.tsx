@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { createClient } from "@/lib/supabase";
+import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
+import {
+  AccountingStatCard,
+  AccountingWorkspaceHeader,
+} from "@/components/dashboard/accounting/AccountingWorkspace";
 import DataTable from "@/components/dashboard/DataTable";
 import {
   buildAccountingYears,
@@ -14,21 +21,43 @@ import {
   type IngresoDiarioRow,
   type IngresoDiarioStats,
 } from "@/lib/ingresos-diarios";
-import { createClient } from "@/lib/supabase";
-import type { EstadoIngreso } from "@/types/database";
-import { X } from "lucide-react";
-import {
-  type CajaDiariaSectionProps,
-  categorias,
-  estadosIngreso,
-  inputCls,
-  labelCls,
-  metodos,
-} from "./shared";
+import type { Alumno, CategoriaIngreso, EstadoIngreso, MetodoPago } from "@/types/database";
+import { Banknote, Calendar, Star, TrendingUp, X } from "lucide-react";
+
+// ─── Types ───────────────────────────────────────────────────────────
+
+type AlumnoOption = Pick<Alumno, "id" | "nombre" | "apellidos">;
+
+// ─── Constants ───────────────────────────────────────────────────────
+
+const inputCls = "apple-input";
+const labelCls = "apple-label";
 
 const currentYear = getCurrentAccountingYear();
 const currentMonth = new Date().getMonth() + 1;
 const years = buildAccountingYears();
+
+const categorias: CategoriaIngreso[] = [
+  "matricula",
+  "mensualidad",
+  "clase_suelta",
+  "examen_teorico",
+  "examen_practico",
+  "examen_aptitud",
+  "material",
+  "tasas_dgt",
+  "otros",
+];
+
+const metodos: { value: MetodoPago; label: string }[] = [
+  { value: "efectivo", label: "Efectivo" },
+  { value: "datafono", label: "Datáfono" },
+  { value: "nequi", label: "Nequi" },
+  { value: "sistecredito", label: "Sistecrédito" },
+  { value: "otro", label: "Otro" },
+];
+
+const estadosIngreso: EstadoIngreso[] = ["cobrado", "pendiente", "anulado"];
 
 const emptyStats: IngresoDiarioStats = {
   totalCobrado: 0,
@@ -40,11 +69,13 @@ const emptyStats: IngresoDiarioStats = {
   mejorDiaMonto: 0,
 };
 
-export default function CajaDiariaSection({
-  escuelaId,
-  alumnos,
-  reloadKey,
-}: CajaDiariaSectionProps) {
+// ─── Component ───────────────────────────────────────────────────────
+
+export default function CajaDiariaPage() {
+  const { perfil } = useAuth();
+
+  // ─── Filters ──────────────────────────────────────────────────────
+
   const [filtroAlumno, setFiltroAlumno] = useState("");
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroMetodo, setFiltroMetodo] = useState("");
@@ -52,12 +83,6 @@ export default function CajaDiariaSection({
   const [filtroEstado, setFiltroEstado] = useState("");
   const [filtroYear, setFiltroYear] = useState(String(currentYear));
   const [searchTerm, setSearchTerm] = useState("");
-
-  const [rows, setRows] = useState<IngresoDiarioRow[]>([]);
-  const [stats, setStats] = useState<IngresoDiarioStats>(emptyStats);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const fetchIdRef = useRef(0);
 
   const mesesDelAno =
     Number(filtroYear) === currentYear
@@ -82,7 +107,49 @@ export default function CajaDiariaSection({
     setSearchTerm("");
   };
 
+  // ─── Catalogs ─────────────────────────────────────────────────────
+
+  const [alumnos, setAlumnos] = useState<AlumnoOption[]>([]);
+  const catalogFetchIdRef = useRef(0);
+
   useEffect(() => {
+    if (!perfil?.escuela_id) return;
+    const escuelaId = perfil.escuela_id;
+    const fetchId = ++catalogFetchIdRef.current;
+    const supabase = createClient();
+
+    const load = async () => {
+      try {
+        const a = await fetchAllSupabaseRows<AlumnoOption>((from, to) =>
+          supabase
+            .from("alumnos")
+            .select("id, nombre, apellidos")
+            .eq("escuela_id", escuelaId)
+            .order("nombre", { ascending: true })
+            .order("apellidos", { ascending: true })
+            .range(from, to)
+            .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
+        );
+        if (fetchId !== catalogFetchIdRef.current) return;
+        setAlumnos(a);
+      } catch (err) {
+        console.error("[CajaDiariaPage] Error cargando alumnos:", err);
+      }
+    };
+
+    void load();
+  }, [perfil?.escuela_id]);
+
+  // ─── Data ─────────────────────────────────────────────────────────
+
+  const [rows, setRows] = useState<IngresoDiarioRow[]>([]);
+  const [stats, setStats] = useState<IngresoDiarioStats>(emptyStats);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const fetchIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!perfil?.escuela_id) return;
     const fetchId = ++fetchIdRef.current;
 
     const load = async () => {
@@ -91,7 +158,7 @@ export default function CajaDiariaSection({
       try {
         const supabase = createClient();
         const result = await fetchIngresosDiariosCalculados(supabase, {
-          escuelaId,
+          escuelaId: perfil.escuela_id!,
           alumnoId: filtroAlumno || undefined,
           metodoPago: filtroMetodo || undefined,
           categoria: filtroCategoria || undefined,
@@ -115,7 +182,7 @@ export default function CajaDiariaSection({
 
     void load();
   }, [
-    escuelaId,
+    perfil?.escuela_id,
     filtroAlumno,
     filtroMes,
     filtroMetodo,
@@ -123,8 +190,9 @@ export default function CajaDiariaSection({
     filtroEstado,
     filtroYear,
     searchTerm,
-    reloadKey,
   ]);
+
+  // ─── Table columns ────────────────────────────────────────────────
 
   const fmt = (v: number) => formatAccountingMoney(Number(v || 0));
 
@@ -177,9 +245,19 @@ export default function CajaDiariaSection({
     },
   ];
 
+  // ─── Render ───────────────────────────────────────────────────────
+
+  if (!perfil?.escuela_id) return null;
+
   return (
-    <>
-      {/* Filtros */}
+    <div>
+      <AccountingWorkspaceHeader
+        badge="Control de caja"
+        title="Caja diaria"
+        description="Consolidado diario de ingresos cobrados, pendientes y anulados."
+      />
+
+      {/* Filters */}
       <div className="mb-4 space-y-3 rounded-2xl border border-gray-100 bg-white p-4 sm:p-6 dark:border-gray-800 dark:bg-[#1d1d1f]">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <div>
@@ -289,62 +367,49 @@ export default function CajaDiariaSection({
       </div>
 
       {/* Stats */}
-      <div className="mb-4 rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
-        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              Ingresos diarios calculados
-            </h3>
-            <p className="text-sm text-[#86868b]">
-              Este resumen consolida automaticamente los ingresos registrados por dia para facilitar
-              el control de caja.
-            </p>
-          </div>
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <AccountingStatCard
+          eyebrow="Periodo"
+          label="Cobrado"
+          value={loading ? "..." : fmt(stats.totalCobrado)}
+          detail={`Pendiente: ${fmt(stats.totalPendiente)} · Anulado: ${fmt(stats.totalAnulado)}`}
+          tone="success"
+          icon={<Banknote size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Periodo"
+          label="Promedio diario"
+          value={loading ? "..." : fmt(stats.promedioCobradoPorDia)}
+          detail={`${stats.diasConMovimientos} día${stats.diasConMovimientos === 1 ? "" : "s"} con movimiento.`}
+          tone="primary"
+          icon={<TrendingUp size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Periodo"
+          label="Mejor día"
+          value={loading ? "..." : stats.mejorDiaFecha ? fmt(stats.mejorDiaMonto) : "—"}
+          detail={stats.mejorDiaFecha ? formatCompactDate(stats.mejorDiaFecha) : "Sin movimientos"}
+          tone="default"
+          icon={<Star size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Periodo"
+          label="Días con movimiento"
+          value={loading ? "..." : String(stats.diasConMovimientos)}
+          detail={`Total registrado: ${fmt(stats.totalCobrado + stats.totalPendiente + stats.totalAnulado)}`}
+          tone="default"
+          icon={<Calendar size={18} />}
+        />
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
+          {error}
         </div>
+      )}
 
-        <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-gray-100 bg-[#f7f9fc] px-4 py-3 dark:border-gray-800 dark:bg-[#161618]">
-            <p className="mb-1 text-[11px] tracking-[0.18em] text-[#86868b] uppercase">Cobrado</p>
-            <p className="text-xl font-semibold text-green-600 dark:text-green-400">
-              {fmt(stats.totalCobrado)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-gray-100 bg-[#f7f9fc] px-4 py-3 dark:border-gray-800 dark:bg-[#161618]">
-            <p className="mb-1 text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
-              Promedio Diario
-            </p>
-            <p className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {fmt(stats.promedioCobradoPorDia)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-gray-100 bg-[#f7f9fc] px-4 py-3 dark:border-gray-800 dark:bg-[#161618]">
-            <p className="mb-1 text-[11px] tracking-[0.18em] text-[#86868b] uppercase">Mejor Día</p>
-            <p className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {stats.mejorDiaFecha ? fmt(stats.mejorDiaMonto) : "—"}
-            </p>
-            <p className="mt-1 text-xs text-[#86868b]">
-              {stats.mejorDiaFecha ? formatCompactDate(stats.mejorDiaFecha) : "Sin movimientos"}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-gray-100 bg-[#f7f9fc] px-4 py-3 dark:border-gray-800 dark:bg-[#161618]">
-            <p className="mb-1 text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
-              Días Con Movimiento
-            </p>
-            <p className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {stats.diasConMovimientos}
-            </p>
-            <p className="mt-1 text-xs text-[#86868b]">
-              Pendiente: {fmt(stats.totalPendiente)} · Anulado: {fmt(stats.totalAnulado)}
-            </p>
-          </div>
-        </div>
-
-        {error && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
-            {error}
-          </div>
-        )}
-
+      {/* Table */}
+      <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
         <DataTable
           columns={columns}
           data={rows}
@@ -354,6 +419,6 @@ export default function CajaDiariaSection({
           pageSize={12}
         />
       </div>
-    </>
+    </div>
   );
 }
