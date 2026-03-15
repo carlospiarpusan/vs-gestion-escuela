@@ -7,7 +7,10 @@ import { useDraftForm } from "@/hooks/useDraftForm";
 import {
   AccountingWorkspaceHeader,
   AccountingStatCard,
+  AccountingChipTabs,
+  AccountingMiniList,
 } from "@/components/dashboard/accounting/AccountingWorkspace";
+import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import DataTable from "@/components/dashboard/DataTable";
@@ -25,6 +28,7 @@ import {
   getMonthDateRange,
   MONTH_OPTIONS,
 } from "@/lib/accounting-dashboard";
+import { type IncomeView, INCOME_VIEW_ITEMS } from "@/lib/income-view";
 import type {
   Alumno,
   CategoriaIngreso,
@@ -32,7 +36,7 @@ import type {
   MatriculaAlumno,
   MetodoPago,
 } from "@/types/database";
-import { ArrowDownCircle, ArrowUpCircle, Download, Plus, Scale, X, Layers } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Download, Layers, Plus, Scale, X } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -116,12 +120,18 @@ function formatMatriculaLabel(matricula: MatriculaOption) {
 
 export default function IngresosPage() {
   const { perfil } = useAuth();
+  const fmt = (v: number) => formatAccountingMoney(Number(v || 0));
 
   // ─── Filters ──────────────────────────────────────────────────────
 
   const [filtroYear, setFiltroYear] = useState(String(currentYear));
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoFiltro>("");
+  const [filtroAlumno, setFiltroAlumno] = useState("");
+  const [filtroMetodo, setFiltroMetodo] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
+  const [filtroView, setFiltroView] = useState<IncomeView>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(0);
 
@@ -130,12 +140,24 @@ export default function IngresosPage() {
       ? MONTH_OPTIONS.filter((m) => !m.value || Number(m.value) <= currentMonth)
       : MONTH_OPTIONS;
 
-  const hayFiltros = filtroTipo || filtroYear !== String(currentYear) || filtroMes;
+  const hayFiltros =
+    filtroTipo ||
+    filtroAlumno ||
+    filtroMetodo ||
+    filtroCategoria ||
+    filtroEstado ||
+    filtroYear !== String(currentYear) ||
+    filtroMes;
 
   const limpiarFiltros = () => {
     setFiltroYear(String(currentYear));
     setFiltroMes("");
     setFiltroTipo("");
+    setFiltroAlumno("");
+    setFiltroMetodo("");
+    setFiltroCategoria("");
+    setFiltroEstado("");
+    setFiltroView("all");
     setSearchTerm("");
     setCurrentPage(0);
   };
@@ -207,12 +229,17 @@ export default function IngresosPage() {
       const params = new URLSearchParams({
         from,
         to,
-        include: "summary,ledger",
+        include: "summary,ledger,breakdown",
         page: String(currentPage),
         pageSize: String(PAGE_SIZE),
       });
 
       if (searchTerm) params.set("q", searchTerm);
+      if (filtroAlumno) params.set("alumno_id", filtroAlumno);
+      if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
+      if (filtroCategoria) params.set("ingreso_categoria", filtroCategoria);
+      if (filtroEstado) params.set("ingreso_estado", filtroEstado);
+      if (filtroView !== "all") params.set("ingreso_view", filtroView);
 
       try {
         const payload = await fetchAccountingReport(params);
@@ -228,12 +255,25 @@ export default function IngresosPage() {
     };
 
     void load();
-  }, [perfil?.escuela_id, filtroYear, filtroMes, searchTerm, currentPage, reloadKey]);
+  }, [
+    perfil?.escuela_id,
+    filtroYear,
+    filtroMes,
+    filtroAlumno,
+    filtroMetodo,
+    filtroCategoria,
+    filtroEstado,
+    filtroView,
+    searchTerm,
+    currentPage,
+    reloadKey,
+  ]);
 
   // ─── Derived data ─────────────────────────────────────────────────
 
   const summary = report?.summary;
   const ledger = report?.ledger;
+  const breakdown = report?.breakdown;
 
   const filteredRows = useMemo(() => {
     const rows = ledger?.rows || [];
@@ -268,8 +308,12 @@ export default function IngresosPage() {
 
   // ─── Export CSV ───────────────────────────────────────────────────
 
+  const [exporting, setExporting] = useState(false);
+
   const handleExportCsv = useCallback(async () => {
     if (!perfil?.escuela_id) return;
+    setExporting(true);
+
     const { from, to } = getMonthDateRange(Number(filtroYear), filtroMes);
     const params = new URLSearchParams({
       from,
@@ -279,6 +323,11 @@ export default function IngresosPage() {
       pageSize: "10000",
     });
     if (searchTerm) params.set("q", searchTerm);
+    if (filtroAlumno) params.set("alumno_id", filtroAlumno);
+    if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
+    if (filtroCategoria) params.set("ingreso_categoria", filtroCategoria);
+    if (filtroEstado) params.set("ingreso_estado", filtroEstado);
+    if (filtroView !== "all") params.set("ingreso_view", filtroView);
 
     try {
       const payload = await fetchAccountingReport(params);
@@ -315,8 +364,21 @@ export default function IngresosPage() {
       );
     } catch {
       // silent
+    } finally {
+      setExporting(false);
     }
-  }, [perfil?.escuela_id, filtroYear, filtroMes, searchTerm, filtroTipo]);
+  }, [
+    perfil?.escuela_id,
+    filtroYear,
+    filtroMes,
+    searchTerm,
+    filtroTipo,
+    filtroAlumno,
+    filtroMetodo,
+    filtroCategoria,
+    filtroEstado,
+    filtroView,
+  ]);
 
   // ─── Handlers ───────────────────────────────────────────────────
 
@@ -595,18 +657,29 @@ export default function IngresosPage() {
             <button
               type="button"
               onClick={handleExportCsv}
-              className="inline-flex items-center gap-2 rounded-2xl border border-[#0071e3]/20 bg-[#0071e3]/5 px-4 py-2.5 text-sm font-semibold text-[#0071e3] transition-colors hover:bg-[#0071e3]/10 dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]"
+              disabled={exporting}
+              className="inline-flex items-center gap-2 rounded-2xl border border-[#0071e3]/20 bg-[#0071e3]/5 px-4 py-2.5 text-sm font-semibold text-[#0071e3] transition-colors hover:bg-[#0071e3]/10 disabled:opacity-50 dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]"
             >
               <Download size={16} />
-              Exportar CSV
+              {exporting ? "Exportando..." : "Exportar CSV"}
             </button>
           </>
         }
       />
 
+      {/* View chips */}
+      <AccountingChipTabs
+        value={filtroView}
+        items={INCOME_VIEW_ITEMS}
+        onChange={(v) => {
+          setFiltroView(v);
+          setCurrentPage(0);
+        }}
+      />
+
       {/* Filters */}
       <div className="mb-4 space-y-3 rounded-2xl border border-gray-100 bg-white p-4 sm:p-6 dark:border-gray-800 dark:bg-[#1d1d1f]">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
           <div>
             <label className={labelCls}>Año</label>
             <select
@@ -657,6 +730,78 @@ export default function IngresosPage() {
               <option value="gasto">Solo gastos</option>
             </select>
           </div>
+          <div>
+            <label className={labelCls}>Alumno</label>
+            <select
+              value={filtroAlumno}
+              onChange={(e) => {
+                setFiltroAlumno(e.target.value);
+                setCurrentPage(0);
+              }}
+              className={inputCls}
+            >
+              <option value="">Todos</option>
+              {alumnos.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.nombre} {a.apellidos}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Método de pago</label>
+            <select
+              value={filtroMetodo}
+              onChange={(e) => {
+                setFiltroMetodo(e.target.value);
+                setCurrentPage(0);
+              }}
+              className={inputCls}
+            >
+              <option value="">Todos</option>
+              {metodos.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Categoría</label>
+            <select
+              value={filtroCategoria}
+              onChange={(e) => {
+                setFiltroCategoria(e.target.value);
+                setCurrentPage(0);
+              }}
+              className={inputCls}
+            >
+              <option value="">Todas</option>
+              {categorias.map((c) => (
+                <option key={c} value={c}>
+                  {c.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Estado</label>
+            <select
+              value={filtroEstado}
+              onChange={(e) => {
+                setFiltroEstado(e.target.value);
+                setCurrentPage(0);
+              }}
+              className={inputCls}
+            >
+              <option value="">Todos</option>
+              {estadosIngreso.map((e) => (
+                <option key={e} value={e}>
+                  {e}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {hayFiltros && (
@@ -683,7 +828,7 @@ export default function IngresosPage() {
         <AccountingStatCard
           eyebrow="Periodo"
           label="Ingresos cobrados"
-          value={loading ? "..." : formatAccountingMoney(summary?.ingresosCobrados || 0)}
+          value={loading ? "..." : fmt(summary?.ingresosCobrados || 0)}
           detail={`${summary?.totalIngresos || 0} movimiento${(summary?.totalIngresos || 0) === 1 ? "" : "s"} de ingreso.`}
           tone="success"
           icon={<ArrowDownCircle size={18} />}
@@ -691,7 +836,7 @@ export default function IngresosPage() {
         <AccountingStatCard
           eyebrow="Periodo"
           label="Gastos"
-          value={loading ? "..." : formatAccountingMoney(summary?.gastosTotales || 0)}
+          value={loading ? "..." : fmt(summary?.gastosTotales || 0)}
           detail={`${summary?.totalGastos || 0} movimiento${(summary?.totalGastos || 0) === 1 ? "" : "s"} de gasto.`}
           tone="danger"
           icon={<ArrowUpCircle size={18} />}
@@ -699,7 +844,7 @@ export default function IngresosPage() {
         <AccountingStatCard
           eyebrow="Periodo"
           label="Balance neto"
-          value={loading ? "..." : formatAccountingMoney(summary?.balanceNeto || 0)}
+          value={loading ? "..." : fmt(summary?.balanceNeto || 0)}
           detail={`Margen ${summary?.margenPorcentaje || 0}%.`}
           tone={(summary?.balanceNeto || 0) >= 0 ? "primary" : "danger"}
           icon={<Scale size={18} />}
@@ -708,11 +853,65 @@ export default function IngresosPage() {
           eyebrow="Periodo"
           label="Movimientos"
           value={loading ? "..." : String(summary?.totalMovimientos || 0)}
-          detail={`Pendiente: ${formatAccountingMoney(summary?.ingresosPendientes || 0)}`}
+          detail={`Pendiente: ${fmt(summary?.ingresosPendientes || 0)}`}
           tone="default"
           icon={<Layers size={18} />}
         />
       </div>
+
+      {/* Breakdown panels */}
+      {breakdown && !loading && (
+        <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <AccountingBreakdownCard
+            title="Ingresos por categoría"
+            subtitle="Distribución de ingresos por tipo de servicio."
+            rows={breakdown.ingresosPorCategoria}
+            labelKey="categoria"
+            emptyLabel="Sin datos de categorías."
+          />
+          <AccountingBreakdownCard
+            title="Ingresos por método"
+            subtitle="Forma de pago utilizada por los alumnos."
+            rows={breakdown.ingresosPorMetodo}
+            labelKey="metodo_pago"
+            emptyLabel="Sin datos de métodos."
+          />
+          <AccountingMiniList
+            title="Top conceptos de ingreso"
+            description="Los conceptos que más ingresos generan."
+            emptyLabel="Sin datos de conceptos."
+            items={(breakdown.topConceptosIngreso || []).slice(0, 5).map((r) => ({
+              label: r.concepto || "Sin concepto",
+              value: fmt(r.total),
+              meta: `${r.cantidad} movimiento${r.cantidad !== 1 ? "s" : ""}`,
+            }))}
+          />
+          <AccountingBreakdownCard
+            title="Gastos por categoría"
+            subtitle="Distribución de gastos por tipo."
+            rows={breakdown.gastosPorCategoria}
+            labelKey="categoria"
+            emptyLabel="Sin datos de gastos."
+          />
+          <AccountingBreakdownCard
+            title="Gastos por método"
+            subtitle="Forma de pago de los gastos."
+            rows={breakdown.gastosPorMetodo}
+            labelKey="metodo_pago"
+            emptyLabel="Sin datos de métodos."
+          />
+          <AccountingMiniList
+            title="Top conceptos de gasto"
+            description="Los conceptos que más gastos generan."
+            emptyLabel="Sin datos de conceptos."
+            items={(breakdown.topConceptosGasto || []).slice(0, 5).map((r) => ({
+              label: r.concepto || "Sin concepto",
+              value: fmt(r.total),
+              meta: `${r.cantidad} movimiento${r.cantidad !== 1 ? "s" : ""}`,
+            }))}
+          />
+        </div>
+      )}
 
       {/* Ledger table */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
