@@ -52,6 +52,9 @@ import {
   ReceiptText,
   Wallet,
   Mail,
+  Wrench,
+  Layers,
+  GraduationCap,
 } from "lucide-react";
 
 // --- Tipos ---
@@ -86,13 +89,27 @@ const navItems: NavItem[] = [
     label: "Inicio",
     href: "/dashboard",
     icon: <Home size={18} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor", "recepcion", "alumno"],
+    roles: [
+      "super_admin",
+      "admin_escuela",
+      "admin_sede",
+      "administrativo",
+      "instructor",
+      "recepcion",
+      "alumno",
+    ],
   },
   {
     label: "Vehículos",
     href: "/dashboard/vehiculos",
     icon: <Car size={18} />,
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
+  },
+  {
+    label: "Mantenimiento",
+    href: "/dashboard/mantenimiento",
+    icon: <Wrench size={18} />,
+    roles: ["admin_escuela", "admin_sede", "administrativo", "instructor"],
   },
   {
     label: "Clases",
@@ -138,6 +155,12 @@ const navItems: NavItem[] = [
   },
 
   {
+    label: "Categorías",
+    href: "/dashboard/categorias",
+    icon: <Layers size={18} />,
+    roles: ["admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
     label: "Escuelas",
     href: "/dashboard/escuelas",
     icon: <Building2 size={18} />,
@@ -180,6 +203,13 @@ const reportsNavItems = [
     icon: <TrendingUp size={16} />,
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] as Rol[],
     section: "analitica",
+  },
+  {
+    label: "Estudiantes",
+    href: "/dashboard/informes?section=estudiantes",
+    icon: <GraduationCap size={16} />,
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] as Rol[],
+    section: "estudiantes",
   },
 ];
 
@@ -348,7 +378,7 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
         className={`group flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${
           active
             ? "bg-[#0071e3] text-white shadow-[0_18px_34px_rgba(0,113,227,0.28)]"
-            : "text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-white/70 dark:hover:bg-white/5"
+            : "text-[#1d1d1f] hover:bg-white/70 dark:text-[#f5f5f7] dark:hover:bg-white/5"
         }`}
       >
         <span
@@ -383,7 +413,7 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
         className={`group flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${
           active
             ? "bg-[#0071e3] text-white shadow-[0_18px_34px_rgba(0,113,227,0.28)]"
-            : "text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-white/70 dark:hover:bg-white/5"
+            : "text-[#1d1d1f] hover:bg-white/70 dark:text-[#f5f5f7] dark:hover:bg-white/5"
         }`}
       >
         <span
@@ -396,10 +426,7 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
           {icon}
         </span>
         <span className="flex-1 truncate text-left">{label}</span>
-        <ChevronDown
-          size={16}
-          className={`transition-transform ${expanded ? "rotate-180" : ""}`}
-        />
+        <ChevronDown size={16} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
       </button>
 
       {expanded && (
@@ -415,7 +442,7 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
                 className={`group flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${
                   itemActive
                     ? "bg-[#0071e3]/12 text-[#0071e3] dark:bg-[#0071e3]/16 dark:text-[#69a9ff]"
-                    : "text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-white/70 dark:hover:bg-white/5"
+                    : "text-[#1d1d1f] hover:bg-white/70 dark:text-[#f5f5f7] dark:hover:bg-white/5"
                 }`}
               >
                 <span
@@ -453,7 +480,9 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
         <div className="apple-panel flex h-full flex-col overflow-hidden">
           <div className="flex h-16 items-center justify-between px-5">
             <div>
-              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-[#86868b]">Dashboard</p>
+              <p className="text-[0.7rem] font-semibold tracking-[0.24em] text-[#86868b] uppercase">
+                Dashboard
+              </p>
               <span className="text-lg font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
                 AutoEscuela<span className="gradient-text">Pro</span>
               </span>
@@ -482,7 +511,7 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-3">
             {leadingItems.map(renderLink)}
 
-            {visibleUserItems.length > 0 && (
+            {visibleUserItems.length > 0 &&
               renderSubmenuGroup(
                 "users-group",
                 "Usuarios",
@@ -492,8 +521,7 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
                 () => setUsersOpen((value) => !value),
                 visibleUserItems,
                 (item) => isActive(item.href)
-              )
-            )}
+              )}
 
             {remainingItems.map((item) => {
               if (item.href === "/dashboard/examenes" && rol !== "alumno") {
@@ -506,7 +534,9 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
                   examsExpanded,
                   () => setExamsOpen((value) => !value),
                   visibleExamItems,
-                  (submenuItem) => pathname.startsWith("/dashboard/examenes") && examSection === submenuItem.section
+                  (submenuItem) =>
+                    pathname.startsWith("/dashboard/examenes") &&
+                    examSection === submenuItem.section
                 );
               }
 
@@ -520,7 +550,9 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
                   incomesExpanded,
                   () => setIncomeOpen((value) => !value),
                   visibleIncomeItems,
-                  (submenuItem) => pathname.startsWith("/dashboard/ingresos") && incomeSection === submenuItem.section
+                  (submenuItem) =>
+                    pathname.startsWith("/dashboard/ingresos") &&
+                    incomeSection === submenuItem.section
                 );
               }
 
@@ -534,7 +566,9 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
                   expensesExpanded,
                   () => setExpenseOpen((value) => !value),
                   visibleExpenseItems,
-                  (submenuItem) => pathname.startsWith("/dashboard/gastos") && expenseSection === submenuItem.section
+                  (submenuItem) =>
+                    pathname.startsWith("/dashboard/gastos") &&
+                    expenseSection === submenuItem.section
                 );
               }
 
@@ -548,14 +582,15 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
                   reportsExpanded,
                   () => setReportsOpen((value) => !value),
                   visibleReportItems,
-                  (submenuItem) => pathname.startsWith("/dashboard/informes") && reportSection === submenuItem.section
+                  (submenuItem) =>
+                    pathname.startsWith("/dashboard/informes") &&
+                    reportSection === submenuItem.section
                 );
               }
 
               return renderLink(item);
             })}
           </nav>
-
         </div>
       </aside>
     </>
