@@ -152,7 +152,7 @@ function createDefaultFilters(): FilterState {
 }
 
 function buildParams(filters: FilterState, section: ReportSection) {
-  let include = "options,summary,breakdown,series,receivables,payables,contracts";
+  let include = "options,summary,breakdown,series,payables,contracts";
   if (section === "estudiantes") include += ",students";
 
   const params = new URLSearchParams();
@@ -299,7 +299,9 @@ export default function InformesPage() {
   const practicas = ingresosLinea.find((row) => row.nombre === "Practica adicional");
   const topIngresoCategoria = report?.breakdown.ingresosPorCategoria[0];
   const topGastoCategoria = report?.breakdown.gastosPorCategoria[0];
-  const topDebtor = report?.receivables?.topDeudores[0];
+  const topDebtor = [...(report?.contracts?.oldestPending || [])].sort(
+    (a, b) => b.saldoPendiente - a.saldoPendiente
+  )[0];
   const topProvider = report?.payables?.topProveedores[0];
 
   const paidTramitadores = useMemo(
@@ -334,12 +336,15 @@ export default function InformesPage() {
 
   const debtorList = useMemo(
     () =>
-      (report?.receivables?.topDeudores || []).slice(0, 6).map((row) => ({
-        label: row.nombre,
-        value: formatAccountingMoney(row.total),
-        meta: `${row.cantidad} saldo${row.cantidad === 1 ? "" : "s"} abierto${row.cantidad === 1 ? "" : "s"}`,
-      })),
-    [report?.receivables?.topDeudores]
+      [...(report?.contracts?.oldestPending || [])]
+        .sort((a, b) => b.saldoPendiente - a.saldoPendiente)
+        .slice(0, 6)
+        .map((row) => ({
+          label: row.nombre,
+          value: formatAccountingMoney(row.saldoPendiente),
+          meta: `${row.diasPendiente} día${row.diasPendiente === 1 ? "" : "s"} de mora`,
+        })),
+    [report?.contracts?.oldestPending]
   );
 
   const providerList = useMemo(
@@ -796,7 +801,7 @@ export default function InformesPage() {
               eyebrow="Cobranza"
               label="Deudor principal"
               value={topDebtor?.nombre || "Sin datos"}
-              detail={loading ? "..." : formatAccountingMoney(topDebtor?.total || 0)}
+              detail={loading ? "..." : formatAccountingMoney(topDebtor?.saldoPendiente || 0)}
               tone="warning"
               icon={<Clock3 size={18} />}
             />
