@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { createClient } from "@/lib/supabase";
 import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
@@ -73,6 +73,7 @@ const emptyStats: IngresoDiarioStats = {
 
 export default function CajaDiariaPage() {
   const { perfil } = useAuth();
+  const fmt = (v: number) => formatAccountingMoney(Number(v || 0));
 
   // ─── Filters ──────────────────────────────────────────────────────
 
@@ -194,56 +195,57 @@ export default function CajaDiariaPage() {
 
   // ─── Table columns ────────────────────────────────────────────────
 
-  const fmt = (v: number) => formatAccountingMoney(Number(v || 0));
-
-  const columns = [
-    {
-      key: "fecha" as keyof IngresoDiarioRow,
-      label: "Fecha",
-      render: (row: IngresoDiarioRow) => (
-        <span className="font-medium">{formatCompactDate(row.fecha)}</span>
-      ),
-    },
-    {
-      key: "movimientos" as keyof IngresoDiarioRow,
-      label: "Movimientos",
-      render: (row: IngresoDiarioRow) => <span>{row.movimientos}</span>,
-    },
-    {
-      key: "total_cobrado" as keyof IngresoDiarioRow,
-      label: "Cobrado",
-      render: (row: IngresoDiarioRow) => (
-        <span className="font-semibold text-green-600 dark:text-green-400">
-          {fmt(row.total_cobrado)}
-        </span>
-      ),
-    },
-    {
-      key: "total_pendiente" as keyof IngresoDiarioRow,
-      label: "Pendiente",
-      render: (row: IngresoDiarioRow) => (
-        <span className="font-semibold text-yellow-600 dark:text-yellow-400">
-          {fmt(row.total_pendiente)}
-        </span>
-      ),
-    },
-    {
-      key: "total_anulado" as keyof IngresoDiarioRow,
-      label: "Anulado",
-      render: (row: IngresoDiarioRow) => (
-        <span className="font-semibold text-red-500 dark:text-red-400">
-          {fmt(row.total_anulado)}
-        </span>
-      ),
-    },
-    {
-      key: "total_registrado" as keyof IngresoDiarioRow,
-      label: "Total del día",
-      render: (row: IngresoDiarioRow) => (
-        <span className="font-semibold">{fmt(row.total_registrado)}</span>
-      ),
-    },
-  ];
+  const columns = useMemo(
+    () => [
+      {
+        key: "fecha" as keyof IngresoDiarioRow,
+        label: "Fecha",
+        render: (row: IngresoDiarioRow) => (
+          <span className="font-medium">{formatCompactDate(row.fecha)}</span>
+        ),
+      },
+      {
+        key: "movimientos" as keyof IngresoDiarioRow,
+        label: "Movimientos",
+        render: (row: IngresoDiarioRow) => <span>{row.movimientos}</span>,
+      },
+      {
+        key: "total_cobrado" as keyof IngresoDiarioRow,
+        label: "Cobrado",
+        render: (row: IngresoDiarioRow) => (
+          <span className="font-semibold text-green-600 dark:text-green-400">
+            {fmt(row.total_cobrado)}
+          </span>
+        ),
+      },
+      {
+        key: "total_pendiente" as keyof IngresoDiarioRow,
+        label: "Pendiente",
+        render: (row: IngresoDiarioRow) => (
+          <span className="font-semibold text-yellow-600 dark:text-yellow-400">
+            {fmt(row.total_pendiente)}
+          </span>
+        ),
+      },
+      {
+        key: "total_anulado" as keyof IngresoDiarioRow,
+        label: "Anulado",
+        render: (row: IngresoDiarioRow) => (
+          <span className="font-semibold text-red-500 dark:text-red-400">
+            {fmt(row.total_anulado)}
+          </span>
+        ),
+      },
+      {
+        key: "total_registrado" as keyof IngresoDiarioRow,
+        label: "Total del día",
+        render: (row: IngresoDiarioRow) => (
+          <span className="font-semibold">{fmt(row.total_registrado)}</span>
+        ),
+      },
+    ],
+    []
+  );
 
   // ─── Render ───────────────────────────────────────────────────────
 

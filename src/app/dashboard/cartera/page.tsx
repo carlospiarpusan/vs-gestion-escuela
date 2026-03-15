@@ -50,6 +50,7 @@ function getShare(value: number, total: number) {
 
 export default function CarteraPage() {
   const { perfil } = useAuth();
+  const fmt = (v: number) => formatAccountingMoney(Number(v || 0));
 
   // ─── Filters ──────────────────────────────────────────────────────
 
@@ -143,38 +144,6 @@ export default function CarteraPage() {
     void load();
   }, [perfil?.escuela_id, filtroAlumno, activeView, searchTerm, currentPage]);
 
-  // ─── Export CSV ───────────────────────────────────────────────────
-
-  const handleExportCsv = useCallback(() => {
-    const allRows = report?.contracts?.pendingRows || [];
-    if (allRows.length === 0) return;
-    downloadCsv(
-      "cartera-pendiente.csv",
-      [
-        "Registro",
-        "Alumno",
-        "Documento",
-        "Referencia",
-        "Tipo",
-        "Esperado",
-        "Cobrado",
-        "Saldo",
-        "Días pendiente",
-      ],
-      allRows.map((r) => [
-        r.fechaRegistro,
-        r.nombre,
-        r.documento,
-        r.referencia,
-        r.tipoRegistro,
-        Number(r.valorEsperado),
-        Number(r.valorCobrado),
-        Number(r.saldoPendiente),
-        r.diasPendiente,
-      ])
-    );
-  }, [report?.contracts?.pendingRows]);
-
   // ─── Derived data ─────────────────────────────────────────────────
 
   const contracts = report?.contracts;
@@ -194,6 +163,62 @@ export default function CarteraPage() {
     .reduce((s, r) => s + Number(r.saldoPendiente || 0), 0);
   const buckets = contracts?.buckets || [];
   const topDeudores = contracts?.topDeudores || [];
+
+  // ─── Export CSV ───────────────────────────────────────────────────
+
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportCsv = useCallback(async () => {
+    if (!perfil?.escuela_id) return;
+    setExporting(true);
+
+    try {
+      const params = new URLSearchParams({
+        from: "2000-01-01",
+        to: "2099-12-31",
+        page: "0",
+        pageSize: "10000",
+        include: "contracts",
+      });
+      if (filtroAlumno) params.set("alumno_id", filtroAlumno);
+      if (activeView !== "all") params.set("ingreso_view", activeView);
+      if (searchTerm) params.set("q", searchTerm);
+
+      const payload = await fetchAccountingReport(params);
+      const allRows = payload.contracts?.pendingRows || [];
+      if (allRows.length === 0) return;
+
+      downloadCsv(
+        "cartera-pendiente.csv",
+        [
+          "Registro",
+          "Alumno",
+          "Documento",
+          "Referencia",
+          "Tipo",
+          "Esperado",
+          "Cobrado",
+          "Saldo",
+          "Días pendiente",
+        ],
+        allRows.map((r) => [
+          r.fechaRegistro,
+          r.nombre,
+          r.documento,
+          r.referencia,
+          r.tipoRegistro,
+          Number(r.valorEsperado),
+          Number(r.valorCobrado),
+          Number(r.saldoPendiente),
+          r.diasPendiente,
+        ])
+      );
+    } catch {
+      // silent
+    } finally {
+      setExporting(false);
+    }
+  }, [perfil?.escuela_id, filtroAlumno, activeView, searchTerm]);
 
   // ─── Columns ──────────────────────────────────────────────────────
 
@@ -234,7 +259,7 @@ export default function CarteraPage() {
         key: "valorEsperado" as keyof CarteraTableRow,
         label: "Esperado",
         render: (row: CarteraTableRow) => (
-          <span className="font-medium">{formatAccountingMoney(row.valorEsperado)}</span>
+          <span className="font-medium">{fmt(row.valorEsperado)}</span>
         ),
       },
       {
@@ -242,7 +267,7 @@ export default function CarteraPage() {
         label: "Cobrado",
         render: (row: CarteraTableRow) => (
           <span className="font-semibold text-green-600 dark:text-green-400">
-            {formatAccountingMoney(row.valorCobrado)}
+            {fmt(row.valorCobrado)}
           </span>
         ),
       },
@@ -251,7 +276,7 @@ export default function CarteraPage() {
         label: "Saldo",
         render: (row: CarteraTableRow) => (
           <span className="font-semibold text-amber-600 dark:text-amber-400">
-            {formatAccountingMoney(row.saldoPendiente)}
+            {fmt(row.saldoPendiente)}
           </span>
         ),
       },
@@ -289,16 +314,16 @@ export default function CarteraPage() {
           <button
             type="button"
             onClick={handleExportCsv}
-            disabled={rows.length === 0}
+            disabled={exporting || rows.length === 0}
             className="inline-flex items-center gap-2 rounded-2xl border border-[#0071e3]/20 bg-[#0071e3]/5 px-4 py-2.5 text-sm font-semibold text-[#0071e3] transition-colors hover:bg-[#0071e3]/10 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]"
           >
             <Download size={16} />
-            Exportar CSV
+            {exporting ? "Exportando..." : "Exportar CSV"}
           </button>
         }
       />
 
-      {/* View chips + filtro alumno */}
+      {/* View chips + filters */}
       <div className="mb-4 space-y-3 rounded-2xl border border-gray-100 bg-white p-4 sm:p-6 dark:border-gray-800 dark:bg-[#1d1d1f]">
         <AccountingChipTabs
           value={activeView}
@@ -345,8 +370,8 @@ export default function CarteraPage() {
                 Limpiar
               </button>
             </div>
-            <p className="text-sm font-semibold text-green-600 dark:text-green-400">
-              Total página: {formatAccountingMoney(pageTotal)}
+            <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+              Pendiente: {fmt(pageTotal)}
             </p>
           </div>
         )}
@@ -359,62 +384,80 @@ export default function CarteraPage() {
       )}
 
       {/* Stat cards */}
-      <div className="mb-4 space-y-4">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <AccountingStatCard
-            eyebrow="Registros"
-            label="Debería ingresar"
-            value={loading ? "..." : formatAccountingMoney(contracts?.totalEsperado || 0)}
-            detail={`${contracts?.registros || 0} registro${(contracts?.registros || 0) === 1 ? "" : "s"} analizado${(contracts?.registros || 0) === 1 ? "" : "s"}.`}
-            tone="primary"
-            icon={<BookOpen size={18} />}
-          />
-          <AccountingStatCard
-            eyebrow="Registros"
-            label="Cobrado"
-            value={loading ? "..." : formatAccountingMoney(contracts?.totalCobrado || 0)}
-            detail={`${getShare(Number(contracts?.totalCobrado || 0), Number(contracts?.totalEsperado || 0))} del esperado.`}
-            tone="success"
-            icon={<Wallet size={18} />}
-          />
-          <AccountingStatCard
-            eyebrow="Registros"
-            label="Falta por pagar"
-            value={loading ? "..." : formatAccountingMoney(contracts?.totalPendiente || 0)}
-            detail={`${getShare(Number(contracts?.totalPendiente || 0), Number(contracts?.totalEsperado || 0))} del esperado.`}
-            tone="warning"
-            icon={<Clock3 size={18} />}
-          />
-          <AccountingStatCard
-            eyebrow="Morosidad"
-            label="Pendiente > 60 días"
-            value={loading ? "..." : formatAccountingMoney(veryOldTotal)}
-            detail={`${oldPending.filter((r) => r.diasPendiente >= 60).length} caso${oldPending.filter((r) => r.diasPendiente >= 60).length === 1 ? "" : "s"} críticos.`}
-            tone="danger"
-            icon={<AlertTriangle size={18} />}
-          />
-        </div>
+      <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AccountingStatCard
+          eyebrow="Registros"
+          label="Debería ingresar"
+          value={loading ? "..." : fmt(contracts?.totalEsperado || 0)}
+          detail={`${contracts?.registros || 0} registro${(contracts?.registros || 0) === 1 ? "" : "s"} analizado${(contracts?.registros || 0) === 1 ? "" : "s"}.`}
+          tone="primary"
+          icon={<BookOpen size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Registros"
+          label="Cobrado"
+          value={loading ? "..." : fmt(contracts?.totalCobrado || 0)}
+          detail={`${getShare(Number(contracts?.totalCobrado || 0), Number(contracts?.totalEsperado || 0))} del esperado.`}
+          tone="success"
+          icon={<Wallet size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Registros"
+          label="Falta por pagar"
+          value={loading ? "..." : fmt(contracts?.totalPendiente || 0)}
+          detail={`${getShare(Number(contracts?.totalPendiente || 0), Number(contracts?.totalEsperado || 0))} del esperado.`}
+          tone="warning"
+          icon={<Clock3 size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Morosidad"
+          label="Pendiente > 60 días"
+          value={loading ? "..." : fmt(veryOldTotal)}
+          detail={`${oldPending.filter((r) => r.diasPendiente >= 60).length} caso${oldPending.filter((r) => r.diasPendiente >= 60).length === 1 ? "" : "s"} críticos.`}
+          tone="danger"
+          icon={<AlertTriangle size={18} />}
+        />
+      </div>
 
-        {/* Aging + Top deudores */}
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      {/* Aging + Top deudores */}
+      {!loading && (buckets.length > 0 || topDeudores.length > 0) && (
+        <div className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
           <AccountingBreakdownCard
             title="Antigüedad de cartera"
             subtitle="Distribución de los saldos pendientes por estado de vencimiento."
-            rows={buckets.map((r) => ({ ...r, concepto: r.bucket }) as AccountingBreakdownRow)}
+            rows={buckets.map(
+              (r) =>
+                ({
+                  ...r,
+                  concepto: r.bucket,
+                  cantidad: r.cantidad,
+                  total: r.total,
+                }) as AccountingBreakdownRow
+            )}
             labelKey="concepto"
             emptyLabel="Sin cartera pendiente."
           />
           <AccountingBreakdownCard
             title="Top deudores"
             subtitle="Alumnos o referencias con mayor saldo pendiente."
-            rows={topDeudores.map((r) => ({ ...r, concepto: r.nombre }) as AccountingBreakdownRow)}
+            rows={topDeudores.map(
+              (r) =>
+                ({
+                  ...r,
+                  concepto: r.nombre,
+                  cantidad: r.cantidad,
+                  total: r.total,
+                }) as AccountingBreakdownRow
+            )}
             labelKey="concepto"
             emptyLabel="Sin deudores pendientes."
           />
         </div>
+      )}
 
-        {/* Cohort + Oldest pending */}
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      {/* Cohort + Oldest pending */}
+      {!loading && (monthly.length > 0 || oldPending.length > 0) && (
+        <div className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
           <AccountingPanel
             title="Esperado vs cobrado por cohorte"
             description="Cuánto debía entrar por registros creados en cada mes y cuánto sigue pendiente."
@@ -435,15 +478,15 @@ export default function CarteraPage() {
                         </p>
                         <p className="mt-1 text-xs text-[#86868b]">
                           {row.registros} registro{row.registros === 1 ? "" : "s"} · Esperado{" "}
-                          {formatAccountingMoney(row.valorEsperado)}
+                          {fmt(row.valorEsperado)}
                         </p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                          {formatAccountingMoney(row.valorCobrado)}
+                          {fmt(row.valorCobrado)}
                         </p>
                         <p className="text-xs text-amber-600 dark:text-amber-400">
-                          Pendiente {formatAccountingMoney(row.saldoPendiente)}
+                          Pendiente {fmt(row.saldoPendiente)}
                         </p>
                       </div>
                     </div>
@@ -467,19 +510,19 @@ export default function CarteraPage() {
             emptyLabel="No hay saldos antiguos pendientes."
             items={oldPending.slice(0, 5).map((row) => ({
               label: row.nombre,
-              value: formatAccountingMoney(Number(row.saldoPendiente || 0)),
+              value: fmt(Number(row.saldoPendiente || 0)),
               meta: `${row.diasPendiente} día${row.diasPendiente === 1 ? "" : "s"} · ${row.referencia || row.documento || "Sin referencia"}`,
             }))}
           />
         </div>
-      </div>
+      )}
 
       {/* DataTable */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
-        {!hayFiltros && !loading && rows.length > 0 && (
+        {rows.length > 0 && (
           <div className="mb-3 flex justify-end">
-            <p className="text-sm font-semibold text-green-600 dark:text-green-400">
-              Total página: {formatAccountingMoney(pageTotal)}
+            <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+              Pendiente en página: {fmt(pageTotal)}
             </p>
           </div>
         )}
