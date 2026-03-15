@@ -116,6 +116,8 @@ export type AccountingContractsSummary = {
   totalEsperado: number;
   totalCobrado: number;
   totalPendiente: number;
+  buckets: AccountingAgingBucketRow[];
+  topDeudores: AccountingCounterpartyRow[];
   monthly: AccountingContractMonthlyRow[];
   oldestPending: AccountingContractOldDebtRow[];
   pendingCount: number;

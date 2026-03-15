@@ -968,6 +968,8 @@ async function buildJsonResponse({
     contractsOldestRes,
     contractsPendingCountRes,
     contractsPendingRowsRes,
+    contractsBucketsRes,
+    contractsTopDeudoresRes,
     options,
     studentsRevenueRes,
     studentsRowsRes,
@@ -1387,6 +1389,43 @@ async function buildJsonResponse({
           [...parts.values, String(pageSize), String(offset)]
         )
       : Promise.resolve({ rows: [] as ContractPendingSqlRow[] }),
+    needsContracts
+      ? pool.query<AgingBucketRow>(
+          `
+            ${cte}
+            select
+              case
+                when fecha_referencia < current_date - interval '60 day' then 'Vencido'
+                when fecha_referencia < current_date - interval '30 day' then 'Proximo a vencer'
+                else 'Al dia'
+              end as bucket,
+              count(*)::int as cantidad,
+              coalesce(sum(saldo_pendiente), 0) as total
+            from all_obligations
+            where saldo_pendiente > 0
+            group by 1
+            order by min(fecha_referencia) asc
+          `,
+          parts.values
+        )
+      : Promise.resolve({ rows: [] as AgingBucketRow[] }),
+    needsContracts
+      ? pool.query<CounterpartyAggregateRow>(
+          `
+            ${cte}
+            select
+              nombre,
+              count(*)::int as cantidad,
+              coalesce(sum(saldo_pendiente), 0) as total
+            from all_obligations
+            where saldo_pendiente > 0
+            group by 1
+            order by total desc, cantidad desc, nombre asc
+            limit 8
+          `,
+          parts.values
+        )
+      : Promise.resolve({ rows: [] as CounterpartyAggregateRow[] }),
     needsOptions
       ? getAccessibleOptions(pool, perfil, scope)
       : Promise.resolve({ escuelas: [], sedes: [] }),
@@ -1602,6 +1641,16 @@ async function buildJsonResponse({
           totalEsperado: toNumber(contractsSummaryRow.total_esperado),
           totalCobrado: toNumber(contractsSummaryRow.total_cobrado),
           totalPendiente: toNumber(contractsSummaryRow.total_pendiente),
+          buckets: contractsBucketsRes.rows.map((row: AgingBucketRow) => ({
+            bucket: row.bucket,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          })),
+          topDeudores: contractsTopDeudoresRes.rows.map((row: CounterpartyAggregateRow) => ({
+            nombre: row.nombre || "Sin alumno asociado",
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          })),
           monthly: contractsMonthlyRes.rows.map((row: ContractsMonthlyRow) => ({
             periodo: normalizePeriod(row.periodo),
             registros: Number(row.registros || 0),

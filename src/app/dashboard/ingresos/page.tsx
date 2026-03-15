@@ -87,7 +87,10 @@ const currentYear = getCurrentAccountingYear();
 const currentMonth = new Date().getMonth() + 1;
 
 type AlumnoOption = Pick<Alumno, "id" | "nombre" | "apellidos">;
-type MatriculaOption = Pick<MatriculaAlumno, "id" | "alumno_id" | "numero_contrato" | "categorias" | "valor_total" | "fecha_inscripcion">;
+type MatriculaOption = Pick<
+  MatriculaAlumno,
+  "id" | "alumno_id" | "numero_contrato" | "categorias" | "valor_total" | "fecha_inscripcion"
+>;
 type IngresoRow = Ingreso & { alumno_nombre: string; matricula_label: string };
 type ExamIncomeAvailability = {
   examen_teorico: boolean;
@@ -204,7 +207,8 @@ function getDueMeta(dateValue: string | null) {
   if (daysUntil <= 7) {
     return {
       label: "Próximo",
-      detail: daysUntil === 0 ? "Vence hoy" : `Vence en ${daysUntil} día${daysUntil === 1 ? "" : "s"}`,
+      detail:
+        daysUntil === 0 ? "Vence hoy" : `Vence en ${daysUntil} día${daysUntil === 1 ? "" : "s"}`,
       className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
     };
   }
@@ -249,7 +253,10 @@ async function fetchAllAlumnoOptions(supabase: ReturnType<typeof createClient>, 
   );
 }
 
-async function fetchAllMatriculaOptions(supabase: ReturnType<typeof createClient>, escuelaId: string) {
+async function fetchAllMatriculaOptions(
+  supabase: ReturnType<typeof createClient>,
+  escuelaId: string
+) {
   return fetchAllSupabaseRows<MatriculaOption>((from, to) =>
     supabase
       .from("matriculas_alumno")
@@ -272,7 +279,9 @@ export default function IngresosPage() {
   const [loading, setLoading] = useState(true);
 
   const [totalCount, setTotalCount] = useState(0);
-  const [activeSection, setActiveSection] = useState<IncomeSection>(parseIncomeSection(searchParams.get("section")));
+  const [activeSection, setActiveSection] = useState<IncomeSection>(
+    parseIncomeSection(searchParams.get("section"))
+  );
   const [sectionState, setSectionState] = useState<Record<IncomeSection, IncomeSectionState>>({
     libro: createIncomeSectionState("libro"),
     cartera: createIncomeSectionState("cartera"),
@@ -393,7 +402,10 @@ export default function IngresosPage() {
         });
       } catch (availabilityError) {
         if (!cancelled) {
-          console.error("[IngresosPage] Error verificando disponibilidad de exámenes:", availabilityError);
+          console.error(
+            "[IngresosPage] Error verificando disponibilidad de exámenes:",
+            availabilityError
+          );
           setExamAvailability(null);
         }
       }
@@ -446,7 +458,9 @@ export default function IngresosPage() {
           filtroMes: "",
           currentPage: 0,
         });
-        setInfoMessage(`No hay ingresos de exámenes en ${currentYear}; se cargó automáticamente ${latestYear}, donde sí existe histórico.`);
+        setInfoMessage(
+          `No hay ingresos de exámenes en ${currentYear}; se cargó automáticamente ${latestYear}, donde sí existe histórico.`
+        );
       } catch (yearError) {
         console.error("[IngresosPage] Error alineando año de exámenes:", yearError);
       }
@@ -506,7 +520,9 @@ export default function IngresosPage() {
       prev.map((ingreso) => ({
         ...ingreso,
         alumno_nombre: ingreso.alumno_id ? alumnosMap.get(ingreso.alumno_id) || "—" : "—",
-        matricula_label: ingreso.matricula_id ? matriculasMap.get(ingreso.matricula_id) || "Sin contrato" : "—",
+        matricula_label: ingreso.matricula_id
+          ? matriculasMap.get(ingreso.matricula_id) || "Sin contrato"
+          : "—",
       }))
     );
   }, [alumnos, matriculas, data.length]);
@@ -539,7 +555,9 @@ export default function IngresosPage() {
       // --- Build base query for data ---
       let dataQuery = supabase
         .from("ingresos")
-        .select("id, alumno_id, matricula_id, categoria, concepto, monto, metodo_pago, medio_especifico, numero_factura, fecha, fecha_vencimiento, estado, notas, created_at")
+        .select(
+          "id, alumno_id, matricula_id, categoria, concepto, monto, metodo_pago, medio_especifico, numero_factura, fecha, fecha_vencimiento, estado, notas, created_at"
+        )
         .eq("escuela_id", perfil.escuela_id);
 
       // Apply client-side filters to server query
@@ -549,9 +567,7 @@ export default function IngresosPage() {
       }
       if (filtroYear) {
         const selectedYear = Number(filtroYear);
-        const startDate = filtroMes
-          ? `${selectedYear}-${filtroMes}-01`
-          : `${selectedYear}-01-01`;
+        const startDate = filtroMes ? `${selectedYear}-${filtroMes}-01` : `${selectedYear}-01-01`;
         const endMonth = Number(filtroMes || "12");
         const endDate = filtroMes
           ? endMonth === 12
@@ -621,14 +637,31 @@ export default function IngresosPage() {
         ((ingresosRes.data as Ingreso[]) ?? []).map((ingreso) => ({
           ...ingreso,
           alumno_nombre: ingreso.alumno_id ? alumnosMap.get(ingreso.alumno_id) || "—" : "—",
-          matricula_label: ingreso.matricula_id ? matriculasMap.get(ingreso.matricula_id) || "Sin contrato" : "—",
+          matricula_label: ingreso.matricula_id
+            ? matriculasMap.get(ingreso.matricula_id) || "Sin contrato"
+            : "—",
         }))
       );
       setLoading(false);
     };
 
     void loadData();
-  }, [perfil?.escuela_id, reloadKey, currentPage, searchTerm, filtroAlumno, filtroMes, filtroMetodo, filtroCategoria, filtroEstado, filtroYear, activeView, activeSection, alumnos, matriculas]);
+  }, [
+    perfil?.escuela_id,
+    reloadKey,
+    currentPage,
+    searchTerm,
+    filtroAlumno,
+    filtroMes,
+    filtroMetodo,
+    filtroCategoria,
+    filtroEstado,
+    filtroYear,
+    activeView,
+    activeSection,
+    alumnos,
+    matriculas,
+  ]);
 
   useEffect(() => {
     if (!perfil?.rol) return;
@@ -648,9 +681,7 @@ export default function IngresosPage() {
         to,
         page: String(currentPage),
         pageSize: String(PAGE_SIZE),
-        include: activeSection === "cartera"
-          ? "summary,breakdown,receivables,contracts"
-          : "summary,breakdown,receivables",
+        include: "summary,breakdown,contracts",
       });
 
       if (filtroAlumno) params.set("alumno_id", filtroAlumno);
@@ -672,14 +703,30 @@ export default function IngresosPage() {
         setSummary(payload);
       } catch (summaryErr: unknown) {
         setSummary(null);
-        setSummaryError(summaryErr instanceof Error ? summaryErr.message : "No se pudo cargar el resumen contable.");
+        setSummaryError(
+          summaryErr instanceof Error
+            ? summaryErr.message
+            : "No se pudo cargar el resumen contable."
+        );
       } finally {
         setSummaryLoading(false);
       }
     };
 
     void loadSummary();
-  }, [perfil?.rol, filtroAlumno, filtroMetodo, filtroCategoria, filtroEstado, filtroMes, filtroYear, searchTerm, activeView, activeSection, currentPage]);
+  }, [
+    perfil?.rol,
+    filtroAlumno,
+    filtroMetodo,
+    filtroCategoria,
+    filtroEstado,
+    filtroMes,
+    filtroYear,
+    searchTerm,
+    activeView,
+    activeSection,
+    currentPage,
+  ]);
 
   useEffect(() => {
     if (!perfil?.escuela_id || activeSection !== "caja") return;
@@ -715,41 +762,60 @@ export default function IngresosPage() {
 
         setDailyRows([]);
         setDailyStats(emptyDailyStats);
-        setDailyError(dailyErr instanceof Error ? dailyErr.message : "No se pudo calcular el resumen diario.");
+        setDailyError(
+          dailyErr instanceof Error ? dailyErr.message : "No se pudo calcular el resumen diario."
+        );
         setDailyLoading(false);
       }
     };
 
     void loadDailySummary();
-  }, [perfil?.escuela_id, activeSection, filtroAlumno, filtroMes, filtroMetodo, filtroCategoria, filtroEstado, filtroYear, searchTerm, activeView]);
+  }, [
+    perfil?.escuela_id,
+    activeSection,
+    filtroAlumno,
+    filtroMes,
+    filtroMetodo,
+    filtroCategoria,
+    filtroEstado,
+    filtroYear,
+    searchTerm,
+    activeView,
+  ]);
 
   const matriculasDisponibles = useMemo(
-    () => (form.alumno_id ? matriculas.filter((matricula) => matricula.alumno_id === form.alumno_id) : []),
+    () =>
+      form.alumno_id
+        ? matriculas.filter((matricula) => matricula.alumno_id === form.alumno_id)
+        : [],
     [form.alumno_id, matriculas]
   );
   const mesesDelAno = useMemo(
-    () => (Number(filtroYear) === currentYear
-      ? MONTH_OPTIONS.filter((mes) => !mes.value || Number(mes.value) <= currentMonth)
-      : MONTH_OPTIONS),
+    () =>
+      Number(filtroYear) === currentYear
+        ? MONTH_OPTIONS.filter((mes) => !mes.value || Number(mes.value) <= currentMonth)
+        : MONTH_OPTIONS,
     [filtroYear]
   );
   const years = useMemo(() => buildAccountingYears(), []);
-  const hayFiltros = filtroAlumno
-    || filtroMes
-    || filtroMetodo
-    || filtroCategoria
-    || (activeSection !== "cartera" && filtroEstado)
-    || filtroYear !== String(currentYear)
-    || activeView !== "all";
+  const hayFiltros =
+    filtroAlumno ||
+    filtroMes ||
+    filtroMetodo ||
+    filtroCategoria ||
+    (activeSection !== "cartera" && filtroEstado) ||
+    filtroYear !== String(currentYear) ||
+    activeView !== "all";
   const totalFiltrado = useMemo(
     () => data.reduce((sum, row) => sum + Number(row.monto), 0),
     [data]
   );
   const carteraRows = useMemo<CarteraTableRow[]>(
-    () => (summary?.contracts?.pendingRows || []).map((row) => ({
-      ...row,
-      id: row.obligationId,
-    })),
+    () =>
+      (summary?.contracts?.pendingRows || []).map((row) => ({
+        ...row,
+        id: row.obligationId,
+      })),
     [summary?.contracts?.pendingRows]
   );
   const carteraTotalCount = summary?.contracts?.pendingCount || 0;
@@ -759,14 +825,22 @@ export default function IngresosPage() {
   );
   const displayedCount = activeSection === "cartera" ? carteraTotalCount : totalCount;
   const displayedPageTotal = activeSection === "cartera" ? carteraPageTotal : totalFiltrado;
-  const currentSectionMeta = INCOME_SECTION_ITEMS.find((item) => item.id === activeSection) || INCOME_SECTION_ITEMS[0];
-  const carteraBuckets = summary?.receivables?.buckets || [];
-  const carteraTopDeudores = summary?.receivables?.topDeudores || [];
-  const visibleViewItems = activeSection === "caja"
-    ? []
-    : activeSection === "cartera"
-      ? INCOME_VIEW_ITEMS.filter((item) => item.id === "all" || item.id === "matriculas" || item.id === "practicas" || item.id === "examenes")
-      : INCOME_VIEW_ITEMS;
+  const currentSectionMeta =
+    INCOME_SECTION_ITEMS.find((item) => item.id === activeSection) || INCOME_SECTION_ITEMS[0];
+  const carteraBuckets = summary?.contracts?.buckets || [];
+  const carteraTopDeudores = summary?.contracts?.topDeudores || [];
+  const visibleViewItems =
+    activeSection === "caja"
+      ? []
+      : activeSection === "cartera"
+        ? INCOME_VIEW_ITEMS.filter(
+            (item) =>
+              item.id === "all" ||
+              item.id === "matriculas" ||
+              item.id === "practicas" ||
+              item.id === "examenes"
+          )
+        : INCOME_VIEW_ITEMS;
 
   const limpiarFiltros = () => {
     setSectionState((current) => ({
@@ -775,16 +849,22 @@ export default function IngresosPage() {
     }));
   };
 
-  const handlePageChange = useCallback((page: number) => {
-    updateCurrentSectionState({ currentPage: page });
-  }, [updateCurrentSectionState]);
+  const handlePageChange = useCallback(
+    (page: number) => {
+      updateCurrentSectionState({ currentPage: page });
+    },
+    [updateCurrentSectionState]
+  );
 
-  const handleSearchChange = useCallback((term: string) => {
-    updateCurrentSectionState({
-      searchTerm: term,
-      currentPage: 0,
-    });
-  }, [updateCurrentSectionState]);
+  const handleSearchChange = useCallback(
+    (term: string) => {
+      updateCurrentSectionState({
+        searchTerm: term,
+        currentPage: 0,
+      });
+    },
+    [updateCurrentSectionState]
+  );
 
   const handleAlumnoChange = (alumnoId: string) => {
     const opciones = matriculas.filter((matricula) => matricula.alumno_id === alumnoId);
@@ -915,7 +995,10 @@ export default function IngresosPage() {
 
     setSaving(true);
     try {
-      const { error: deleteError } = await createClient().from("ingresos").delete().eq("id", deleting.id);
+      const { error: deleteError } = await createClient()
+        .from("ingresos")
+        .delete()
+        .eq("id", deleting.id);
       if (deleteError) {
         setError(deleteError.message);
         setSaving(false);
@@ -945,9 +1028,13 @@ export default function IngresosPage() {
       while (true) {
         let query = supabase
           .from("ingresos")
-          .select("id, alumno_id, matricula_id, categoria, concepto, monto, metodo_pago, medio_especifico, numero_factura, fecha, fecha_vencimiento, estado, notas, created_at")
+          .select(
+            "id, alumno_id, matricula_id, categoria, concepto, monto, metodo_pago, medio_especifico, numero_factura, fecha, fecha_vencimiento, estado, notas, created_at"
+          )
           .eq("escuela_id", escuelaId)
-          .order(activeSection === "cartera" ? "fecha_vencimiento" : "fecha", { ascending: activeSection === "cartera" })
+          .order(activeSection === "cartera" ? "fecha_vencimiento" : "fecha", {
+            ascending: activeSection === "cartera",
+          })
           .order("created_at", { ascending: false })
           .range(from, from + pageSize - 1);
 
@@ -968,9 +1055,14 @@ export default function IngresosPage() {
         if (searchTerm) {
           const pattern = `%${searchTerm}%`;
           const matchedIds = await findMatchedAlumnoIds(supabase, escuelaId, searchTerm);
-          query = matchedIds.length > 0
-            ? query.or(`concepto.ilike.${pattern},numero_factura.ilike.${pattern},medio_especifico.ilike.${pattern},alumno_id.in.(${matchedIds.join(",")})`)
-            : query.or(`concepto.ilike.${pattern},numero_factura.ilike.${pattern},medio_especifico.ilike.${pattern}`);
+          query =
+            matchedIds.length > 0
+              ? query.or(
+                  `concepto.ilike.${pattern},numero_factura.ilike.${pattern},medio_especifico.ilike.${pattern},alumno_id.in.(${matchedIds.join(",")})`
+                )
+              : query.or(
+                  `concepto.ilike.${pattern},numero_factura.ilike.${pattern},medio_especifico.ilike.${pattern}`
+                );
         }
 
         const { data: batch, error: exportError } = await query;
@@ -980,15 +1072,15 @@ export default function IngresosPage() {
           ...row,
           alumno_nombre: row.alumno_id
             ? (() => {
-              const alumno = alumnos.find((item) => item.id === row.alumno_id);
-              return alumno ? `${alumno.nombre} ${alumno.apellidos}`.trim() : "—";
-            })()
+                const alumno = alumnos.find((item) => item.id === row.alumno_id);
+                return alumno ? `${alumno.nombre} ${alumno.apellidos}`.trim() : "—";
+              })()
             : "—",
           matricula_label: row.matricula_id
             ? (() => {
-              const matricula = matriculas.find((item) => item.id === row.matricula_id);
-              return matricula ? formatMatriculaLabel(matricula) : "—";
-            })()
+                const matricula = matriculas.find((item) => item.id === row.matricula_id);
+                return matricula ? formatMatriculaLabel(matricula) : "—";
+              })()
             : "—",
         })) as IngresoRow[];
 
@@ -999,7 +1091,19 @@ export default function IngresosPage() {
 
       downloadCsv(
         `ingresos-${activeView}-${filtroYear}${filtroMes ? `-${filtroMes}` : ""}.csv`,
-        ["Fecha", "Vencimiento", "Categoria", "Concepto", "Alumno", "Matricula", "Monto", "Metodo", "Estado", "Factura", "Notas"],
+        [
+          "Fecha",
+          "Vencimiento",
+          "Categoria",
+          "Concepto",
+          "Alumno",
+          "Matricula",
+          "Monto",
+          "Metodo",
+          "Estado",
+          "Factura",
+          "Notas",
+        ],
         rows.map((row) => [
           row.fecha,
           row.fecha_vencimiento,
@@ -1015,15 +1119,16 @@ export default function IngresosPage() {
         ])
       );
     } catch (exportErr: unknown) {
-      setError(exportErr instanceof Error ? exportErr.message : "No se pudo exportar los ingresos.");
+      setError(
+        exportErr instanceof Error ? exportErr.message : "No se pudo exportar los ingresos."
+      );
     } finally {
       setExporting(false);
     }
   };
 
   const formatMoney = (value: number) => formatAccountingMoney(Number(value || 0));
-  const formatDateLabel = (value: string) =>
-    formatCompactDate(value);
+  const formatDateLabel = (value: string) => formatCompactDate(value);
 
   const lineItems = summary?.breakdown.ingresosPorLinea || [];
   const cursosLine = lineItems.find((row) => row.nombre === "Cursos");
@@ -1049,30 +1154,31 @@ export default function IngresosPage() {
       value: Number(row.total || 0),
       meta: `${row.cantidad} movimiento${row.cantidad === 1 ? "" : "s"} · ${getShare(Number(row.total || 0), summary?.summary.ingresosCobrados || 0)} del cobrado`,
     }));
-  const topDebtorItems = (summary?.receivables?.topDeudores || [])
-    .slice(0, 5)
-    .map((row) => ({
-      label: row.nombre,
-      value: Number(row.total || 0),
-      meta: `${row.cantidad} saldo${row.cantidad === 1 ? "" : "s"} pendiente${row.cantidad === 1 ? "" : "s"}`,
-    }));
-  const oldPendingItems = oldPendingContracts
-    .slice(0, 5)
-    .map((row) => ({
-      label: row.nombre,
-      value: Number(row.saldoPendiente || 0),
-      meta: `${row.diasPendiente} día${row.diasPendiente === 1 ? "" : "s"} · ${row.referencia || row.documento || "Sin referencia"}`,
-    }));
+  const topDebtorItems = (summary?.contracts?.topDeudores || []).slice(0, 5).map((row) => ({
+    label: row.nombre,
+    value: Number(row.total || 0),
+    meta: `${row.cantidad} obligación${row.cantidad === 1 ? "" : "es"} pendiente${row.cantidad === 1 ? "" : "s"}`,
+  }));
+  const oldPendingItems = oldPendingContracts.slice(0, 5).map((row) => ({
+    label: row.nombre,
+    value: Number(row.saldoPendiente || 0),
+    meta: `${row.diasPendiente} día${row.diasPendiente === 1 ? "" : "s"} · ${row.referencia || row.documento || "Sin referencia"}`,
+  }));
   const columns = useMemo(() => {
     const baseColumns = [
-      { key: "fecha" as keyof IngresoRow, label: activeSection === "cartera" ? "Registro" : "Fecha" },
+      {
+        key: "fecha" as keyof IngresoRow,
+        label: activeSection === "cartera" ? "Registro" : "Fecha",
+      },
       {
         key: "concepto" as keyof IngresoRow,
         label: "Concepto",
         render: (row: IngresoRow) => {
           let texto = row.concepto;
           if (row.alumno_nombre && row.alumno_nombre !== "—") {
-            texto = texto.replace(` — ${row.alumno_nombre}`, "").replace(` - ${row.alumno_nombre}`, "");
+            texto = texto
+              .replace(` — ${row.alumno_nombre}`, "")
+              .replace(` - ${row.alumno_nombre}`, "");
           }
           return <span className="font-medium">{texto}</span>;
         },
@@ -1085,7 +1191,9 @@ export default function IngresosPage() {
       {
         key: "matricula_label" as keyof IngresoRow,
         label: "Matrícula",
-        render: (row: IngresoRow) => <span className="text-xs text-[#86868b]">{row.matricula_label}</span>,
+        render: (row: IngresoRow) => (
+          <span className="text-xs text-[#86868b]">{row.matricula_label}</span>
+        ),
       },
       {
         key: "monto" as keyof IngresoRow,
@@ -1111,7 +1219,9 @@ export default function IngresosPage() {
                 <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
                   {row.fecha_vencimiento ? formatDateLabel(row.fecha_vencimiento) : "—"}
                 </p>
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${dueMeta.className}`}>
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${dueMeta.className}`}
+                >
                   {dueMeta.label}
                 </span>
                 <p className="text-[11px] text-[#86868b]">{dueMeta.detail}</p>
@@ -1123,7 +1233,9 @@ export default function IngresosPage() {
           key: "estado" as keyof IngresoRow,
           label: "Estado",
           render: (row: IngresoRow) => (
-            <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${estadoColors[row.estado]}`}>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ${estadoColors[row.estado]}`}
+            >
               {row.estado}
             </span>
           ),
@@ -1137,7 +1249,7 @@ export default function IngresosPage() {
         key: "metodo_pago" as keyof IngresoRow,
         label: "Método",
         render: (row: IngresoRow) => (
-          <span className="px-2 py-0.5 text-xs rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium capitalize">
+          <span className="rounded-full bg-[#0071e3]/10 px-2 py-0.5 text-xs font-medium text-[#0071e3] capitalize">
             {metodos.find((metodo) => metodo.value === row.metodo_pago)?.label || row.metodo_pago}
           </span>
         ),
@@ -1146,7 +1258,9 @@ export default function IngresosPage() {
         key: "estado" as keyof IngresoRow,
         label: "Estado",
         render: (row: IngresoRow) => (
-          <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${estadoColors[row.estado]}`}>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${estadoColors[row.estado]}`}
+          >
             {row.estado}
           </span>
         ),
@@ -1159,7 +1273,9 @@ export default function IngresosPage() {
       {
         key: "fechaRegistro" as keyof CarteraTableRow,
         label: "Registro",
-        render: (row: CarteraTableRow) => <span className="font-medium">{formatDateLabel(row.fechaRegistro)}</span>,
+        render: (row: CarteraTableRow) => (
+          <span className="font-medium">{formatDateLabel(row.fechaRegistro)}</span>
+        ),
       },
       {
         key: "nombre" as keyof CarteraTableRow,
@@ -1176,15 +1292,21 @@ export default function IngresosPage() {
         label: "Referencia",
         render: (row: CarteraTableRow) => (
           <div className="space-y-1">
-            <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{row.referencia || "Sin referencia"}</p>
-            <p className="text-xs capitalize text-[#86868b]">{(row.tipoRegistro || "registro").replace(/_/g, " ")}</p>
+            <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {row.referencia || "Sin referencia"}
+            </p>
+            <p className="text-xs text-[#86868b] capitalize">
+              {(row.tipoRegistro || "registro").replace(/_/g, " ")}
+            </p>
           </div>
         ),
       },
       {
         key: "valorEsperado" as keyof CarteraTableRow,
         label: "Esperado",
-        render: (row: CarteraTableRow) => <span className="font-medium">{formatAccountingMoney(row.valorEsperado)}</span>,
+        render: (row: CarteraTableRow) => (
+          <span className="font-medium">{formatAccountingMoney(row.valorEsperado)}</span>
+        ),
       },
       {
         key: "valorCobrado" as keyof CarteraTableRow,
@@ -1209,7 +1331,9 @@ export default function IngresosPage() {
         label: "Pendiente desde",
         render: (row: CarteraTableRow) => (
           <div className="space-y-1">
-            <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{formatDateLabel(row.fechaReferencia)}</p>
+            <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {formatDateLabel(row.fechaReferencia)}
+            </p>
             <p className="text-xs text-[#86868b]">
               {row.diasPendiente > 0
                 ? `${row.diasPendiente} día${row.diasPendiente === 1 ? "" : "s"} de atraso`
@@ -1226,7 +1350,9 @@ export default function IngresosPage() {
     {
       key: "fecha" as keyof IngresoDiarioRow,
       label: "Fecha",
-      render: (row: IngresoDiarioRow) => <span className="font-medium">{formatDateLabel(row.fecha)}</span>,
+      render: (row: IngresoDiarioRow) => (
+        <span className="font-medium">{formatDateLabel(row.fecha)}</span>
+      ),
     },
     {
       key: "movimientos" as keyof IngresoDiarioRow,
@@ -1237,27 +1363,35 @@ export default function IngresosPage() {
       key: "total_cobrado" as keyof IngresoDiarioRow,
       label: "Cobrado",
       render: (row: IngresoDiarioRow) => (
-        <span className="font-semibold text-green-600 dark:text-green-400">{formatMoney(row.total_cobrado)}</span>
+        <span className="font-semibold text-green-600 dark:text-green-400">
+          {formatMoney(row.total_cobrado)}
+        </span>
       ),
     },
     {
       key: "total_pendiente" as keyof IngresoDiarioRow,
       label: "Pendiente",
       render: (row: IngresoDiarioRow) => (
-        <span className="font-semibold text-yellow-600 dark:text-yellow-400">{formatMoney(row.total_pendiente)}</span>
+        <span className="font-semibold text-yellow-600 dark:text-yellow-400">
+          {formatMoney(row.total_pendiente)}
+        </span>
       ),
     },
     {
       key: "total_anulado" as keyof IngresoDiarioRow,
       label: "Anulado",
       render: (row: IngresoDiarioRow) => (
-        <span className="font-semibold text-red-500 dark:text-red-400">{formatMoney(row.total_anulado)}</span>
+        <span className="font-semibold text-red-500 dark:text-red-400">
+          {formatMoney(row.total_anulado)}
+        </span>
       ),
     },
     {
       key: "total_registrado" as keyof IngresoDiarioRow,
       label: "Total del día",
-      render: (row: IngresoDiarioRow) => <span className="font-semibold">{formatMoney(row.total_registrado)}</span>,
+      render: (row: IngresoDiarioRow) => (
+        <span className="font-semibold">{formatMoney(row.total_registrado)}</span>
+      ),
     },
   ];
 
@@ -1301,24 +1435,31 @@ export default function IngresosPage() {
             onChange={(view) =>
               updateCurrentSectionState({
                 activeView: view,
-                filtroEstado: activeSection === "cartera" ? "pendiente" : resolveIncomeViewStateFilter(view) || "",
+                filtroEstado:
+                  activeSection === "cartera"
+                    ? "pendiente"
+                    : resolveIncomeViewStateFilter(view) || "",
                 currentPage: 0,
               })
             }
           />
         ) : null}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <div>
             <label className={labelCls}>Alumno</label>
             <select
               value={filtroAlumno}
-              onChange={(e) => updateCurrentSectionState({ filtroAlumno: e.target.value, currentPage: 0 })}
+              onChange={(e) =>
+                updateCurrentSectionState({ filtroAlumno: e.target.value, currentPage: 0 })
+              }
               className={inputCls}
             >
               <option value="">Todos</option>
               {alumnos.map((alumno) => (
-                <option key={alumno.id} value={alumno.id}>{alumno.nombre} {alumno.apellidos}</option>
+                <option key={alumno.id} value={alumno.id}>
+                  {alumno.nombre} {alumno.apellidos}
+                </option>
               ))}
             </select>
           </div>
@@ -1327,12 +1468,16 @@ export default function IngresosPage() {
             <label className={labelCls}>Método de pago</label>
             <select
               value={filtroMetodo}
-              onChange={(e) => updateCurrentSectionState({ filtroMetodo: e.target.value, currentPage: 0 })}
+              onChange={(e) =>
+                updateCurrentSectionState({ filtroMetodo: e.target.value, currentPage: 0 })
+              }
               className={inputCls}
             >
               <option value="">Todos</option>
               {metodos.map((metodo) => (
-                <option key={metodo.value} value={metodo.value}>{metodo.label}</option>
+                <option key={metodo.value} value={metodo.value}>
+                  {metodo.label}
+                </option>
               ))}
             </select>
           </div>
@@ -1341,12 +1486,16 @@ export default function IngresosPage() {
             <label className={labelCls}>Categoría</label>
             <select
               value={filtroCategoria}
-              onChange={(e) => updateCurrentSectionState({ filtroCategoria: e.target.value, currentPage: 0 })}
+              onChange={(e) =>
+                updateCurrentSectionState({ filtroCategoria: e.target.value, currentPage: 0 })
+              }
               className={inputCls}
             >
               <option value="">Todas</option>
               {categorias.map((categoria) => (
-                <option key={categoria} value={categoria}>{categoria.replace(/_/g, " ")}</option>
+                <option key={categoria} value={categoria}>
+                  {categoria.replace(/_/g, " ")}
+                </option>
               ))}
             </select>
           </div>
@@ -1355,13 +1504,17 @@ export default function IngresosPage() {
             <label className={labelCls}>Estado</label>
             <select
               value={activeSection === "cartera" ? "pendiente" : filtroEstado}
-              onChange={(e) => updateCurrentSectionState({ filtroEstado: e.target.value, currentPage: 0 })}
+              onChange={(e) =>
+                updateCurrentSectionState({ filtroEstado: e.target.value, currentPage: 0 })
+              }
               className={inputCls}
               disabled={activeSection === "cartera"}
             >
               <option value="">Todos</option>
               {estadosIngreso.map((estado) => (
-                <option key={estado} value={estado}>{estado}</option>
+                <option key={estado} value={estado}>
+                  {estado}
+                </option>
               ))}
             </select>
           </div>
@@ -1380,7 +1533,9 @@ export default function IngresosPage() {
               className={inputCls}
             >
               {years.map((year) => (
-                <option key={year} value={year}>{year}</option>
+                <option key={year} value={year}>
+                  {year}
+                </option>
               ))}
             </select>
           </div>
@@ -1389,11 +1544,15 @@ export default function IngresosPage() {
             <label className={labelCls}>Mes de {filtroYear}</label>
             <select
               value={filtroMes}
-              onChange={(e) => updateCurrentSectionState({ filtroMes: e.target.value, currentPage: 0 })}
+              onChange={(e) =>
+                updateCurrentSectionState({ filtroMes: e.target.value, currentPage: 0 })
+              }
               className={inputCls}
             >
               {mesesDelAno.map((mes) => (
-                <option key={mes.value} value={mes.value}>{mes.label}</option>
+                <option key={mes.value} value={mes.value}>
+                  {mes.label}
+                </option>
               ))}
             </select>
           </div>
@@ -1403,7 +1562,7 @@ export default function IngresosPage() {
           <div className="mt-3 flex">
             <button
               onClick={limpiarFiltros}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg text-[#86868b] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 border border-gray-200 dark:border-gray-700 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs text-[#86868b] transition-colors hover:bg-red-50 hover:text-red-500 dark:border-gray-700 dark:hover:bg-red-900/20"
             >
               <X size={12} />
               Limpiar filtros
@@ -1412,7 +1571,7 @@ export default function IngresosPage() {
         )}
 
         {hayFiltros && (
-          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
+          <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 dark:border-gray-800">
             <p className="text-xs text-[#86868b]">
               {displayedCount} {activeSection === "cartera" ? "registro" : "ingreso"}
               {displayedCount !== 1 ? "s" : ""} encontrado{displayedCount !== 1 ? "s" : ""}
@@ -1434,10 +1593,13 @@ export default function IngresosPage() {
 
           {examAvailability && (
             <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-[#4a4a4f] dark:border-gray-800 dark:bg-[#1d1d1f] dark:text-[#c7c7cc]">
-              <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Cobros de exámenes cargados en base</p>
+              <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Cobros de exámenes cargados en base
+              </p>
               <p className="mt-1">
-                Teórico: {examAvailability.examen_teorico ? "disponible" : "sin ingresos separados"} ·
-                Práctico: {examAvailability.examen_practico ? "disponible" : "sin ingresos separados"} ·
+                Teórico: {examAvailability.examen_teorico ? "disponible" : "sin ingresos separados"}{" "}
+                · Práctico:{" "}
+                {examAvailability.examen_practico ? "disponible" : "sin ingresos separados"} ·
                 Aptitud: {examAvailability.examen_aptitud ? "disponible" : "sin ingresos cargados"}.
               </p>
             </div>
@@ -1457,7 +1619,11 @@ export default function IngresosPage() {
             <AccountingStatCard
               eyebrow="Recaudo"
               label="Cobrado"
-              value={summaryLoading ? "..." : formatAccountingMoney(summary?.summary.ingresosCobrados || 0)}
+              value={
+                summaryLoading
+                  ? "..."
+                  : formatAccountingMoney(summary?.summary.ingresosCobrados || 0)
+              }
               detail={`${summary?.summary.totalIngresos || 0} ingreso${(summary?.summary.totalIngresos || 0) === 1 ? "" : "s"} en el periodo.`}
               tone="success"
               icon={<Wallet size={18} />}
@@ -1465,7 +1631,11 @@ export default function IngresosPage() {
             <AccountingStatCard
               eyebrow="Cobranza"
               label="Pendiente"
-              value={summaryLoading ? "..." : formatAccountingMoney(summary?.summary.ingresosPendientes || 0)}
+              value={
+                summaryLoading
+                  ? "..."
+                  : formatAccountingMoney(summary?.summary.ingresosPendientes || 0)
+              }
               detail="Saldo abierto todavía sin entrar a caja."
               tone="warning"
               icon={<Clock3 size={18} />}
@@ -1481,7 +1651,9 @@ export default function IngresosPage() {
             <AccountingStatCard
               eyebrow="Línea"
               label="Exámenes"
-              value={summaryLoading ? "..." : formatAccountingMoney(Number(examenesLine?.total || 0))}
+              value={
+                summaryLoading ? "..." : formatAccountingMoney(Number(examenesLine?.total || 0))
+              }
               detail="Teóricos, prácticos y aptitud."
               tone="default"
               icon={<ReceiptText size={18} />}
@@ -1564,7 +1736,9 @@ export default function IngresosPage() {
             <AccountingStatCard
               eyebrow="Registros"
               label="Debería ingresar"
-              value={summaryLoading ? "..." : formatAccountingMoney(contractSummary?.totalEsperado || 0)}
+              value={
+                summaryLoading ? "..." : formatAccountingMoney(contractSummary?.totalEsperado || 0)
+              }
               detail={`${contractSummary?.registros || 0} registro${(contractSummary?.registros || 0) === 1 ? "" : "s"} analizado${(contractSummary?.registros || 0) === 1 ? "" : "s"}.`}
               tone="primary"
               icon={<BookOpen size={18} />}
@@ -1572,7 +1746,9 @@ export default function IngresosPage() {
             <AccountingStatCard
               eyebrow="Registros"
               label="Cobrado"
-              value={summaryLoading ? "..." : formatAccountingMoney(contractSummary?.totalCobrado || 0)}
+              value={
+                summaryLoading ? "..." : formatAccountingMoney(contractSummary?.totalCobrado || 0)
+              }
               detail={`${getShare(Number(contractSummary?.totalCobrado || 0), Number(contractSummary?.totalEsperado || 0))} del esperado.`}
               tone="success"
               icon={<Wallet size={18} />}
@@ -1580,7 +1756,9 @@ export default function IngresosPage() {
             <AccountingStatCard
               eyebrow="Registros"
               label="Falta por pagar"
-              value={summaryLoading ? "..." : formatAccountingMoney(contractSummary?.totalPendiente || 0)}
+              value={
+                summaryLoading ? "..." : formatAccountingMoney(contractSummary?.totalPendiente || 0)
+              }
               detail={`${getShare(Number(contractSummary?.totalPendiente || 0), Number(contractSummary?.totalEsperado || 0))} del esperado.`}
               tone="warning"
               icon={<Clock3 size={18} />}
@@ -1618,27 +1796,41 @@ export default function IngresosPage() {
               description="Cuánto debía entrar por registros creados en cada mes y cuánto sigue pendiente."
             >
               {contractMonthly.length === 0 ? (
-                <p className="text-sm text-[#86868b]">No hay registros contractuales en el periodo seleccionado.</p>
+                <p className="text-sm text-[#86868b]">
+                  No hay registros contractuales en el periodo seleccionado.
+                </p>
               ) : (
                 <div className="space-y-3">
                   {contractMonthly.slice(0, 6).map((row) => (
-                    <div key={row.periodo} className="rounded-2xl bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]">
+                    <div
+                      key={row.periodo}
+                      className="rounded-2xl bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{row.periodo}</p>
+                          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                            {row.periodo}
+                          </p>
                           <p className="mt-1 text-xs text-[#86868b]">
-                            {row.registros} registro{row.registros === 1 ? "" : "s"} · Esperado {formatAccountingMoney(row.valorEsperado)}
+                            {row.registros} registro{row.registros === 1 ? "" : "s"} · Esperado{" "}
+                            {formatAccountingMoney(row.valorEsperado)}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{formatAccountingMoney(row.valorCobrado)}</p>
-                          <p className="text-xs text-amber-600 dark:text-amber-400">Pendiente {formatAccountingMoney(row.saldoPendiente)}</p>
+                          <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                            {formatAccountingMoney(row.valorCobrado)}
+                          </p>
+                          <p className="text-xs text-amber-600 dark:text-amber-400">
+                            Pendiente {formatAccountingMoney(row.saldoPendiente)}
+                          </p>
                         </div>
                       </div>
                       <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                         <div
                           className="h-full rounded-full bg-[#0071e3]"
-                          style={{ width: `${Math.max(6, Math.min(100, row.valorEsperado > 0 ? Math.round((row.valorCobrado / row.valorEsperado) * 100) : 0))}%` }}
+                          style={{
+                            width: `${Math.max(6, Math.min(100, row.valorEsperado > 0 ? Math.round((row.valorCobrado / row.valorEsperado) * 100) : 0))}%`,
+                          }}
                         />
                       </div>
                     </div>
@@ -1662,42 +1854,62 @@ export default function IngresosPage() {
       )}
 
       {activeSection === "caja" && (
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6 mb-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-5">
+        <div className="mb-4 rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
+          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Ingresos diarios calculados</h3>
+              <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Ingresos diarios calculados
+              </h3>
               <p className="text-sm text-[#86868b]">
-                Este resumen consolida automaticamente los ingresos registrados por dia para facilitar el control de caja.
+                Este resumen consolida automaticamente los ingresos registrados por dia para
+                facilitar el control de caja.
               </p>
             </div>
             <div className="text-xs text-[#86868b]">
-              {searchTerm ? "Respeta la búsqueda aplicada en la tabla." : "Respeta los filtros activos de alumno, método, año y mes."}
+              {searchTerm
+                ? "Respeta la búsqueda aplicada en la tabla."
+                : "Respeta los filtros activos de alumno, método, año y mes."}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
-            <div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-[#f7f9fc] dark:bg-[#161618] px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b] mb-1">Cobrado</p>
-              <p className="text-xl font-semibold text-green-600 dark:text-green-400">{formatMoney(dailyStats.totalCobrado)}</p>
+          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-gray-100 bg-[#f7f9fc] px-4 py-3 dark:border-gray-800 dark:bg-[#161618]">
+              <p className="mb-1 text-[11px] tracking-[0.18em] text-[#86868b] uppercase">Cobrado</p>
+              <p className="text-xl font-semibold text-green-600 dark:text-green-400">
+                {formatMoney(dailyStats.totalCobrado)}
+              </p>
             </div>
-            <div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-[#f7f9fc] dark:bg-[#161618] px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b] mb-1">Promedio Diario</p>
-              <p className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{formatMoney(dailyStats.promedioCobradoPorDia)}</p>
+            <div className="rounded-2xl border border-gray-100 bg-[#f7f9fc] px-4 py-3 dark:border-gray-800 dark:bg-[#161618]">
+              <p className="mb-1 text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+                Promedio Diario
+              </p>
+              <p className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                {formatMoney(dailyStats.promedioCobradoPorDia)}
+              </p>
             </div>
-            <div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-[#f7f9fc] dark:bg-[#161618] px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b] mb-1">Mejor Día</p>
+            <div className="rounded-2xl border border-gray-100 bg-[#f7f9fc] px-4 py-3 dark:border-gray-800 dark:bg-[#161618]">
+              <p className="mb-1 text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+                Mejor Día
+              </p>
               <p className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                 {dailyStats.mejorDiaFecha ? formatMoney(dailyStats.mejorDiaMonto) : "—"}
               </p>
-              <p className="text-xs text-[#86868b] mt-1">
-                {dailyStats.mejorDiaFecha ? formatDateLabel(dailyStats.mejorDiaFecha) : "Sin movimientos"}
+              <p className="mt-1 text-xs text-[#86868b]">
+                {dailyStats.mejorDiaFecha
+                  ? formatDateLabel(dailyStats.mejorDiaFecha)
+                  : "Sin movimientos"}
               </p>
             </div>
-            <div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-[#f7f9fc] dark:bg-[#161618] px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b] mb-1">Días Con Movimiento</p>
-              <p className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{dailyStats.diasConMovimientos}</p>
-              <p className="text-xs text-[#86868b] mt-1">
-                Pendiente: {formatMoney(dailyStats.totalPendiente)} · Anulado: {formatMoney(dailyStats.totalAnulado)}
+            <div className="rounded-2xl border border-gray-100 bg-[#f7f9fc] px-4 py-3 dark:border-gray-800 dark:bg-[#161618]">
+              <p className="mb-1 text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+                Días Con Movimiento
+              </p>
+              <p className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                {dailyStats.diasConMovimientos}
+              </p>
+              <p className="mt-1 text-xs text-[#86868b]">
+                Pendiente: {formatMoney(dailyStats.totalPendiente)} · Anulado:{" "}
+                {formatMoney(dailyStats.totalAnulado)}
               </p>
             </div>
           </div>
@@ -1720,48 +1932,50 @@ export default function IngresosPage() {
       )}
 
       {(activeSection === "libro" || activeSection === "cartera") && (
-      <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
-        {!hayFiltros && !(activeSection === "cartera" ? summaryLoading : loading) && (activeSection === "cartera" ? carteraRows.length > 0 : data.length > 0) && (
-          <div className="flex justify-end mb-3">
-            <p className="text-sm font-semibold text-green-600 dark:text-green-400">
-              Total página: {formatAccountingMoney(displayedPageTotal)}
-            </p>
-          </div>
-        )}
-        {activeSection === "cartera" ? (
-          <DataTable
-            key="cartera"
-            columns={carteraColumns}
-            data={carteraRows}
-            loading={summaryLoading}
-            searchPlaceholder="Buscar por alumno, documento o contrato..."
-            searchTerm={searchTerm}
-            serverSide
-            totalCount={carteraTotalCount}
-            currentPage={currentPage}
-            onPageChange={handlePageChange}
-            onSearchChange={handleSearchChange}
-            pageSize={PAGE_SIZE}
-          />
-        ) : (
-          <DataTable
-            key="libro"
-            columns={columns}
-            data={data}
-            loading={loading}
-            searchPlaceholder="Buscar por concepto o cédula..."
-            searchTerm={searchTerm}
-            onEdit={openEdit}
-            onDelete={openDelete}
-            serverSide
-            totalCount={totalCount}
-            currentPage={currentPage}
-            onPageChange={handlePageChange}
-            onSearchChange={handleSearchChange}
-            pageSize={PAGE_SIZE}
-          />
-        )}
-      </div>
+        <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
+          {!hayFiltros &&
+            !(activeSection === "cartera" ? summaryLoading : loading) &&
+            (activeSection === "cartera" ? carteraRows.length > 0 : data.length > 0) && (
+              <div className="mb-3 flex justify-end">
+                <p className="text-sm font-semibold text-green-600 dark:text-green-400">
+                  Total página: {formatAccountingMoney(displayedPageTotal)}
+                </p>
+              </div>
+            )}
+          {activeSection === "cartera" ? (
+            <DataTable
+              key="cartera"
+              columns={carteraColumns}
+              data={carteraRows}
+              loading={summaryLoading}
+              searchPlaceholder="Buscar por alumno, documento o contrato..."
+              searchTerm={searchTerm}
+              serverSide
+              totalCount={carteraTotalCount}
+              currentPage={currentPage}
+              onPageChange={handlePageChange}
+              onSearchChange={handleSearchChange}
+              pageSize={PAGE_SIZE}
+            />
+          ) : (
+            <DataTable
+              key="libro"
+              columns={columns}
+              data={data}
+              loading={loading}
+              searchPlaceholder="Buscar por concepto o cédula..."
+              searchTerm={searchTerm}
+              onEdit={openEdit}
+              onDelete={openDelete}
+              serverSide
+              totalCount={totalCount}
+              currentPage={currentPage}
+              onPageChange={handlePageChange}
+              onSearchChange={handleSearchChange}
+              pageSize={PAGE_SIZE}
+            />
+          )}
+        </div>
       )}
 
       <Modal
@@ -1771,18 +1985,26 @@ export default function IngresosPage() {
         maxWidth="max-w-xl"
       >
         <div className="space-y-4">
-          {error && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{error}</p>}
+          {error && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
+              {error}
+            </p>
+          )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Categoría</label>
               <select
                 value={form.categoria}
-                onChange={(e) => setForm({ ...form, categoria: e.target.value as CategoriaIngreso })}
+                onChange={(e) =>
+                  setForm({ ...form, categoria: e.target.value as CategoriaIngreso })
+                }
                 className={inputCls}
               >
                 {categorias.map((categoria) => (
-                  <option key={categoria} value={categoria}>{categoria.replace(/_/g, " ")}</option>
+                  <option key={categoria} value={categoria}>
+                    {categoria.replace(/_/g, " ")}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1795,7 +2017,9 @@ export default function IngresosPage() {
               >
                 <option value="">Sin alumno</option>
                 {alumnos.map((alumno) => (
-                  <option key={alumno.id} value={alumno.id}>{alumno.nombre} {alumno.apellidos}</option>
+                  <option key={alumno.id} value={alumno.id}>
+                    {alumno.nombre} {alumno.apellidos}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1817,11 +2041,13 @@ export default function IngresosPage() {
                     : "Selecciona una matrícula"}
               </option>
               {matriculasDisponibles.map((matricula) => (
-                <option key={matricula.id} value={matricula.id}>{formatMatriculaLabel(matricula)}</option>
+                <option key={matricula.id} value={matricula.id}>
+                  {formatMatriculaLabel(matricula)}
+                </option>
               ))}
             </select>
             {form.alumno_id && matriculasDisponibles.length > 1 && (
-              <p className="text-[11px] text-[#86868b] mt-1">
+              <p className="mt-1 text-[11px] text-[#86868b]">
                 El alumno tiene varios cursos; registra el ingreso en la matrícula correcta.
               </p>
             )}
@@ -1837,7 +2063,7 @@ export default function IngresosPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div>
               <label className={labelCls}>Monto *</label>
               <input
@@ -1856,7 +2082,9 @@ export default function IngresosPage() {
                 className={inputCls}
               >
                 {metodos.map((metodo) => (
-                  <option key={metodo.value} value={metodo.value}>{metodo.label}</option>
+                  <option key={metodo.value} value={metodo.value}>
+                    {metodo.label}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1865,13 +2093,16 @@ export default function IngresosPage() {
               <input
                 type="date"
                 value={form.fecha}
-                onChange={(e) => setForm((prev) => ({
-                  ...prev,
-                  fecha: e.target.value,
-                  fecha_vencimiento: !prev.fecha_vencimiento || prev.fecha_vencimiento === prev.fecha
-                    ? e.target.value
-                    : prev.fecha_vencimiento,
-                }))}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    fecha: e.target.value,
+                    fecha_vencimiento:
+                      !prev.fecha_vencimiento || prev.fecha_vencimiento === prev.fecha
+                        ? e.target.value
+                        : prev.fecha_vencimiento,
+                  }))
+                }
                 className={inputCls}
               />
             </div>
@@ -1886,7 +2117,7 @@ export default function IngresosPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label className={labelCls}>Estado</label>
               <select
@@ -1895,7 +2126,9 @@ export default function IngresosPage() {
                 className={inputCls}
               >
                 {estadosIngreso.map((estado) => (
-                  <option key={estado} value={estado}>{estado}</option>
+                  <option key={estado} value={estado}>
+                    {estado}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1930,17 +2163,17 @@ export default function IngresosPage() {
             />
           </div>
 
-          <div className="flex gap-3 justify-end pt-2">
+          <div className="flex justify-end gap-3 pt-2">
             <button
               onClick={() => setModalOpen(false)}
-              className="px-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg bg-[#0071e3] text-white hover:bg-[#0077ED] transition-colors disabled:opacity-50"
+              className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
             >
               {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Ingreso"}
             </button>
