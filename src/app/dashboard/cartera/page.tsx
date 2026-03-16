@@ -68,23 +68,22 @@ export default function CarteraPage() {
   // ─── Filters ──────────────────────────────────────────────────────
 
   const [activeView, setActiveView] = useState<IncomeView>("all");
-  const [filtroYear, setFiltroYear] = useState(String(currentYear));
+  const [filtroYear, setFiltroYear] = useState("");
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroMetodo, setFiltroMetodo] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(0);
 
   const mesesDelAno =
-    Number(filtroYear) === currentYear
+    filtroYear && Number(filtroYear) === currentYear
       ? MONTH_OPTIONS.filter((m) => !m.value || Number(m.value) <= currentMonth)
       : MONTH_OPTIONS;
 
-  const hayFiltros =
-    activeView !== "all" || filtroMetodo || filtroYear !== String(currentYear) || filtroMes;
+  const hayFiltros = activeView !== "all" || filtroMetodo || filtroYear || filtroMes;
 
   const limpiarFiltros = () => {
     setActiveView("all");
-    setFiltroYear(String(currentYear));
+    setFiltroYear("");
     setFiltroMes("");
     setFiltroMetodo("");
     setSearchTerm("");
@@ -106,7 +105,9 @@ export default function CarteraPage() {
       setLoading(true);
       setError("");
 
-      const { from, to } = getMonthDateRange(Number(filtroYear), filtroMes);
+      const { from, to } = filtroYear
+        ? getMonthDateRange(Number(filtroYear), filtroMes)
+        : { from: "2000-01-01", to: "2099-12-31" };
       const params = new URLSearchParams({
         from,
         to,
@@ -172,7 +173,9 @@ export default function CarteraPage() {
     setExporting(true);
 
     try {
-      const { from, to } = getMonthDateRange(Number(filtroYear), filtroMes);
+      const { from, to } = filtroYear
+        ? getMonthDateRange(Number(filtroYear), filtroMes)
+        : { from: "2000-01-01", to: "2099-12-31" };
       const params = new URLSearchParams({
         from,
         to,
@@ -346,6 +349,7 @@ export default function CarteraPage() {
               }}
               className={inputCls}
             >
+              <option value="">Todos los años</option>
               {years.map((y) => (
                 <option key={y} value={y}>
                   {y}
@@ -354,7 +358,7 @@ export default function CarteraPage() {
             </select>
           </div>
           <div>
-            <label className={labelCls}>Mes de {filtroYear}</label>
+            <label className={labelCls}>{filtroYear ? `Mes de ${filtroYear}` : "Mes"}</label>
             <select
               value={filtroMes}
               onChange={(e) => {
@@ -362,6 +366,7 @@ export default function CarteraPage() {
                 setCurrentPage(0);
               }}
               className={inputCls}
+              disabled={!filtroYear}
             >
               {mesesDelAno.map((m) => (
                 <option key={m.value} value={m.value}>

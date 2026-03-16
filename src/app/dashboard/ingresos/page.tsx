@@ -845,7 +845,7 @@ export default function IngresosPage() {
           eyebrow="Periodo"
           label="Balance neto"
           value={loading ? "..." : fmt(summary?.balanceNeto || 0)}
-          detail={`Margen ${summary?.margenPorcentaje || 0}%.`}
+          detail={`Margen ${(summary?.margenPorcentaje || 0).toFixed(1)}%.`}
           tone={(summary?.balanceNeto || 0) >= 0 ? "primary" : "danger"}
           icon={<Scale size={18} />}
         />

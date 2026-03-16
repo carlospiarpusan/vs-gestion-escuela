@@ -165,16 +165,16 @@ function buildParams(filters: FilterState, section: ReportSection) {
   params.set("to", range.to);
   params.set("include", include);
 
-  if (filters.escuelaId) params.set("schoolId", filters.escuelaId);
-  if (filters.sedeId) params.set("sedeId", filters.sedeId);
-  if (filters.ingresoView) params.set("ingresoView", filters.ingresoView);
-  if (filters.ingresoCategoria) params.set("ingresoCategoria", filters.ingresoCategoria);
-  if (filters.ingresoMetodo) params.set("ingresoMetodo", filters.ingresoMetodo);
-  if (filters.gastoView) params.set("gastoView", filters.gastoView);
-  if (filters.gastoCategoria) params.set("gastoCategoria", filters.gastoCategoria);
-  if (filters.gastoMetodo) params.set("gastoMetodo", filters.gastoMetodo);
+  if (filters.escuelaId) params.set("escuela_id", filters.escuelaId);
+  if (filters.sedeId) params.set("sede_id", filters.sedeId);
+  if (filters.ingresoView) params.set("ingreso_view", filters.ingresoView);
+  if (filters.ingresoCategoria) params.set("ingreso_categoria", filters.ingresoCategoria);
+  if (filters.ingresoMetodo) params.set("ingreso_metodo", filters.ingresoMetodo);
+  if (filters.gastoView) params.set("gasto_view", filters.gastoView);
+  if (filters.gastoCategoria) params.set("gasto_categoria", filters.gastoCategoria);
+  if (filters.gastoMetodo) params.set("gasto_metodo", filters.gastoMetodo);
   if (filters.gastoContraparte.trim())
-    params.set("gastoContraparte", filters.gastoContraparte.trim());
+    params.set("gasto_contraparte", filters.gastoContraparte.trim());
 
   return params;
 }
