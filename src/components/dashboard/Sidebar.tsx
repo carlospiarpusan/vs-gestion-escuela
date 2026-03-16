@@ -52,8 +52,6 @@ import {
   ReceiptText,
   Wallet,
   Mail,
-  Wrench,
-  Layers,
   GraduationCap,
 } from "lucide-react";
 
@@ -106,12 +104,6 @@ const navItems: NavItem[] = [
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
   },
   {
-    label: "Mantenimiento",
-    href: "/dashboard/mantenimiento",
-    icon: <Wrench size={18} />,
-    roles: ["admin_escuela", "admin_sede", "administrativo", "instructor"],
-  },
-  {
     label: "Clases",
     href: "/dashboard/clases",
     icon: <Clock size={18} />,
@@ -136,18 +128,6 @@ const navItems: NavItem[] = [
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
   },
   {
-    label: "Cartera",
-    href: "/dashboard/cartera",
-    icon: <Landmark size={18} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
-  },
-  {
-    label: "Caja diaria",
-    href: "/dashboard/caja-diaria",
-    icon: <Wallet size={18} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
-  },
-  {
     label: "Gastos",
     href: "/dashboard/gastos",
     icon: <TrendingDown size={18} />,
@@ -164,13 +144,6 @@ const navItems: NavItem[] = [
     href: "/dashboard/sedes",
     icon: <MapPin size={18} />,
     roles: ["super_admin", "admin_escuela", "admin_sede"],
-  },
-
-  {
-    label: "Categorías",
-    href: "/dashboard/categorias",
-    icon: <Layers size={18} />,
-    roles: ["admin_escuela", "admin_sede", "administrativo"],
   },
   {
     label: "Escuelas",
@@ -225,19 +198,24 @@ const reportsNavItems = [
   },
 ];
 
-const incomeNavItems: Array<{
-  label: string;
-  href: string;
-  icon: React.ReactNode;
-  roles: Rol[];
-  section: string;
-}> = [
+const incomeNavItems: NavItem[] = [
   {
     label: "Libro contable",
     href: "/dashboard/ingresos",
     icon: <ReceiptText size={16} />,
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"] as Rol[],
-    section: "libro-contable",
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
+    label: "Cartera",
+    href: "/dashboard/cartera",
+    icon: <Landmark size={16} />,
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+  },
+  {
+    label: "Caja diaria",
+    href: "/dashboard/caja-diaria",
+    icon: <Wallet size={16} />,
+    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
   },
 ];
 
@@ -356,11 +334,13 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
 
   const usersSectionActive = visibleUserItems.some((item) => isActive(item.href));
   const usersExpanded = usersOpen || usersSectionActive;
-  const incomeSection = searchParams.get("section") || "panel";
   const examSection = searchParams.get("section") || "analiticas";
   const examsSectionActive = pathname.startsWith("/dashboard/examenes");
   const examsExpanded = examsOpen || examsSectionActive;
-  const incomesSectionActive = pathname.startsWith("/dashboard/ingresos");
+  const incomesSectionActive =
+    pathname.startsWith("/dashboard/ingresos") ||
+    pathname.startsWith("/dashboard/cartera") ||
+    pathname.startsWith("/dashboard/caja-diaria");
   const incomesExpanded = incomeOpen || incomesSectionActive;
   const expenseSection = searchParams.get("section") || "panel";
   const expensesSectionActive = pathname.startsWith("/dashboard/gastos");
@@ -554,9 +534,7 @@ export default function Sidebar({ rol, open, onClose, collapsed, onToggleCollaps
                   incomesExpanded,
                   () => setIncomeOpen((value) => !value),
                   visibleIncomeItems,
-                  (submenuItem) =>
-                    pathname.startsWith("/dashboard/ingresos") &&
-                    incomeSection === submenuItem.section
+                  (submenuItem) => isActive(submenuItem.href)
                 );
               }
 

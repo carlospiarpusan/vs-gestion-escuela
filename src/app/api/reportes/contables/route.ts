@@ -38,6 +38,12 @@ type QueryParts = {
   filteredIngresosCte: string;
   filteredGastosCte: string;
   filteredObligationsCte: string;
+  /** Inline SQL for unfiltered student counts (not affected by ingreso_view) */
+  studentCountsSql: {
+    regulares: string;
+    practica: string;
+    aptitud: string;
+  };
 };
 
 type QueryFilters = {
@@ -170,7 +176,6 @@ type StudentReportSqlRow = {
   tipo_registro: string;
   categorias: string[] | null;
   fecha_inscripcion: string | null;
-  created_at: string;
   valor_total: number | string | null;
   pago_total: number | string | null;
 };
@@ -598,8 +603,36 @@ function buildQueryParts({
     gastosWhere.push(`g.recurrente = ${expenseSearch.recurrente ? "true" : "false"}`);
   }
 
+  // Build unfiltered student count subqueries (only scope + date, no ingreso_view)
+  const matriculaScopeWhere: string[] = [];
+  const standaloneScopeWhere: string[] = [];
+  if (scope.escuelaId) {
+    matriculaScopeWhere.push(`m.escuela_id = ${addValue(scope.escuelaId)}`);
+    standaloneScopeWhere.push(`a.escuela_id = ${addValue(scope.escuelaId)}`);
+  }
+  if (scope.sedeId) {
+    matriculaScopeWhere.push(`m.sede_id = ${addValue(scope.sedeId)}`);
+    standaloneScopeWhere.push(`a.sede_id = ${addValue(scope.sedeId)}`);
+  }
+  const scFromRef = addValue(from);
+  const scToRef = addValue(to);
+  matriculaScopeWhere.push(`m.fecha_inscripcion >= ${scFromRef}`);
+  matriculaScopeWhere.push(`m.fecha_inscripcion <= ${scToRef}`);
+  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) >= ${scFromRef}`);
+  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) <= ${scToRef}`);
+
+  const matWhere = matriculaScopeWhere.join(" AND ");
+  const staWhere = standaloneScopeWhere.join(" AND ");
+
+  const studentCountsSql = {
+    regulares: `(select count(*)::int from matriculas_alumno m where ${matWhere})`,
+    practica: `(select count(*)::int from alumnos a where a.tipo_registro = 'practica_adicional' AND ${staWhere})`,
+    aptitud: `(select count(*)::int from alumnos a where a.tipo_registro = 'aptitud_conductor' AND ${staWhere})`,
+  };
+
   return {
     values,
+    studentCountsSql,
     filteredIngresosCte: `
     filtered_ingresos AS (
         SELECT
@@ -631,8 +664,7 @@ function buildQueryParts({
           g.categoria,
           g.concepto,
           g.monto::numeric AS monto,
-          'aplicado'::text AS estado,
-          g.estado_pago,
+          g.estado_pago AS estado,
           g.metodo_pago,
           g.numero_factura,
           g.recurrente,
@@ -935,9 +967,9 @@ async function buildJsonResponse({
               (select coalesce(avg(monto), 0) from filtered_gastos) as gasto_promedio,
               (select coalesce(sum(monto), 0) from filtered_gastos where recurrente = true) as gastos_recurrentes_total,
               (select count(*)::int from filtered_gastos where recurrente = true) as gastos_recurrentes_count,
-              (select count(*)::int from filtered_obligations where tipo_registro = 'regular') as alumnos_regulares,
-              (select count(*)::int from filtered_obligations where tipo_registro = 'practica_adicional') as alumnos_practica,
-              (select count(*)::int from filtered_obligations where tipo_registro = 'aptitud_conductor') as alumnos_aptitud
+              ${parts.studentCountsSql.regulares} as alumnos_regulares,
+              ${parts.studentCountsSql.practica} as alumnos_practica,
+              ${parts.studentCountsSql.aptitud} as alumnos_aptitud
             from filtered_ingresos
           `,
           parts.values
@@ -1093,7 +1125,7 @@ async function buildJsonResponse({
             ${cte}
             select contraparte as concepto, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
             from filtered_gastos
-            where contraparte is not null
+            where contraparte is not null and categoria != 'tramitador'
             group by contraparte
             order by total desc, cantidad desc, contraparte asc
             limit 8
@@ -1138,7 +1170,7 @@ async function buildJsonResponse({
                   ? `
               select
                 id::text as id, fecha, 'gasto'::text as tipo, categoria, concepto, monto,
-                estado_pago as estado, metodo_pago, numero_factura, contraparte, documento, contrato, created_at
+                estado, metodo_pago, numero_factura, contraparte, documento, contrato, created_at
               from filtered_gastos
               `
                   : ""
@@ -1200,7 +1232,7 @@ async function buildJsonResponse({
               count(*)::int as cantidad,
               coalesce(sum(monto), 0) as total
             from filtered_gastos
-            where estado_pago = 'pendiente'
+            where estado = 'pendiente'
             group by 1
             order by min(fecha_vencimiento) asc
           `,
@@ -1216,7 +1248,7 @@ async function buildJsonResponse({
               count(*)::int as cantidad,
               coalesce(sum(monto), 0) as total
             from filtered_gastos
-            where estado_pago = 'pendiente' and categoria = 'tramitador'
+            where estado = 'pendiente' and categoria = 'tramitador'
             group by 1
             order by total desc, cantidad desc, nombre asc
             limit 12
@@ -1233,7 +1265,7 @@ async function buildJsonResponse({
               count(*)::int as cantidad,
               coalesce(sum(monto), 0) as total
             from filtered_gastos
-            where estado_pago = 'pendiente'
+            where estado = 'pendiente'
             group by 1
             order by total desc, cantidad desc, nombre asc
             limit 8
@@ -1670,11 +1702,13 @@ async function buildCsvResponse({
   parts,
   from,
   to,
+  ledgerTipo,
 }: {
   pool: ReturnType<typeof getServerDbPool>;
   parts: QueryParts;
   from: string;
   to: string;
+  ledgerTipo: "ingreso" | "gasto" | null;
 }) {
   const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}`;
   const ledgerRes = await pool.query<LedgerRow & { created_at: string }>(
@@ -1682,35 +1716,27 @@ async function buildCsvResponse({
       ${cte}
       select *
       from (
+        ${
+          ledgerTipo !== "gasto"
+            ? `
         select
-          fecha,
-          'ingreso'::text as tipo,
-          categoria,
-          concepto,
-          monto,
-          estado,
-          metodo_pago,
-          numero_factura,
-          contraparte,
-          documento,
-          contrato,
-          created_at
+          fecha, 'ingreso'::text as tipo, categoria, concepto, monto, estado,
+          metodo_pago, numero_factura, contraparte, documento, contrato, created_at
         from filtered_ingresos
-        union all
+        `
+            : ""
+        }
+        ${!ledgerTipo ? "union all" : ""}
+        ${
+          ledgerTipo !== "ingreso"
+            ? `
         select
-          fecha,
-          'gasto'::text as tipo,
-          categoria,
-          concepto,
-          monto,
-          estado_pago as estado,
-          metodo_pago,
-          numero_factura,
-          contraparte,
-          documento,
-          contrato,
-          created_at
+          fecha, 'gasto'::text as tipo, categoria, concepto, monto, estado,
+          metodo_pago, numero_factura, contraparte, documento, contrato, created_at
         from filtered_gastos
+        `
+            : ""
+        }
       ) ledger
       order by fecha desc, created_at desc
     `,
@@ -1771,7 +1797,7 @@ export async function GET(request: Request) {
   const from = parseDateInput(url.searchParams.get("from"), dateRange.from);
   const to = parseDateInput(url.searchParams.get("to"), dateRange.to);
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 10_000);
-  const pageSize = parseInteger(url.searchParams.get("pageSize"), 20, 10, 100);
+  const pageSize = parseInteger(url.searchParams.get("pageSize"), 20, 10, 10_000);
   const search = normalizeSearch(url.searchParams.get("q"));
   const requestedSchoolId = url.searchParams.get("escuela_id");
   const requestedSedeId = url.searchParams.get("sede_id");
@@ -1804,7 +1830,7 @@ export async function GET(request: Request) {
     });
 
     if (format === "csv") {
-      return await buildCsvResponse({ pool, parts, from, to });
+      return await buildCsvResponse({ pool, parts, from, to, ledgerTipo });
     }
 
     return await buildJsonResponse({

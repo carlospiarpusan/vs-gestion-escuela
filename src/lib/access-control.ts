@@ -25,11 +25,6 @@ const DASHBOARD_ROUTE_RULES: RouteRule[] = [
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
   },
   {
-    prefix: "/dashboard/mantenimiento",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
-  },
-  { prefix: "/dashboard/categorias", roles: ["super_admin", "admin_escuela", "admin_sede"] },
-  {
     prefix: "/dashboard/clases",
     roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
   },
