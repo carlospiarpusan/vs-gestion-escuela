@@ -216,6 +216,7 @@ const ALL_REPORT_INCLUDES: ReportInclude[] = [
   "receivables",
   "payables",
   "contracts",
+  "students",
 ];
 const VEHICULAR_EXPENSE_CATEGORIES = [
   "combustible",

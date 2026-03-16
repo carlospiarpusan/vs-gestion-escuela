@@ -146,6 +146,7 @@ export default function IngresosPage() {
     filtroMetodo ||
     filtroCategoria ||
     filtroEstado ||
+    filtroView !== "all" ||
     filtroYear !== String(currentYear) ||
     filtroMes;
 
