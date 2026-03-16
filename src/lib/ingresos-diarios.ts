@@ -107,13 +107,13 @@ export async function fetchIngresosDiariosCalculados(
 
   let matchedAlumnoIds: string[] = [];
   if (search) {
-    const pattern = `%${search}%`;
+    const safePattern = `"%${search.replace(/"/g, '\\"')}%"`;
     const matched = await fetchAllSupabaseRows<{ id: string }>((f, t) =>
       supabase
         .from("alumnos")
         .select("id")
         .eq("escuela_id", filters.escuelaId)
-        .or(`dni.ilike.${pattern},nombre.ilike.${pattern},apellidos.ilike.${pattern}`)
+        .or(`dni.ilike.${safePattern},nombre.ilike.${safePattern},apellidos.ilike.${safePattern}`)
         .range(f, t)
         .then(({ data, error }) => ({ data: (data as { id: string }[]) ?? [], error }))
     );
@@ -134,11 +134,11 @@ export async function fetchIngresosDiariosCalculados(
     if (filters.estado) q = q.eq("estado", filters.estado);
 
     if (search) {
-      const pattern = `%${search}%`;
+      const safePattern = `"%${search.replace(/"/g, '\\"')}%"`;
       if (matchedAlumnoIds.length > 0) {
-        q = q.or(`concepto.ilike.${pattern},alumno_id.in.(${matchedAlumnoIds.join(",")})`);
+        q = q.or(`concepto.ilike.${safePattern},alumno_id.in.(${matchedAlumnoIds.join(",")})`);
       } else {
-        q = q.or(`concepto.ilike.${pattern}`);
+        q = q.or(`concepto.ilike.${safePattern}`);
       }
     }
 

@@ -821,6 +821,7 @@ async function buildJsonResponse({
   from,
   to,
   includes,
+  ledgerTipo,
 }: {
   pool: ReturnType<typeof getServerDbPool>;
   parts: QueryParts;
@@ -831,6 +832,7 @@ async function buildJsonResponse({
   from: string;
   to: string;
   includes: Set<ReportInclude>;
+  ledgerTipo: "ingreso" | "gasto" | null;
 }) {
   const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`;
   const dailySeriesCte = appendCtes(
@@ -1103,12 +1105,13 @@ async function buildJsonResponse({
       ? pool.query<LedgerCountRow>(
           `
             ${cte}
-            select
-              (
-                select count(*) from filtered_ingresos
-              ) + (
-                select count(*) from filtered_gastos
-              ) as total
+            select ${
+              ledgerTipo === "ingreso"
+                ? "(select count(*) from filtered_ingresos)"
+                : ledgerTipo === "gasto"
+                  ? "(select count(*) from filtered_gastos)"
+                  : "(select count(*) from filtered_ingresos) + (select count(*) from filtered_gastos)"
+            } as total
           `,
           parts.values
         )
@@ -1119,37 +1122,27 @@ async function buildJsonResponse({
             ${cte}
             select *
             from (
+              ${
+                ledgerTipo !== "gasto"
+                  ? `
               select
-                id::text as id,
-                fecha,
-                'ingreso'::text as tipo,
-                categoria,
-                concepto,
-                monto,
-                estado,
-                metodo_pago,
-                numero_factura,
-                contraparte,
-                documento,
-                contrato,
-                created_at
+                id::text as id, fecha, 'ingreso'::text as tipo, categoria, concepto, monto, estado,
+                metodo_pago, numero_factura, contraparte, documento, contrato, created_at
               from filtered_ingresos
-              union all
+              `
+                  : ""
+              }
+              ${!ledgerTipo ? "union all" : ""}
+              ${
+                ledgerTipo !== "ingreso"
+                  ? `
               select
-                id::text as id,
-                fecha,
-                'gasto'::text as tipo,
-                categoria,
-                concepto,
-                monto,
-                estado_pago as estado,
-                metodo_pago,
-                numero_factura,
-                contraparte,
-                documento,
-                contrato,
-                created_at
+                id::text as id, fecha, 'gasto'::text as tipo, categoria, concepto, monto,
+                estado_pago as estado, metodo_pago, numero_factura, contraparte, documento, contrato, created_at
               from filtered_gastos
+              `
+                  : ""
+              }
             ) ledger
             order by fecha desc, created_at desc
             limit ${limitRef} offset ${offsetRef}
@@ -1529,7 +1522,10 @@ async function buildJsonResponse({
     },
     receivables: needsReceivables
       ? {
-          totalPendiente: toNumber(summaryRow.ingresos_pendientes),
+          totalPendiente: receivablesBucketsRes.rows.reduce(
+            (sum, row) => sum + toNumber(row.total),
+            0
+          ),
           vencido: receivablesBucketsRes.rows
             .filter((row: AgingBucketRow) => row.bucket === "Vencido")
             .reduce((sum, row) => sum + toNumber(row.total), 0),
@@ -1707,7 +1703,7 @@ async function buildCsvResponse({
           categoria,
           concepto,
           monto,
-          estado,
+          estado_pago as estado,
           metodo_pago,
           numero_factura,
           contraparte,
@@ -1780,6 +1776,7 @@ export async function GET(request: Request) {
   const requestedSchoolId = url.searchParams.get("escuela_id");
   const requestedSedeId = url.searchParams.get("sede_id");
   const format = url.searchParams.get("format");
+  const ledgerTipo = url.searchParams.get("ledger_tipo") as "ingreso" | "gasto" | null;
   const includes = parseReportIncludes(url.searchParams.get("include"));
   const filters: QueryFilters = {
     alumnoId: url.searchParams.get("alumno_id"),
@@ -1820,6 +1817,7 @@ export async function GET(request: Request) {
       from,
       to,
       includes,
+      ledgerTipo,
     });
   } catch (error) {
     console.error("[API REPORTES CONTABLES] Error:", error);

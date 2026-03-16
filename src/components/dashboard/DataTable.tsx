@@ -97,6 +97,14 @@ export default function DataTable<T extends { id: string | number }>({
   const [searchInput, setSearchInput] = useState(externalSearchTerm ?? "");
   const [appliedSearch, setAppliedSearch] = useState((externalSearchTerm ?? "").trim());
   const [page, setPage] = useState(0);
+  const [prevExternalSearch, setPrevExternalSearch] = useState(externalSearchTerm);
+
+  if (prevExternalSearch !== externalSearchTerm) {
+    setPrevExternalSearch(externalSearchTerm);
+    const next = externalSearchTerm ?? "";
+    setSearchInput(next);
+    setAppliedSearch(next.trim());
+  }
 
   // En modo server-side, la página viene del padre
   const activePage = serverSide && externalPage != null ? externalPage : page;
@@ -165,7 +173,7 @@ export default function DataTable<T extends { id: string | number }>({
     return (
       <div>
         <div className="relative mb-5">
-          <div className="h-10 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
+          <div className="h-10 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-800" />
         </div>
         <TableScrollArea>
           <table className="w-full min-w-max text-sm">
@@ -173,12 +181,12 @@ export default function DataTable<T extends { id: string | number }>({
               <tr className="border-b border-gray-200/50 dark:border-gray-800/50">
                 {columns.map((col) => (
                   <th key={String(col.key)} className="px-5 py-4 text-left">
-                    <div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                    <div className="h-3 w-16 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
                   </th>
                 ))}
                 {(onEdit || onDelete || extraActions) && (
-                  <th className="sticky right-0 bg-white/95 dark:bg-[#1d1d1f]/95 backdrop-blur-sm px-5 py-4 text-right">
-                    <div className="h-3 w-16 rounded bg-gray-100 dark:bg-gray-800 animate-pulse ml-auto" />
+                  <th className="sticky right-0 bg-white/95 px-5 py-4 text-right backdrop-blur-sm dark:bg-[#1d1d1f]/95">
+                    <div className="ml-auto h-3 w-16 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
                   </th>
                 )}
               </tr>
@@ -188,14 +196,17 @@ export default function DataTable<T extends { id: string | number }>({
                 <tr key={i} className="border-b border-gray-200/30 dark:border-gray-800/30">
                   {columns.map((col) => (
                     <td key={String(col.key)} className="px-5 py-4">
-                      <div className="h-4 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ width: `${60 + Math.random() * 40}%` }} />
+                      <div
+                        className="h-4 animate-pulse rounded bg-gray-100 dark:bg-gray-800"
+                        style={{ width: `${60 + Math.random() * 40}%` }}
+                      />
                     </td>
                   ))}
                   {(onEdit || onDelete || extraActions) && (
-                    <td className="sticky right-0 bg-white/95 dark:bg-[#1d1d1f]/95 backdrop-blur-sm px-5 py-4 text-right">
+                    <td className="sticky right-0 bg-white/95 px-5 py-4 text-right backdrop-blur-sm dark:bg-[#1d1d1f]/95">
                       <div className="flex items-center justify-end gap-2">
-                        <div className="h-6 w-6 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-                        <div className="h-6 w-6 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                        <div className="h-6 w-6 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+                        <div className="h-6 w-6 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
                       </div>
                     </td>
                   )}
@@ -213,10 +224,7 @@ export default function DataTable<T extends { id: string | number }>({
       <div className="mb-5">
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
-            <Search
-              size={16}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-[#86868b]"
-            />
+            <Search size={16} className="absolute top-1/2 left-4 -translate-y-1/2 text-[#86868b]" />
             <input
               type="text"
               placeholder={searchPlaceholder}
@@ -234,13 +242,13 @@ export default function DataTable<T extends { id: string | number }>({
                 }
               }}
               aria-label={searchPlaceholder}
-              className="apple-input pl-11 pr-12"
+              className="apple-input pr-12 pl-11"
             />
             {searchInput && (
               <button
                 type="button"
                 onClick={clearSearch}
-                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[#86868b] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                className="absolute top-1/2 right-2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[#86868b] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
                 aria-label="Limpiar búsqueda"
                 title="Limpiar"
               >
@@ -273,7 +281,7 @@ export default function DataTable<T extends { id: string | number }>({
                 <th
                   key={String(col.key)}
                   scope="col"
-                  className="px-5 py-4 text-left font-semibold text-[#86868b] text-[11px] uppercase tracking-[0.18em] whitespace-nowrap"
+                  className="px-5 py-4 text-left text-[11px] font-semibold tracking-[0.18em] whitespace-nowrap text-[#86868b] uppercase"
                 >
                   {col.label}
                 </th>
@@ -281,7 +289,7 @@ export default function DataTable<T extends { id: string | number }>({
               {(onEdit || onDelete || extraActions) && (
                 <th
                   scope="col"
-                  className="sticky right-0 bg-white/95 dark:bg-[#1d1d1f]/95 backdrop-blur-sm px-5 py-4 text-right font-semibold text-[#86868b] text-[11px] uppercase tracking-[0.18em] whitespace-nowrap"
+                  className="sticky right-0 bg-white/95 px-5 py-4 text-right text-[11px] font-semibold tracking-[0.18em] whitespace-nowrap text-[#86868b] uppercase backdrop-blur-sm dark:bg-[#1d1d1f]/95"
                 >
                   Acciones
                 </th>
@@ -303,7 +311,7 @@ export default function DataTable<T extends { id: string | number }>({
               paginated.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-gray-200/30 dark:border-gray-800/30 hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors"
+                  className="border-b border-gray-200/30 transition-colors hover:bg-black/[0.02] dark:border-gray-800/30 dark:hover:bg-white/[0.03]"
                 >
                   {columns.map((col) => (
                     <td
@@ -316,7 +324,7 @@ export default function DataTable<T extends { id: string | number }>({
                     </td>
                   ))}
                   {(onEdit || onDelete || extraActions) && (
-                    <td className="sticky right-0 bg-white/95 dark:bg-[#1d1d1f]/95 backdrop-blur-sm px-5 py-4 text-right">
+                    <td className="sticky right-0 bg-white/95 px-5 py-4 text-right backdrop-blur-sm dark:bg-[#1d1d1f]/95">
                       <div className="flex items-center justify-end gap-1">
                         {extraActions && extraActions(row)}
                         {onEdit && (

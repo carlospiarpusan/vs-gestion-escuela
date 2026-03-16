@@ -83,7 +83,6 @@ export default function CajaDiariaPage() {
   const [filtroCategoria, setFiltroCategoria] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
   const [filtroYear, setFiltroYear] = useState(String(currentYear));
-  const [searchTerm, setSearchTerm] = useState("");
 
   const mesesDelAno =
     Number(filtroYear) === currentYear
@@ -105,7 +104,6 @@ export default function CajaDiariaPage() {
     setFiltroCategoria("");
     setFiltroEstado("");
     setFiltroYear(String(currentYear));
-    setSearchTerm("");
   };
 
   // ─── Catalogs ─────────────────────────────────────────────────────
@@ -166,7 +164,7 @@ export default function CajaDiariaPage() {
           estado: (filtroEstado || undefined) as EstadoIngreso | undefined,
           mes: filtroMes || undefined,
           year: Number(filtroYear),
-          search: searchTerm || undefined,
+          search: undefined,
         });
         if (fetchId !== fetchIdRef.current) return;
         setRows(result.rows);
@@ -190,7 +188,6 @@ export default function CajaDiariaPage() {
     filtroCategoria,
     filtroEstado,
     filtroYear,
-    searchTerm,
   ]);
 
   // ─── Table columns ────────────────────────────────────────────────

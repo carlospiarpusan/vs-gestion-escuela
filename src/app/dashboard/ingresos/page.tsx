@@ -241,6 +241,7 @@ export default function IngresosPage() {
       if (filtroCategoria) params.set("ingreso_categoria", filtroCategoria);
       if (filtroEstado) params.set("ingreso_estado", filtroEstado);
       if (filtroView !== "all") params.set("ingreso_view", filtroView);
+      if (filtroTipo) params.set("ledger_tipo", filtroTipo);
 
       try {
         const payload = await fetchAccountingReport(params);
@@ -264,6 +265,7 @@ export default function IngresosPage() {
     filtroMetodo,
     filtroCategoria,
     filtroEstado,
+    filtroTipo,
     filtroView,
     searchTerm,
     currentPage,
@@ -275,14 +277,7 @@ export default function IngresosPage() {
   const summary = report?.summary;
   const ledger = report?.ledger;
   const breakdown = report?.breakdown;
-
-  const filteredRows = useMemo(() => {
-    const rows = ledger?.rows || [];
-    if (!filtroTipo) return rows;
-    return rows.filter((r) => r.tipo === filtroTipo);
-  }, [ledger?.rows, filtroTipo]);
-
-  const totalCount = filtroTipo ? filteredRows.length : ledger?.totalCount || 0;
+  const totalCount = ledger?.totalCount || 0;
 
   // ─── CRUD state ───────────────────────────────────────────────────
 
@@ -329,11 +324,11 @@ export default function IngresosPage() {
     if (filtroCategoria) params.set("ingreso_categoria", filtroCategoria);
     if (filtroEstado) params.set("ingreso_estado", filtroEstado);
     if (filtroView !== "all") params.set("ingreso_view", filtroView);
+    if (filtroTipo) params.set("ledger_tipo", filtroTipo);
 
     try {
       const payload = await fetchAccountingReport(params);
-      let rows = payload.ledger?.rows || [];
-      if (filtroTipo) rows = rows.filter((r) => r.tipo === filtroTipo);
+      const rows = payload.ledger?.rows || [];
       if (rows.length === 0) return;
 
       downloadCsv(
@@ -919,11 +914,11 @@ export default function IngresosPage() {
         <DataTable
           key="libro-contable"
           columns={columns}
-          data={filteredRows}
+          data={ledger?.rows || []}
           loading={loading}
           searchPlaceholder="Buscar por concepto, contraparte, factura..."
           searchTerm={searchTerm}
-          serverSide={!filtroTipo}
+          serverSide
           totalCount={totalCount}
           currentPage={currentPage}
           onPageChange={setCurrentPage}
