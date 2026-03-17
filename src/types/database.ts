@@ -12,7 +12,7 @@ export type Rol =
 export type PlanEscuela = "gratuito" | "basico" | "profesional" | "enterprise";
 export type EstadoEscuela = "activa" | "inactiva" | "suspendida";
 export type EstadoSede = "activa" | "inactiva";
-export type EstadoAlumno = "activo" | "inactivo" | "graduado";
+export type EstadoAlumno = "activo" | "inactivo" | "graduado" | "pre_registrado";
 export type TipoRegistroAlumno = "regular" | "aptitud_conductor" | "practica_adicional";
 export type EstadoMatricula = "activo" | "cerrado" | "cancelado";
 export type EstadoInstructor = "activo" | "inactivo";
@@ -32,15 +32,39 @@ export type EstadoIngreso = "cobrado" | "pendiente" | "anulado";
 export type EstadoPagoGasto = "pendiente" | "pagado" | "anulado";
 export type EstadoImportacionFacturaCorreo = "importada" | "duplicada" | "omitida" | "error";
 export type CategoriaGasto =
-  | "combustible" | "mantenimiento_vehiculo" | "alquiler" | "servicios"
-  | "nominas" | "seguros" | "material_didactico" | "marketing"
-  | "impuestos" | "suministros" | "reparaciones" | "tramitador" | "otros";
+  | "combustible"
+  | "mantenimiento_vehiculo"
+  | "alquiler"
+  | "servicios"
+  | "nominas"
+  | "seguros"
+  | "material_didactico"
+  | "marketing"
+  | "impuestos"
+  | "suministros"
+  | "reparaciones"
+  | "tramitador"
+  | "otros";
 export type CategoriaIngreso =
-  | "matricula" | "mensualidad" | "clase_suelta" | "examen_teorico"
-  | "examen_practico" | "examen_aptitud" | "material" | "tasas_dgt" | "otros";
+  | "matricula"
+  | "mensualidad"
+  | "clase_suelta"
+  | "examen_teorico"
+  | "examen_practico"
+  | "examen_aptitud"
+  | "material"
+  | "tasas_dgt"
+  | "otros";
 export type TipoMantenimiento =
-  | "cambio_aceite" | "gasolina" | "repuesto" | "mano_obra"
-  | "lavado" | "neumaticos" | "reparacion" | "revision_general" | "otros";
+  | "cambio_aceite"
+  | "gasolina"
+  | "repuesto"
+  | "mano_obra"
+  | "lavado"
+  | "neumaticos"
+  | "reparacion"
+  | "revision_general"
+  | "otros";
 
 export interface Escuela {
   id: string;

@@ -226,7 +226,7 @@ create table public.alumnos (
   direccion text,
   tipo_permiso text not null default 'B' check (tipo_permiso in ('AM', 'A1', 'A2', 'A', 'B', 'C', 'D')),
   categorias text[] not null default '{}',
-  estado text not null default 'activo' check (estado in ('activo', 'inactivo', 'graduado')),
+  estado text not null default 'activo' check (estado in ('activo', 'inactivo', 'graduado', 'pre_registrado')),
   fecha_inscripcion date default current_date,
   notas text,
   valor_total numeric,
@@ -529,6 +529,12 @@ create table public.actividad_log (
   created_at timestamp with time zone default now()
 );
 
+create table if not exists public.api_rate_limits (
+  key text primary key,
+  count integer not null,
+  reset_at timestamptz not null
+);
+
 -- 17. MANTENIMIENTO DE VEHÍCULOS (registro por instructor)
 create table public.mantenimiento_vehiculos (
   id uuid default gen_random_uuid() primary key,
@@ -622,6 +628,9 @@ create index if not exists perfiles_escuela_sede_rol_created_idx on public.perfi
 create index if not exists perfiles_nombre_trgm_idx on public.perfiles using gin (nombre gin_trgm_ops);
 create index if not exists perfiles_email_trgm_idx on public.perfiles using gin (email gin_trgm_ops);
 create index if not exists sedes_escuela_estado_principal_idx on public.sedes (escuela_id, estado, es_principal desc);
+create unique index if not exists sedes_escuela_principal_unique_idx
+  on public.sedes (escuela_id)
+  where es_principal = true;
 create index if not exists instructores_escuela_created_idx on public.instructores (escuela_id, created_at desc);
 create index if not exists instructores_escuela_sede_created_idx on public.instructores (escuela_id, sede_id, created_at desc);
 create index if not exists instructores_nombre_trgm_idx on public.instructores using gin (nombre gin_trgm_ops);
@@ -659,6 +668,7 @@ create index if not exists gastos_numero_factura_trgm_idx
   on public.gastos using gin ((coalesce(numero_factura, '')) gin_trgm_ops);
 create index if not exists gastos_notas_trgm_idx
   on public.gastos using gin ((coalesce(notas, '')) gin_trgm_ops);
+create index if not exists api_rate_limits_reset_at_idx on public.api_rate_limits (reset_at);
 
 -- Mantiene el resumen legado del alumno sincronizado con sus contratos
 create or replace function public.sync_alumno_from_matriculas()

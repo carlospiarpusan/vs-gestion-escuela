@@ -5,221 +5,29 @@ import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
 import DataTable from "@/components/dashboard/DataTable";
-import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
-import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
-import { getContractPrefixHint, normalizeContractNumber } from "@/lib/contract-number";
+import { fetchJsonWithRetry } from "@/lib/retry";
 import { fetchSchoolCategories } from "@/lib/school-categories";
-import type {
-  Alumno,
-  EstadoAlumno,
-  Ingreso,
-  MatriculaAlumno,
-  MetodoPago,
-  TipoPermiso,
-  TipoRegistroAlumno,
-} from "@/types/database";
+import type { Ingreso, MetodoPago, TipoRegistroAlumno } from "@/types/database";
 import { BookOpen, DollarSign, Plus, X } from "lucide-react";
-
-const PAGE_SIZE = 10;
-
-const MONTH_OPTIONS = [
-  { value: "", label: "Todos los meses" },
-  { value: "01", label: "Enero" },
-  { value: "02", label: "Febrero" },
-  { value: "03", label: "Marzo" },
-  { value: "04", label: "Abril" },
-  { value: "05", label: "Mayo" },
-  { value: "06", label: "Junio" },
-  { value: "07", label: "Julio" },
-  { value: "08", label: "Agosto" },
-  { value: "09", label: "Septiembre" },
-  { value: "10", label: "Octubre" },
-  { value: "11", label: "Noviembre" },
-  { value: "12", label: "Diciembre" },
-];
-
-const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i));
-
-const estadosAlumno: EstadoAlumno[] = ["activo", "inactivo", "graduado"];
-const tiposRegistroAlumno: { value: TipoRegistroAlumno; label: string }[] = [
-  { value: "regular", label: "Alumno regular" },
-  { value: "aptitud_conductor", label: "Aptitud conductores" },
-  { value: "practica_adicional", label: "Práctica adicional" },
-];
-const metodosPago: { value: MetodoPago; label: string }[] = [
-  { value: "efectivo", label: "Efectivo" },
-  { value: "datafono", label: "Datáfono" },
-  { value: "nequi", label: "Nequi" },
-  { value: "sistecredito", label: "Sistecrédito" },
-  { value: "otro", label: "Otro" },
-];
-const TODAS_CATEGORIAS = [
-  "A1",
-  "A2",
-  "B1",
-  "C1",
-  "RC1",
-  "C2",
-  "C3",
-  "A2 y B1",
-  "A2 y C1",
-  "A2 y RC1",
-  "A2 y C2",
-  "A2 y C3",
-  "A1 y B1",
-  "A1 y C1",
-  "A1 y RC1",
-  "A1 y C2",
-  "A1 y C3",
-];
-const CATEGORIAS_APTITUD = ["C1", "C2", "C3"];
-
-type MatriculaResumen = Pick<
-  MatriculaAlumno,
-  | "id"
-  | "alumno_id"
-  | "numero_contrato"
-  | "categorias"
-  | "valor_total"
-  | "fecha_inscripcion"
-  | "estado"
-  | "notas"
-  | "tiene_tramitador"
-  | "tramitador_nombre"
-  | "tramitador_valor"
-  | "created_at"
->;
-
-type AlumnoRow = Alumno & {
-  matriculas: MatriculaResumen[];
-  categorias_resumen: string[];
-  valor_total_resumen: number;
-  total_pagado: number;
-  saldo_pendiente: number;
-};
-
-type AlumnosListResponse = {
-  totalCount: number;
-  rows: AlumnoRow[];
-};
-
-const emptyForm = {
-  tipo_registro: "regular" as TipoRegistroAlumno,
-  nombre: "",
-  apellidos: "",
-  dni: "",
-  email: "",
-  telefono: "",
-  direccion: "",
-  tipo_permiso: "B" as TipoPermiso,
-  categorias: [] as string[],
-  estado: "activo" as EstadoAlumno,
-  empresa_convenio: "",
-  nota_examen_teorico: "",
-  fecha_examen_teorico: "",
-  nota_examen_practico: "",
-  fecha_examen_practico: "",
-  notas: "",
-  numero_contrato: "",
-  fecha_inscripcion: new Date().toISOString().split("T")[0],
-  valor_total: "",
-  abono: "",
-  metodo_pago_abono: "efectivo" as MetodoPago,
-  tiene_tramitador: false,
-  tramitador_nombre: "",
-  tramitador_valor: "",
-};
-
-const emptyMatriculaForm = {
-  numero_contrato: "",
-  fecha_inscripcion: new Date().toISOString().split("T")[0],
-  categorias: [] as string[],
-  valor_total: "",
-  notas: "",
-  abono: "",
-  metodo_pago_abono: "efectivo" as MetodoPago,
-  tiene_tramitador: false,
-  tramitador_nombre: "",
-  tramitador_valor: "",
-};
-
-const inputClass = "apple-input";
-const labelClass = "apple-label";
-
-function mapTipoPermiso(categorias: string[]) {
-  const first = categorias[0] ? categorias[0].toUpperCase() : "";
-  if (first.startsWith("AM")) return "AM";
-  if (first.startsWith("A1")) return "A1";
-  if (first.startsWith("A2")) return "A2";
-  if (first.startsWith("A")) return "A";
-  if (first.startsWith("RC") || first.startsWith("C")) return "C";
-  return "B";
-}
-
-function buildAptitudReference() {
-  return `APT-${Date.now()}`;
-}
-
-function buildPracticeReference() {
-  return `PRA-${Date.now()}`;
-}
-
-function formatTipoRegistroLabel(tipo: TipoRegistroAlumno) {
-  if (tipo === "aptitud_conductor") return "Aptitud";
-  if (tipo === "practica_adicional") return "Práctica";
-  return "Curso";
-}
-
-function formatNotaExamen(nota: number | null, fecha: string | null) {
-  if (nota === null || Number.isNaN(Number(nota))) return "Sin registrar";
-  const notaLabel = Number(nota).toLocaleString("es-CO", {
-    minimumFractionDigits: Number(nota) % 1 === 0 ? 0 : 1,
-    maximumFractionDigits: 2,
-  });
-  return fecha ? `${notaLabel} · ${fecha}` : notaLabel;
-}
-
-function formatMatriculaLabel(matricula: MatriculaResumen) {
-  if (matricula.numero_contrato) return `Contrato ${matricula.numero_contrato}`;
-  if ((matricula.categorias ?? []).length > 0) return (matricula.categorias ?? []).join(", ");
-  return "Sin contrato";
-}
-
-function getCategoriasDisponiblesParaTipos(
-  tipos: TipoRegistroAlumno[],
-  categoriasEscuela: string[]
-) {
-  const tiposActivos = tipos.length > 0 ? tipos : tiposRegistroAlumno.map((tipo) => tipo.value);
-  const categorias = new Set<string>();
-
-  if (tiposActivos.includes("regular")) {
-    (categoriasEscuela.length > 0 ? categoriasEscuela : TODAS_CATEGORIAS).forEach((cat) =>
-      categorias.add(cat)
-    );
-  }
-
-  if (tiposActivos.includes("aptitud_conductor")) {
-    CATEGORIAS_APTITUD.forEach((cat) => categorias.add(cat));
-  }
-
-  return Array.from(categorias);
-}
-
-async function resolveSedeId(escuelaId: string, preferredSedeId: string | null) {
-  if (preferredSedeId) return preferredSedeId;
-
-  const supabase = createClient();
-  const { data } = await supabase
-    .from("sedes")
-    .select("id")
-    .eq("escuela_id", escuelaId)
-    .order("es_principal", { ascending: false })
-    .limit(1)
-    .single();
-
-  return data?.id || null;
-}
+import AlumnoModal from "./AlumnoModal";
+import MatriculaModal from "./MatriculaModal";
+import AbonoModal from "./AbonoModal";
+import {
+  PAGE_SIZE,
+  MONTH_OPTIONS,
+  YEAR_OPTIONS,
+  tiposRegistroAlumno,
+  emptyForm,
+  emptyMatriculaForm,
+  formatTipoRegistroLabel,
+  formatNotaExamen,
+  getCategoriasDisponiblesParaTipos,
+  resolveSedeId,
+  type AlumnoRow,
+  type AlumnosListResponse,
+  type MatriculaResumen,
+} from "./constants";
 
 export default function AlumnosPage() {
   const { perfil } = useAuth();
@@ -231,6 +39,7 @@ export default function AlumnosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [categoriasEscuela, setCategoriasEscuela] = useState<string[]>([]);
+  const [tramitadorOptions, setTramitadorOptions] = useState<string[]>([]);
   const [filtrosTipo, setFiltrosTipo] = useState<TipoRegistroAlumno[]>([]);
   const [filtrosCat, setFiltrosCat] = useState<string[]>([]);
   const [filtroMes, setFiltroMes] = useState<string>("");
@@ -273,17 +82,14 @@ export default function AlumnosPage() {
   const [abonoMonto, setAbonoMonto] = useState("");
   const [abonoMetodo, setAbonoMetodo] = useState<MetodoPago>("efectivo");
   const [abonoConcepto, setAbonoConcepto] = useState("");
+  const [abonoFecha, setAbonoFecha] = useState(new Date().toISOString().split("T")[0]);
   const [abonoSaving, setAbonoSaving] = useState(false);
   const [abonoError, setAbonoError] = useState("");
 
-  // Ref para evitar fetchs duplicados o stale
   const fetchIdRef = useRef(0);
 
-  /**
-   * Fetch paginado server-side.
-   * Solo trae la página actual de alumnos + sus matrículas e ingresos.
-   * Ordenado por created_at DESC para priorizar datos nuevos.
-   */
+  // ─── Data fetching ───────────────────────────────────────────────────
+
   const fetchAlumnos = useCallback(
     async (
       page = 0,
@@ -358,16 +164,73 @@ export default function AlumnosPage() {
     };
   }, [perfil?.escuela_id]);
 
-  /** Callback del DataTable server-side: cambio de página */
+  useEffect(() => {
+    if (!perfil?.escuela_id) return;
+
+    let cancelled = false;
+
+    const loadTramitadores = async () => {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("gastos")
+          .select("proveedor")
+          .eq("escuela_id", perfil.escuela_id)
+          .eq("categoria", "tramitador")
+          .not("proveedor", "is", null)
+          .order("proveedor", { ascending: true })
+          .limit(200);
+
+        if (error) {
+          throw error;
+        }
+
+        if (!cancelled) {
+          setTramitadorOptions(
+            Array.from(
+              new Set(
+                ((data as Array<{ proveedor: string | null }> | null) || [])
+                  .map((row) => row.proveedor?.trim())
+                  .filter((value): value is string => Boolean(value))
+              )
+            )
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setTramitadorOptions([]);
+        }
+      }
+    };
+
+    void loadTramitadores();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [perfil?.escuela_id]);
+
+  // ─── Callbacks ───────────────────────────────────────────────────────
+
   const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page);
   }, []);
 
-  /** Callback del DataTable server-side: cambio de búsqueda (ya con debounce) */
   const handleSearchChange = useCallback((term: string) => {
     setSearchTerm(term);
-    setCurrentPage(0); // volver a primera página al buscar
+    setCurrentPage(0);
   }, []);
+
+  const getTramitadorValidationMessage = useCallback(
+    (enabled: boolean, tramitadorNombre: string) => {
+      if (!enabled) return null;
+      if (!tramitadorNombre.trim()) {
+        return "Debes indicar el nombre del tramitador.";
+      }
+      return null;
+    },
+    []
+  );
 
   const categoriasFiltroDisponibles = useMemo(
     () => getCategoriasDisponiblesParaTipos(filtrosTipo, categoriasEscuela),
@@ -399,10 +262,12 @@ export default function AlumnosPage() {
     [abonoIngresos, abonoMatriculaActual]
   );
 
+  // ─── Filter toggles ─────────────────────────────────────────────────
+
   const toggleFiltroCat = (cat: string) => {
     setFiltrosCat((prev) => {
       const next = prev.includes(cat) ? prev.filter((value) => value !== cat) : [...prev, cat];
-      setCurrentPage(0); // volver a primera página al filtrar
+      setCurrentPage(0);
       return next;
     });
   };
@@ -439,6 +304,8 @@ export default function AlumnosPage() {
         : [...prev.categorias, cat],
     }));
   };
+
+  // ─── Modal openers ──────────────────────────────────────────────────
 
   const openCreate = () => {
     setEditing(null);
@@ -512,6 +379,7 @@ export default function AlumnosPage() {
     setAbonoMonto("");
     setAbonoMetodo("efectivo");
     setAbonoConcepto("");
+    setAbonoFecha(new Date().toISOString().split("T")[0]);
     setAbonoError("");
     setAbonoIngresos([]);
     setAbonoOpen(true);
@@ -529,6 +397,8 @@ export default function AlumnosPage() {
     setLoadingIngresos(false);
   }, []);
 
+  // ─── Handlers ───────────────────────────────────────────────────────
+
   const handleSave = async () => {
     if (!form.nombre || !form.apellidos || !form.dni || !form.telefono) {
       setError("Nombre, apellidos, cédula y teléfono son obligatorios.");
@@ -537,8 +407,6 @@ export default function AlumnosPage() {
 
     const isAptitud = form.tipo_registro === "aptitud_conductor";
     const isPractice = form.tipo_registro === "practica_adicional";
-    const gestionaMatricula =
-      !isAptitud && !isPractice && (!editing || editing.matriculas.length <= 1);
 
     if (!isPractice && form.categorias.length === 0) {
       setError(
@@ -574,6 +442,15 @@ export default function AlumnosPage() {
       return;
     }
 
+    const tramitadorValidationMessage = getTramitadorValidationMessage(
+      form.tiene_tramitador,
+      form.tramitador_nombre
+    );
+    if (tramitadorValidationMessage) {
+      setError(tramitadorValidationMessage);
+      return;
+    }
+
     if (!perfil?.escuela_id) {
       setError("Tu usuario no tiene escuela asignada. Contacta al administrador.");
       return;
@@ -583,247 +460,44 @@ export default function AlumnosPage() {
     setError("");
 
     try {
-      const supabase = createClient();
       const sedeId = await resolveSedeId(perfil.escuela_id, perfil.sede_id);
       if (!sedeId) {
         setError("No se encontró una sede para esta escuela. Crea una sede primero.");
         setSaving(false);
         return;
       }
-
-      let alumnoUserId = editing?.user_id || perfil.id;
-
-      if (!editing && !isAptitud && !isPractice) {
-        const authJson = await fetchJsonWithRetry<{ user_id: string }>("/api/crear-alumno-auth", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nombre: `${form.nombre} ${form.apellidos}`.trim(),
-            email: form.email || null,
-            dni: form.dni,
-            escuela_id: perfil.escuela_id,
-            sede_id: sedeId,
-          }),
-        });
-        alumnoUserId = authJson.user_id;
-      }
-
       const tramitadorValorNum = parseFloat(form.tramitador_valor) || 0;
-      const referenciaAptitud = isAptitud
-        ? form.numero_contrato.trim() || editing?.numero_contrato || buildAptitudReference()
-        : null;
-      const referenciaPractica = isPractice
-        ? form.numero_contrato.trim() || editing?.numero_contrato || buildPracticeReference()
-        : null;
-      const numeroContratoNormalizado =
-        !isAptitud && !isPractice
-          ? normalizeContractNumber(form.numero_contrato, form.categorias)
-          : null;
-      const categoriaPrincipal = isAptitud ? form.categorias.slice(0, 1) : [];
-      const hoy = new Date().toISOString().split("T")[0];
-      const alumnoPayload = {
-        user_id: alumnoUserId,
-        escuela_id: perfil.escuela_id,
-        sede_id: sedeId,
-        tipo_registro: form.tipo_registro,
-        numero_contrato: isAptitud
-          ? referenciaAptitud
-          : isPractice
-            ? referenciaPractica
-            : (editing?.numero_contrato ?? null),
-        nombre: form.nombre,
-        apellidos: form.apellidos,
-        dni: form.dni,
-        email: form.email || null,
-        telefono: form.telefono,
-        fecha_nacimiento: null,
-        direccion: form.direccion || null,
-        tipo_permiso:
-          gestionaMatricula || isAptitud
-            ? mapTipoPermiso(form.categorias)
-            : editing?.tipo_permiso || form.tipo_permiso,
-        categorias: isAptitud ? categoriaPrincipal : isPractice ? [] : (editing?.categorias ?? []),
-        estado: form.estado,
-        notas: form.notas || null,
-        valor_total:
-          isAptitud || isPractice ? valorTotalNum || null : (editing?.valor_total ?? null),
-        fecha_inscripcion:
-          isAptitud || isPractice
-            ? form.fecha_inscripcion || hoy
-            : (editing?.fecha_inscripcion ?? null),
-        empresa_convenio: isAptitud
-          ? form.empresa_convenio.trim() || null
-          : isPractice
-            ? form.empresa_convenio.trim() || "Práctica adicional"
-            : null,
-        nota_examen_teorico: isAptitud ? notaTeoricaNum : null,
-        fecha_examen_teorico: isAptitud ? form.fecha_examen_teorico || null : null,
-        nota_examen_practico: isAptitud ? notaPracticaNum : null,
-        fecha_examen_practico: isAptitud ? form.fecha_examen_practico || null : null,
-        tiene_tramitador: false,
-        tramitador_nombre: null,
-        tramitador_valor: null,
-      };
-      const matriculaPayload =
-        !isAptitud && gestionaMatricula
-          ? {
-              escuela_id: perfil.escuela_id,
-              sede_id: sedeId,
-              alumno_id: editing?.id,
-              created_by: perfil.id,
-              numero_contrato: numeroContratoNormalizado,
-              categorias: form.categorias,
-              valor_total: valorTotalNum || null,
-              fecha_inscripcion: form.fecha_inscripcion || new Date().toISOString().split("T")[0],
-              estado: "activo" as const,
-              notas: editingMatricula?.notas || null,
-              tiene_tramitador: form.tiene_tramitador,
-              tramitador_nombre: form.tiene_tramitador
-                ? form.tramitador_nombre.trim() || null
-                : null,
-              tramitador_valor: form.tiene_tramitador ? tramitadorValorNum || null : null,
-            }
-          : null;
-
-      if (editing) {
-        await runSupabaseMutationWithRetry(() =>
-          supabase.from("alumnos").update(alumnoPayload).eq("id", editing.id)
-        );
-
-        if (gestionaMatricula && matriculaPayload) {
-          if (editingMatricula) {
-            await runSupabaseMutationWithRetry(() =>
-              supabase
-                .from("matriculas_alumno")
-                .update(matriculaPayload)
-                .eq("id", editingMatricula.id)
-            );
-
-            if (form.tiene_tramitador && tramitadorValorNum > 0) {
-              const originalValor = editingMatricula.tramitador_valor ?? 0;
-              const diferencia = tramitadorValorNum - originalValor;
-              const esPrimeraVez = !editingMatricula.tiene_tramitador;
-              const montoGasto = esPrimeraVez ? tramitadorValorNum : diferencia;
-              if (montoGasto > 0) {
-                await runSupabaseMutationWithRetry(() =>
-                  supabase.from("gastos").insert([
-                    {
-                      escuela_id: perfil.escuela_id,
-                      sede_id: sedeId,
-                      user_id: perfil.id,
-                      categoria: "tramitador",
-                      concepto: `Tramitador — ${form.nombre} ${form.apellidos}`,
-                      monto: montoGasto,
-                      metodo_pago: "transferencia",
-                      proveedor: form.tramitador_nombre.trim() || null,
-                      fecha: hoy,
-                      recurrente: false,
-                      notas: `Tramitador asignado al alumno ${form.nombre} ${form.apellidos}`,
-                    },
-                  ])
-                );
-              }
-            }
-          } else {
-            await runSupabaseMutationWithRetry(() =>
-              supabase.from("matriculas_alumno").insert([
-                {
-                  ...matriculaPayload,
-                  alumno_id: editing.id,
-                },
-              ])
-            );
-
-            if (form.tiene_tramitador && tramitadorValorNum > 0) {
-              await runSupabaseMutationWithRetry(() =>
-                supabase.from("gastos").insert([
-                  {
-                    escuela_id: perfil.escuela_id,
-                    sede_id: sedeId,
-                    user_id: perfil.id,
-                    categoria: "tramitador",
-                    concepto: `Tramitador — ${form.nombre} ${form.apellidos}`,
-                    monto: tramitadorValorNum,
-                    metodo_pago: "transferencia",
-                    proveedor: form.tramitador_nombre.trim() || null,
-                    fecha: hoy,
-                    recurrente: false,
-                    notas: `Tramitador asignado al alumno ${form.nombre} ${form.apellidos}`,
-                  },
-                ])
-              );
-            }
-          }
-        }
-      } else {
-        const { data: alumnoData } = await runSupabaseMutationWithRetry(() =>
-          supabase.from("alumnos").insert([alumnoPayload]).select("id").single()
-        );
-        if (!alumnoData) throw new Error("No se pudo crear el alumno.");
-
-        let matriculaId: string | null = null;
-        if (matriculaPayload) {
-          const { data: newMatricula } = await runSupabaseMutationWithRetry(() =>
-            supabase
-              .from("matriculas_alumno")
-              .insert([
-                {
-                  ...matriculaPayload,
-                  alumno_id: alumnoData.id,
-                },
-              ])
-              .select("id")
-              .single()
-          );
-          if (!newMatricula) throw new Error("No se pudo crear la matrícula.");
-          matriculaId = newMatricula.id;
-        }
-
-        if (abonoNum > 0) {
-          await runSupabaseMutationWithRetry(() =>
-            supabase.from("ingresos").insert([
-              {
-                escuela_id: perfil.escuela_id,
-                sede_id: sedeId,
-                user_id: perfil.id,
-                alumno_id: alumnoData.id,
-                matricula_id: matriculaId,
-                categoria: isAptitud ? "examen_aptitud" : isPractice ? "clase_suelta" : "matricula",
-                concepto: isAptitud
-                  ? `Examen de aptitud — ${form.nombre} ${form.apellidos}`
-                  : isPractice
-                    ? `Práctica adicional — ${form.nombre} ${form.apellidos}`
-                    : `Matrícula — ${form.nombre} ${form.apellidos}`,
-                monto: abonoNum,
-                metodo_pago: form.metodo_pago_abono,
-                fecha: hoy,
-                estado: "cobrado",
-                notas: null,
-              },
-            ])
-          );
-        }
-
-        if (!isAptitud && !isPractice && form.tiene_tramitador && tramitadorValorNum > 0) {
-          await runSupabaseMutationWithRetry(() =>
-            supabase.from("gastos").insert([
-              {
-                escuela_id: perfil.escuela_id,
-                sede_id: sedeId,
-                user_id: perfil.id,
-                categoria: "tramitador",
-                concepto: `Tramitador — ${form.nombre} ${form.apellidos}`,
-                monto: tramitadorValorNum,
-                metodo_pago: "transferencia",
-                proveedor: form.tramitador_nombre.trim() || null,
-                fecha: hoy,
-                recurrente: false,
-                notas: `Tramitador asignado al alumno ${form.nombre} ${form.apellidos}`,
-              },
-            ])
-          );
-        }
-      }
+      await fetchJsonWithRetry("/api/alumnos/manage", {
+        method: editing ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          alumno_id: editing?.id,
+          sede_id: sedeId,
+          tipo_registro: form.tipo_registro,
+          nombre: form.nombre.trim(),
+          apellidos: form.apellidos.trim(),
+          dni: form.dni.trim(),
+          email: form.email.trim() || null,
+          telefono: form.telefono.trim(),
+          direccion: form.direccion.trim() || null,
+          categorias: form.categorias,
+          estado: form.estado,
+          empresa_convenio: form.empresa_convenio.trim() || null,
+          nota_examen_teorico: notaTeoricaNum,
+          fecha_examen_teorico: form.fecha_examen_teorico || null,
+          nota_examen_practico: notaPracticaNum,
+          fecha_examen_practico: form.fecha_examen_practico || null,
+          notas: form.notas.trim() || null,
+          numero_contrato: form.numero_contrato.trim() || null,
+          fecha_inscripcion: form.fecha_inscripcion || null,
+          valor_total: valorTotalNum || null,
+          abono: abonoNum,
+          metodo_pago_abono: form.metodo_pago_abono,
+          tiene_tramitador: form.tiene_tramitador,
+          tramitador_nombre: form.tramitador_nombre.trim() || null,
+          tramitador_valor: form.tiene_tramitador ? tramitadorValorNum || null : null,
+        }),
+      });
 
       clearAlumnoDraft(emptyForm);
       setModalOpen(false);
@@ -858,11 +532,19 @@ export default function AlumnosPage() {
       return;
     }
 
+    const tramitadorValidationMessage = getTramitadorValidationMessage(
+      matriculaForm.tiene_tramitador,
+      matriculaForm.tramitador_nombre
+    );
+    if (tramitadorValidationMessage) {
+      setMatriculaError(tramitadorValidationMessage);
+      return;
+    }
+
     setMatriculaSaving(true);
     setMatriculaError("");
 
     try {
-      const supabase = createClient();
       const sedeId =
         matriculaAlumno.sede_id || (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
       if (!sedeId) {
@@ -872,81 +554,24 @@ export default function AlumnosPage() {
       }
 
       const tramitadorValorNum = parseFloat(matriculaForm.tramitador_valor) || 0;
-      const numeroContratoNormalizado = normalizeContractNumber(
-        matriculaForm.numero_contrato,
-        matriculaForm.categorias
-      );
-      const hoy = new Date().toISOString().split("T")[0];
-      const { data: nuevaMatricula } = await runSupabaseMutationWithRetry(() =>
-        supabase
-          .from("matriculas_alumno")
-          .insert([
-            {
-              escuela_id: perfil.escuela_id,
-              sede_id: sedeId,
-              alumno_id: matriculaAlumno.id,
-              created_by: perfil.id,
-              numero_contrato: numeroContratoNormalizado,
-              categorias: matriculaForm.categorias,
-              valor_total: valorTotalNum || null,
-              fecha_inscripcion: matriculaForm.fecha_inscripcion || hoy,
-              estado: "activo",
-              notas: matriculaForm.notas.trim() || null,
-              tiene_tramitador: matriculaForm.tiene_tramitador,
-              tramitador_nombre: matriculaForm.tiene_tramitador
-                ? matriculaForm.tramitador_nombre.trim() || null
-                : null,
-              tramitador_valor: matriculaForm.tiene_tramitador ? tramitadorValorNum || null : null,
-            },
-          ])
-          .select("id")
-          .single()
-      );
-
-      if (!nuevaMatricula) {
-        throw new Error("No se pudo crear la matrícula.");
-      }
-
-      if (abonoNum > 0) {
-        await runSupabaseMutationWithRetry(() =>
-          supabase.from("ingresos").insert([
-            {
-              escuela_id: perfil.escuela_id,
-              sede_id: sedeId,
-              user_id: perfil.id,
-              alumno_id: matriculaAlumno.id,
-              matricula_id: nuevaMatricula.id,
-              categoria: "matricula",
-              concepto: `Matrícula — ${matriculaAlumno.nombre} ${matriculaAlumno.apellidos}`,
-              monto: abonoNum,
-              metodo_pago: matriculaForm.metodo_pago_abono,
-              fecha: hoy,
-              estado: "cobrado",
-              notas: null,
-            },
-          ])
-        );
-      }
-
-      if (matriculaForm.tiene_tramitador && tramitadorValorNum > 0) {
-        await runSupabaseMutationWithRetry(() =>
-          supabase.from("gastos").insert([
-            {
-              escuela_id: perfil.escuela_id,
-              sede_id: sedeId,
-              user_id: perfil.id,
-              categoria: "tramitador",
-              concepto: `Tramitador — ${matriculaAlumno.nombre} ${matriculaAlumno.apellidos}`,
-              monto: tramitadorValorNum,
-              metodo_pago: "transferencia",
-              proveedor: matriculaForm.tramitador_nombre.trim() || null,
-              fecha: hoy,
-              recurrente: false,
-              notas: `Tramitador asignado al alumno ${matriculaAlumno.nombre} ${matriculaAlumno.apellidos}`,
-            },
-          ])
-        );
-      }
+      await fetchJsonWithRetry("/api/alumnos/matriculas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          alumno_id: matriculaAlumno.id,
+          sede_id: sedeId,
+          numero_contrato: matriculaForm.numero_contrato.trim() || null,
+          fecha_inscripcion: matriculaForm.fecha_inscripcion,
+          categorias: matriculaForm.categorias,
+          valor_total: valorTotalNum || null,
+          notas: matriculaForm.notas.trim() || null,
+          abono: abonoNum,
+          metodo_pago_abono: matriculaForm.metodo_pago_abono,
+          tiene_tramitador: matriculaForm.tiene_tramitador,
+          tramitador_nombre: matriculaForm.tramitador_nombre.trim() || null,
+          tramitador_valor: matriculaForm.tiene_tramitador ? tramitadorValorNum || null : null,
+        }),
+      });
 
       setMatriculaOpen(false);
       setMatriculaAlumno(null);
@@ -972,23 +597,13 @@ export default function AlumnosPage() {
       return;
     }
 
-    if (abonoMatriculas.length > 0 && !abonoMatriculaActual) {
-      setAbonoError("Selecciona la matrícula a la que corresponde este abono.");
+    if (!abonoFecha) {
+      setAbonoError("Debes seleccionar una fecha para el abono.");
       return;
     }
 
-    const valorTotal = Number(
-      abonoMatriculaActual?.valor_total || abonoAlumno.valor_total_resumen || 0
-    );
-    const totalPagado = abonoIngresosFiltrados
-      .filter((ingreso) => ingreso.estado === "cobrado")
-      .reduce((sum, ingreso) => sum + Number(ingreso.monto), 0);
-    const saldo = valorTotal - totalPagado;
-
-    if (valorTotal > 0 && monto > saldo + 0.01) {
-      setAbonoError(
-        `El abono ($${monto.toLocaleString("es-CO")}) supera el saldo pendiente ($${saldo.toLocaleString("es-CO")}).`
-      );
+    if (abonoMatriculas.length > 0 && !abonoMatriculaActual) {
+      setAbonoError("Selecciona la matrícula a la que corresponde este abono.");
       return;
     }
 
@@ -996,39 +611,21 @@ export default function AlumnosPage() {
     setAbonoError("");
 
     try {
-      const supabase = createClient();
-      const sedeId = await resolveSedeId(perfil.escuela_id, perfil.sede_id);
-
-      const { error: insertError } = await supabase.from("ingresos").insert([
-        {
-          escuela_id: perfil.escuela_id,
-          sede_id: sedeId,
-          user_id: perfil.id,
+      await fetchJsonWithRetry("/api/alumnos/abonos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           alumno_id: abonoAlumno.id,
           matricula_id: abonoMatriculaActual?.id || null,
-          categoria:
-            abonoAlumno.tipo_registro === "aptitud_conductor"
-              ? "examen_aptitud"
-              : abonoAlumno.tipo_registro === "practica_adicional"
-                ? "clase_suelta"
-                : "matricula",
-          concepto:
-            abonoConcepto.trim() ||
-            (abonoAlumno.tipo_registro === "aptitud_conductor"
-              ? `Pago aptitud — ${abonoAlumno.nombre} ${abonoAlumno.apellidos}`
-              : abonoAlumno.tipo_registro === "practica_adicional"
-                ? `Práctica adicional — ${abonoAlumno.nombre} ${abonoAlumno.apellidos}`
-                : `Abono — ${abonoAlumno.nombre} ${abonoAlumno.apellidos}`),
           monto,
           metodo_pago: abonoMetodo,
-          fecha: new Date().toISOString().split("T")[0],
-          estado: "cobrado",
-          notas: null,
-        },
-      ]);
+          concepto: abonoConcepto.trim() || null,
+          fecha: abonoFecha,
+        }),
+      });
 
-      if (insertError) throw insertError;
-
+      // Reload ingresos after successful insert
+      const supabase = createClient();
       const { data } = await supabase
         .from("ingresos")
         .select("*")
@@ -1039,6 +636,7 @@ export default function AlumnosPage() {
       setAbonoIngresos((data as Ingreso[]) || []);
       setAbonoMonto("");
       setAbonoConcepto("");
+      setAbonoFecha(new Date().toISOString().split("T")[0]);
       fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo);
     } catch (err: unknown) {
       const message =
@@ -1071,6 +669,8 @@ export default function AlumnosPage() {
     }
   };
 
+  // ─── Column definitions ─────────────────────────────────────────────
+
   const columns = [
     {
       key: "fecha_inscripcion" as keyof AlumnoRow,
@@ -1080,7 +680,6 @@ export default function AlumnosPage() {
         const fecha =
           matriculaReciente?.fecha_inscripcion || row.fecha_inscripcion || row.created_at;
 
-        // Collect all unique contract numbers from matrículas + alumno record
         const contratos = new Set<string>();
         if (row.numero_contrato) contratos.add(row.numero_contrato);
         for (const m of row.matriculas || []) {
@@ -1209,20 +808,29 @@ export default function AlumnosPage() {
       key: "tipo_registro" as keyof AlumnoRow,
       label: "Tipo",
       render: (row: AlumnoRow) => (
-        <span
-          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-            row.tipo_registro === "aptitud_conductor"
-              ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
-              : row.tipo_registro === "practica_adicional"
-                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                : "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
-          }`}
-        >
-          {formatTipoRegistroLabel(row.tipo_registro)}
-        </span>
+        <div className="flex flex-col gap-1">
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+              row.tipo_registro === "aptitud_conductor"
+                ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+                : row.tipo_registro === "practica_adicional"
+                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                  : "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+            }`}
+          >
+            {formatTipoRegistroLabel(row.tipo_registro)}
+          </span>
+          {row.estado === "pre_registrado" && (
+            <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+              Pre-registrado
+            </span>
+          )}
+        </div>
       ),
     },
   ];
+
+  // ─── Abono derived values ───────────────────────────────────────────
 
   const valorTotalAbono = Number(
     abonoMatriculaActual?.valor_total || abonoAlumno?.valor_total_resumen || 0
@@ -1231,6 +839,8 @@ export default function AlumnosPage() {
     .filter((ingreso) => ingreso.estado === "cobrado")
     .reduce((sum, ingreso) => sum + Number(ingreso.monto), 0);
   const saldoPendienteAbono = valorTotalAbono - totalPagadoAbono;
+
+  // ─── Render ─────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -1250,6 +860,7 @@ export default function AlumnosPage() {
         </button>
       </div>
 
+      {/* ========== Filters ========== */}
       {(() => {
         const hayFiltrosActivos =
           filtrosTipo.length > 0 || filtrosCat.length > 0 || filtroMes !== "";
@@ -1381,6 +992,7 @@ export default function AlumnosPage() {
         );
       })()}
 
+      {/* ========== DataTable ========== */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
         <DataTable
           columns={columns}
@@ -1421,1118 +1033,64 @@ export default function AlumnosPage() {
         />
       </div>
 
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={
-          editing
-            ? isAptitudForm
-              ? "Editar proceso de aptitud"
-              : isPracticeForm
-                ? "Editar práctica adicional"
-                : "Editar Alumno"
-            : isAptitudForm
-              ? "Nuevo proceso de aptitud"
-              : isPracticeForm
-                ? "Nueva práctica adicional"
-                : "Nuevo Alumno"
-        }
-        maxWidth="max-w-xl"
-      >
-        <div className="space-y-4">
-          {error && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
-              {error}
-            </p>
-          )}
+      {/* ========== Modals ========== */}
+      <AlumnoModal
+        modalOpen={modalOpen}
+        setModalOpen={setModalOpen}
+        editing={editing}
+        editingHasMultipleMatriculas={editingHasMultipleMatriculas}
+        editingMatricula={editingMatricula}
+        isAptitudForm={isAptitudForm}
+        isPracticeForm={isPracticeForm}
+        form={form}
+        setForm={setForm}
+        error={error}
+        saving={saving}
+        handleSave={handleSave}
+        toggleCategoria={toggleCategoria}
+        openNewMatricula={openNewMatricula}
+        categoriasEscuela={categoriasEscuela}
+        tramitadorOptions={tramitadorOptions}
+      />
 
-          {editing && editing.tipo_registro === "regular" && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setModalOpen(false);
-                  openNewMatricula(editing);
-                }}
-                className="inline-flex items-center gap-2 rounded-lg border border-[#0071e3]/20 px-3 py-2 text-sm text-[#0071e3] transition-colors hover:bg-[#0071e3]/5"
-              >
-                <BookOpen size={14} />
-                Nueva matrícula
-              </button>
-            </div>
-          )}
+      <MatriculaModal
+        matriculaOpen={matriculaOpen}
+        setMatriculaOpen={setMatriculaOpen}
+        matriculaAlumno={matriculaAlumno}
+        matriculaForm={matriculaForm}
+        setMatriculaForm={setMatriculaForm}
+        matriculaSaving={matriculaSaving}
+        matriculaError={matriculaError}
+        handleSaveMatricula={handleSaveMatricula}
+        toggleMatriculaCategoria={toggleMatriculaCategoria}
+        categoriasEscuela={categoriasEscuela}
+        tramitadorOptions={tramitadorOptions}
+      />
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={labelClass}>Nombre *</label>
-              <input
-                type="text"
-                value={form.nombre}
-                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Apellidos *</label>
-              <input
-                type="text"
-                value={form.apellidos}
-                onChange={(e) => setForm({ ...form, apellidos: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={labelClass}>Cédula *</label>
-              <input
-                type="text"
-                value={form.dni}
-                onChange={(e) => setForm({ ...form, dni: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Teléfono *</label>
-              <input
-                type="text"
-                value={form.telefono}
-                onChange={(e) => setForm({ ...form, telefono: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={labelClass}>Correo</label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Dirección</label>
-              <input
-                type="text"
-                value={form.direccion}
-                onChange={(e) => setForm({ ...form, direccion: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={labelClass}>Tipo de registro</label>
-              <select
-                value={form.tipo_registro}
-                onChange={(e) => {
-                  const nextType = e.target.value as TipoRegistroAlumno;
-                  setForm((prev) => ({
-                    ...prev,
-                    tipo_registro: nextType,
-                    categorias:
-                      nextType === "aptitud_conductor"
-                        ? prev.categorias.slice(0, 1)
-                        : prev.categorias,
-                    empresa_convenio:
-                      nextType === "aptitud_conductor"
-                        ? prev.empresa_convenio || "Supertaxis"
-                        : nextType === "practica_adicional"
-                          ? prev.empresa_convenio || "Práctica adicional"
-                          : "",
-                    tiene_tramitador: nextType === "regular" ? prev.tiene_tramitador : false,
-                    tramitador_nombre: nextType === "regular" ? prev.tramitador_nombre : "",
-                    tramitador_valor: nextType === "regular" ? prev.tramitador_valor : "",
-                  }));
-                }}
-                disabled={Boolean(editing)}
-                className={`${inputClass} ${editing ? "cursor-not-allowed opacity-70" : ""}`}
-              >
-                {tiposRegistroAlumno.map((tipo) => (
-                  <option key={tipo.value} value={tipo.value}>
-                    {tipo.label}
-                  </option>
-                ))}
-              </select>
-              {editing && (
-                <p className="mt-1 text-[11px] text-[#86868b]">
-                  El tipo se fija al crear el registro para no romper su historial.
-                </p>
-              )}
-            </div>
-            <div>
-              <label className={labelClass}>
-                {isAptitudForm
-                  ? "Convenio / empresa"
-                  : isPracticeForm
-                    ? "Servicio / origen"
-                    : "Estado"}
-              </label>
-              {isAptitudForm || isPracticeForm ? (
-                <input
-                  type="text"
-                  value={form.empresa_convenio}
-                  onChange={(e) => setForm({ ...form, empresa_convenio: e.target.value })}
-                  placeholder={isAptitudForm ? "Supertaxis" : "Práctica adicional"}
-                  className={inputClass}
-                />
-              ) : (
-                <select
-                  value={form.estado}
-                  onChange={(e) => setForm({ ...form, estado: e.target.value as EstadoAlumno })}
-                  className={inputClass}
-                >
-                  {estadosAlumno.map((estado) => (
-                    <option key={estado} value={estado}>
-                      {estado}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </div>
-
-          {editingHasMultipleMatriculas ? (
-            <div className="space-y-3">
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
-                Este alumno tiene varias matrículas. Aquí solo se actualizan sus datos personales;
-                contrato, valor y categorías se gestionan por matrícula.
-              </div>
-              <div className="space-y-2">
-                {editing?.matriculas.map((matricula) => (
-                  <div
-                    key={matricula.id}
-                    className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-4 py-3 dark:bg-[#0a0a0a]"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                        {formatMatriculaLabel(matricula)}
-                      </p>
-                      <p className="text-xs text-[#86868b]">
-                        {matricula.fecha_inscripcion || "Sin fecha"} ·{" "}
-                        {(matricula.categorias ?? []).join(", ") || "Sin categorías"}
-                      </p>
-                    </div>
-                    <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      {matricula.valor_total
-                        ? `$${Number(matricula.valor_total).toLocaleString("es-CO")}`
-                        : "—"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : isAptitudForm ? (
-            <div className="space-y-4">
-              <div>
-                <label className={labelClass}>Categoría evaluada *</label>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {Array.from(new Set([...CATEGORIAS_APTITUD, ...form.categorias])).map((cat) => {
-                    const selected = form.categorias.includes(cat);
-                    return (
-                      <button
-                        key={`aptitud-${cat}`}
-                        type="button"
-                        onClick={() => toggleCategoria(cat)}
-                        className={`rounded-lg border-2 px-3 py-1.5 text-xs font-semibold transition-colors ${
-                          selected
-                            ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                            : "border-gray-200 text-[#86868b] hover:border-gray-300 dark:border-gray-700"
-                        }`}
-                      >
-                        {cat}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>Referencia interna</label>
-                  <input
-                    type="text"
-                    value={form.numero_contrato}
-                    onChange={(e) => setForm({ ...form, numero_contrato: e.target.value })}
-                    placeholder="Se genera si la dejas vacía"
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Fecha del proceso</label>
-                  <input
-                    type="date"
-                    value={form.fecha_inscripcion}
-                    onChange={(e) => setForm({ ...form, fecha_inscripcion: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>Estado</label>
-                  <select
-                    value={form.estado}
-                    onChange={(e) => setForm({ ...form, estado: e.target.value as EstadoAlumno })}
-                    className={inputClass}
-                  >
-                    {estadosAlumno.map((estado) => (
-                      <option key={estado} value={estado}>
-                        {estado}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>Valor del servicio</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="120000"
-                    value={form.valor_total}
-                    onChange={(e) => setForm({ ...form, valor_total: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-4 rounded-xl bg-gray-50 px-4 py-4 dark:bg-[#0a0a0a]">
-                <div>
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                    Resultados del examen
-                  </p>
-                  <p className="mt-1 text-xs text-[#86868b]">
-                    Registra la calificación de 0 a 100 para cada prueba.
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className={labelClass}>Calificación teórica</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      placeholder="0 - 100"
-                      value={form.nota_examen_teorico}
-                      onChange={(e) => setForm({ ...form, nota_examen_teorico: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Fecha examen teórico</label>
-                    <input
-                      type="date"
-                      value={form.fecha_examen_teorico}
-                      onChange={(e) => setForm({ ...form, fecha_examen_teorico: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className={labelClass}>Calificación práctica</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      placeholder="0 - 100"
-                      value={form.nota_examen_practico}
-                      onChange={(e) => setForm({ ...form, nota_examen_practico: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Fecha examen práctico</label>
-                    <input
-                      type="date"
-                      value={form.fecha_examen_practico}
-                      onChange={(e) => setForm({ ...form, fecha_examen_practico: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : isPracticeForm ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>Referencia interna</label>
-                  <input
-                    type="text"
-                    value={form.numero_contrato}
-                    onChange={(e) => setForm({ ...form, numero_contrato: e.target.value })}
-                    placeholder="Se genera si la dejas vacía"
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Fecha del servicio</label>
-                  <input
-                    type="date"
-                    value={form.fecha_inscripcion}
-                    onChange={(e) => setForm({ ...form, fecha_inscripcion: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>Estado</label>
-                  <select
-                    value={form.estado}
-                    onChange={(e) => setForm({ ...form, estado: e.target.value as EstadoAlumno })}
-                    className={inputClass}
-                  >
-                    {estadosAlumno.map((estado) => (
-                      <option key={estado} value={estado}>
-                        {estado}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>Valor del servicio</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={form.valor_total}
-                    onChange={(e) => setForm({ ...form, valor_total: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-[#4a4a4f] dark:bg-[#0a0a0a] dark:text-[#d2d2d7]">
-                Este tipo de registro sirve para personas o alumnos que compran horas prácticas por
-                fuera del curso principal. No crea matrícula ni exige categoría.
-              </div>
-            </div>
-          ) : (
-            <>
-              <div>
-                <label className={labelClass}>
-                  Categoría del curso *{" "}
-                  <span className="font-normal normal-case">
-                    ({form.categorias.length} seleccionada{form.categorias.length !== 1 ? "s" : ""})
-                  </span>
-                </label>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {(categoriasEscuela.length > 0 ? categoriasEscuela : TODAS_CATEGORIAS).map(
-                    (cat) => {
-                      const selected = form.categorias.includes(cat);
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => toggleCategoria(cat)}
-                          className={`rounded-lg border-2 px-3 py-1.5 text-xs font-semibold transition-colors ${
-                            selected
-                              ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                              : "border-gray-200 text-[#86868b] hover:border-gray-300 dark:border-gray-700"
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      );
-                    }
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>N° contrato</label>
-                  <input
-                    type="text"
-                    value={form.numero_contrato}
-                    onChange={(e) => setForm({ ...form, numero_contrato: e.target.value })}
-                    onBlur={(e) =>
-                      setForm({
-                        ...form,
-                        numero_contrato:
-                          normalizeContractNumber(e.target.value, form.categorias) ?? "",
-                      })
-                    }
-                    placeholder={getContractPrefixHint(form.categorias)}
-                    className={inputClass}
-                  />
-                  <p className="mt-1 text-xs text-[#86868b]">
-                    Se guarda con prefijo obligatorio segun la categoria:{" "}
-                    {getContractPrefixHint(form.categorias)}.
-                  </p>
-                </div>
-                <div>
-                  <label className={labelClass}>Fecha inscripción</label>
-                  <input
-                    type="date"
-                    value={form.fecha_inscripcion}
-                    onChange={(e) => setForm({ ...form, fecha_inscripcion: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>Estado</label>
-                  <select
-                    value={form.estado}
-                    onChange={(e) => setForm({ ...form, estado: e.target.value as EstadoAlumno })}
-                    className={inputClass}
-                  >
-                    {estadosAlumno.map((estado) => (
-                      <option key={estado} value={estado}>
-                        {estado}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>Valor total del curso</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={form.valor_total}
-                    onChange={(e) => setForm({ ...form, valor_total: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200 pt-4 dark:border-gray-800">
-                <label className="flex cursor-pointer items-center gap-3 select-none">
-                  <div
-                    className="relative"
-                    onClick={() => setForm({ ...form, tiene_tramitador: !form.tiene_tramitador })}
-                  >
-                    <div
-                      className={`h-6 w-10 rounded-full transition-colors ${form.tiene_tramitador ? "bg-[#0071e3]" : "bg-gray-200 dark:bg-gray-700"}`}
-                    >
-                      <div
-                        className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.tiene_tramitador ? "translate-x-5" : "translate-x-1"}`}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      Tiene tramitador
-                    </p>
-                    <p className="text-xs text-[#86868b]">
-                      El costo se registrará automáticamente en Gastos
-                    </p>
-                  </div>
-                </label>
-
-                {form.tiene_tramitador && (
-                  <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className={labelClass}>Nombre del tramitador</label>
-                      <input
-                        type="text"
-                        value={form.tramitador_nombre}
-                        onChange={(e) => setForm({ ...form, tramitador_nombre: e.target.value })}
-                        placeholder="Nombre o agencia"
-                        className={inputClass}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClass}>
-                        Valor{" "}
-                        {editingMatricula && (editingMatricula.tramitador_valor ?? 0) > 0
-                          ? "(ajuste sobre el anterior)"
-                          : "(va a Gastos)"}
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="0"
-                        value={form.tramitador_valor}
-                        onChange={(e) => setForm({ ...form, tramitador_valor: e.target.value })}
-                        className={inputClass}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {!editingHasMultipleMatriculas && !isAptitudForm && !isPracticeForm && (
-            <div className="flex items-end">
-              <p className="text-xs text-[#86868b]">
-                {editing
-                  ? "La ficha personal se actualiza siempre; los valores del curso viven en la matrícula."
-                  : "Al crear el alumno se genera también su primera matrícula."}
-              </p>
-            </div>
-          )}
-
-          {editingHasMultipleMatriculas && (
-            <div>
-              <label className={labelClass}>Estado</label>
-              <select
-                value={form.estado}
-                onChange={(e) => setForm({ ...form, estado: e.target.value as EstadoAlumno })}
-                className={inputClass}
-              >
-                {estadosAlumno.map((estado) => (
-                  <option key={estado} value={estado}>
-                    {estado}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div>
-            <label className={labelClass}>Notas</label>
-            <textarea
-              value={form.notas}
-              onChange={(e) => setForm({ ...form, notas: e.target.value })}
-              rows={2}
-              className={`${inputClass} resize-none`}
-            />
-          </div>
-
-          {!editing && (
-            <div className="border-t border-gray-200 pt-4 dark:border-gray-800">
-              <p className="mb-3 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
-                {isAptitudForm || isPracticeForm ? "Pago inicial" : "Abono inicial"}
-              </p>
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className={labelClass}>
-                      {isAptitudForm || isPracticeForm ? "Monto del pago" : "Monto del abono"}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={form.abono}
-                      onChange={(e) => setForm({ ...form, abono: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Método de pago</label>
-                    <select
-                      value={form.metodo_pago_abono}
-                      onChange={(e) =>
-                        setForm({ ...form, metodo_pago_abono: e.target.value as MetodoPago })
-                      }
-                      className={inputClass}
-                    >
-                      {metodosPago.map((metodo) => (
-                        <option key={metodo.value} value={metodo.value}>
-                          {metodo.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                {parseFloat(String(form.valor_total)) > 0 && (
-                  <p className="text-xs text-[#86868b]">
-                    Saldo pendiente tras {isAptitudForm || isPracticeForm ? "pago" : "abono"}:{" "}
-                    <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      $
-                      {Math.max(
-                        0,
-                        parseFloat(String(form.valor_total)) - (parseFloat(String(form.abono)) || 0)
-                      ).toLocaleString("es-CO")}
-                    </span>
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              onClick={() => setModalOpen(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
-            >
-              {saving
-                ? "Guardando..."
-                : editing
-                  ? "Guardar Cambios"
-                  : isAptitudForm
-                    ? "Crear Proceso de Aptitud"
-                    : isPracticeForm
-                      ? "Crear Registro de Práctica"
-                      : "Crear Alumno"}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={matriculaOpen}
-        onClose={() => setMatriculaOpen(false)}
-        title={`Nueva matrícula — ${matriculaAlumno?.nombre} ${matriculaAlumno?.apellidos}`}
-        maxWidth="max-w-xl"
-      >
-        <div className="space-y-4">
-          {matriculaError && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
-              {matriculaError}
-            </p>
-          )}
-
-          {matriculaAlumno && matriculaAlumno.matriculas.length > 0 && (
-            <div className="rounded-xl bg-gray-50 px-4 py-3 dark:bg-[#0a0a0a]">
-              <p className="mb-2 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
-                Matrículas actuales
-              </p>
-              <div className="space-y-2">
-                {matriculaAlumno.matriculas.map((matricula) => (
-                  <div key={matricula.id} className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                        {formatMatriculaLabel(matricula)}
-                      </p>
-                      <p className="text-xs text-[#86868b]">
-                        {matricula.fecha_inscripcion || "Sin fecha"} ·{" "}
-                        {(matricula.categorias ?? []).join(", ") || "Sin categorías"}
-                      </p>
-                    </div>
-                    <span className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      {matricula.valor_total
-                        ? `$${Number(matricula.valor_total).toLocaleString("es-CO")}`
-                        : "—"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className={labelClass}>
-              Categoría del curso *{" "}
-              <span className="font-normal normal-case">
-                ({matriculaForm.categorias.length} seleccionada
-                {matriculaForm.categorias.length !== 1 ? "s" : ""})
-              </span>
-            </label>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {(categoriasEscuela.length > 0 ? categoriasEscuela : TODAS_CATEGORIAS).map((cat) => {
-                const selected = matriculaForm.categorias.includes(cat);
-                return (
-                  <button
-                    key={`matricula-${cat}`}
-                    type="button"
-                    onClick={() => toggleMatriculaCategoria(cat)}
-                    className={`rounded-lg border-2 px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      selected
-                        ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                        : "border-gray-200 text-[#86868b] hover:border-gray-300 dark:border-gray-700"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={labelClass}>N° contrato</label>
-              <input
-                type="text"
-                value={matriculaForm.numero_contrato}
-                onChange={(e) =>
-                  setMatriculaForm({ ...matriculaForm, numero_contrato: e.target.value })
-                }
-                onBlur={(e) =>
-                  setMatriculaForm({
-                    ...matriculaForm,
-                    numero_contrato:
-                      normalizeContractNumber(e.target.value, matriculaForm.categorias) ?? "",
-                  })
-                }
-                placeholder={getContractPrefixHint(matriculaForm.categorias)}
-                className={inputClass}
-              />
-              <p className="mt-1 text-xs text-[#86868b]">
-                Se guarda con prefijo obligatorio segun la categoria:{" "}
-                {getContractPrefixHint(matriculaForm.categorias)}.
-              </p>
-            </div>
-            <div>
-              <label className={labelClass}>Fecha inscripción</label>
-              <input
-                type="date"
-                value={matriculaForm.fecha_inscripcion}
-                onChange={(e) =>
-                  setMatriculaForm({ ...matriculaForm, fecha_inscripcion: e.target.value })
-                }
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={labelClass}>Valor total del curso</label>
-              <input
-                type="number"
-                min="0"
-                placeholder="0"
-                value={matriculaForm.valor_total}
-                onChange={(e) =>
-                  setMatriculaForm({ ...matriculaForm, valor_total: e.target.value })
-                }
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Notas del contrato</label>
-              <input
-                type="text"
-                value={matriculaForm.notas}
-                onChange={(e) => setMatriculaForm({ ...matriculaForm, notas: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div className="border-t border-gray-200 pt-4 dark:border-gray-800">
-            <label className="flex cursor-pointer items-center gap-3 select-none">
-              <div
-                className="relative"
-                onClick={() =>
-                  setMatriculaForm({
-                    ...matriculaForm,
-                    tiene_tramitador: !matriculaForm.tiene_tramitador,
-                  })
-                }
-              >
-                <div
-                  className={`h-6 w-10 rounded-full transition-colors ${matriculaForm.tiene_tramitador ? "bg-[#0071e3]" : "bg-gray-200 dark:bg-gray-700"}`}
-                >
-                  <div
-                    className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${matriculaForm.tiene_tramitador ? "translate-x-5" : "translate-x-1"}`}
-                  />
-                </div>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  Tiene tramitador
-                </p>
-                <p className="text-xs text-[#86868b]">
-                  El costo se registrará automáticamente en Gastos
-                </p>
-              </div>
-            </label>
-
-            {matriculaForm.tiene_tramitador && (
-              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>Nombre del tramitador</label>
-                  <input
-                    type="text"
-                    value={matriculaForm.tramitador_nombre}
-                    onChange={(e) =>
-                      setMatriculaForm({ ...matriculaForm, tramitador_nombre: e.target.value })
-                    }
-                    placeholder="Nombre o agencia"
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Valor del tramitador</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={matriculaForm.tramitador_valor}
-                    onChange={(e) =>
-                      setMatriculaForm({ ...matriculaForm, tramitador_valor: e.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-gray-200 pt-4 dark:border-gray-800">
-            <p className="mb-3 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
-              Abono inicial
-            </p>
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>Monto del abono</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={matriculaForm.abono}
-                    onChange={(e) => setMatriculaForm({ ...matriculaForm, abono: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Método de pago</label>
-                  <select
-                    value={matriculaForm.metodo_pago_abono}
-                    onChange={(e) =>
-                      setMatriculaForm({
-                        ...matriculaForm,
-                        metodo_pago_abono: e.target.value as MetodoPago,
-                      })
-                    }
-                    className={inputClass}
-                  >
-                    {metodosPago.map((metodo) => (
-                      <option key={`matricula-${metodo.value}`} value={metodo.value}>
-                        {metodo.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {parseFloat(String(matriculaForm.valor_total)) > 0 && (
-                <p className="text-xs text-[#86868b]">
-                  Saldo pendiente tras abono:{" "}
-                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                    $
-                    {Math.max(
-                      0,
-                      parseFloat(String(matriculaForm.valor_total)) -
-                        (parseFloat(String(matriculaForm.abono)) || 0)
-                    ).toLocaleString("es-CO")}
-                  </span>
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              onClick={() => setMatriculaOpen(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSaveMatricula}
-              disabled={matriculaSaving}
-              className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
-            >
-              {matriculaSaving ? "Guardando..." : "Crear Matrícula"}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={abonoOpen}
-        onClose={() => setAbonoOpen(false)}
-        title={`${abonoAlumno?.tipo_registro === "regular" ? "Abonos" : "Pagos"} — ${abonoAlumno?.nombre} ${abonoAlumno?.apellidos}`}
-        maxWidth="max-w-lg"
-      >
-        <div className="space-y-4">
-          {abonoMatriculas.length > 1 && (
-            <div>
-              <label className={labelClass}>Matrícula</label>
-              <select
-                value={abonoMatriculaId}
-                onChange={(e) => setAbonoMatriculaId(e.target.value)}
-                className={inputClass}
-              >
-                {abonoMatriculas.map((matricula) => (
-                  <option key={matricula.id} value={matricula.id}>
-                    {formatMatriculaLabel(matricula)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {valorTotalAbono > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl bg-gray-50 p-3 text-center dark:bg-[#0a0a0a]">
-                <p className="mb-1 text-[10px] tracking-wider text-[#86868b] uppercase">
-                  Valor Curso
-                </p>
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  ${valorTotalAbono.toLocaleString("es-CO")}
-                </p>
-              </div>
-              <div className="rounded-xl bg-green-50 p-3 text-center dark:bg-green-900/20">
-                <p className="mb-1 text-[10px] tracking-wider text-green-600 uppercase dark:text-green-400">
-                  Pagado
-                </p>
-                <p className="text-sm font-semibold text-green-700 dark:text-green-400">
-                  ${totalPagadoAbono.toLocaleString("es-CO")}
-                </p>
-              </div>
-              <div
-                className={`rounded-xl p-3 text-center ${saldoPendienteAbono <= 0 ? "bg-green-50 dark:bg-green-900/20" : "bg-amber-50 dark:bg-amber-900/20"}`}
-              >
-                <p
-                  className={`mb-1 text-[10px] tracking-wider uppercase ${saldoPendienteAbono <= 0 ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}
-                >
-                  {saldoPendienteAbono <= 0 ? "¡Al día!" : "Pendiente"}
-                </p>
-                <p
-                  className={`text-sm font-semibold ${saldoPendienteAbono <= 0 ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}`}
-                >
-                  ${Math.max(0, saldoPendienteAbono).toLocaleString("es-CO")}
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <p className="mb-2 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
-              Historial de pagos
-            </p>
-            {loadingIngresos ? (
-              <div className="flex justify-center py-4">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#0071e3] border-t-transparent" />
-              </div>
-            ) : abonoIngresosFiltrados.length === 0 ? (
-              <p className="rounded-xl bg-gray-50 py-3 text-center text-xs text-[#86868b] dark:bg-[#0a0a0a]">
-                Sin pagos registrados
-              </p>
-            ) : (
-              <div className="max-h-44 space-y-1.5 overflow-y-auto">
-                {abonoIngresosFiltrados.map((ingreso) => (
-                  <div
-                    key={ingreso.id}
-                    className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-[#0a0a0a]"
-                  >
-                    <div>
-                      <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                        {ingreso.concepto}
-                      </p>
-                      <p className="text-[10px] text-[#86868b]">
-                        {ingreso.fecha} ·{" "}
-                        {metodosPago.find((metodo) => metodo.value === ingreso.metodo_pago)
-                          ?.label || ingreso.metodo_pago}
-                      </p>
-                    </div>
-                    <span className="ml-3 shrink-0 text-sm font-semibold text-green-600 dark:text-green-400">
-                      +${ingreso.monto.toLocaleString("es-CO")}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-3 border-t border-gray-200 pt-4 dark:border-gray-800">
-            <p className="text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
-              {abonoAlumno?.tipo_registro === "regular"
-                ? "Registrar nuevo abono"
-                : "Registrar nuevo pago"}
-            </p>
-
-            {abonoError && (
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
-                {abonoError}
-              </p>
-            )}
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label className={labelClass}>Monto *</label>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="0"
-                  value={abonoMonto}
-                  onChange={(e) => setAbonoMonto(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Método de pago</label>
-                <select
-                  value={abonoMetodo}
-                  onChange={(e) => setAbonoMetodo(e.target.value as MetodoPago)}
-                  className={inputClass}
-                >
-                  {metodosPago.map((metodo) => (
-                    <option key={metodo.value} value={metodo.value}>
-                      {metodo.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className={labelClass}>Concepto (opcional)</label>
-              <input
-                type="text"
-                placeholder={
-                  abonoAlumno?.tipo_registro === "aptitud_conductor"
-                    ? `Pago aptitud — ${abonoAlumno?.nombre} ${abonoAlumno?.apellidos}`
-                    : abonoAlumno?.tipo_registro === "practica_adicional"
-                      ? `Práctica adicional — ${abonoAlumno?.nombre} ${abonoAlumno?.apellidos}`
-                      : `Abono — ${abonoAlumno?.nombre} ${abonoAlumno?.apellidos}`
-                }
-                value={abonoConcepto}
-                onChange={(e) => setAbonoConcepto(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-
-            {valorTotalAbono > 0 && parseFloat(abonoMonto) > 0 && (
-              <p className="text-xs text-[#86868b]">
-                Saldo pendiente tras abono:{" "}
-                <span
-                  className={`font-semibold ${saldoPendienteAbono - parseFloat(abonoMonto) <= 0 ? "text-green-600" : "text-amber-600"}`}
-                >
-                  $
-                  {Math.max(0, saldoPendienteAbono - (parseFloat(abonoMonto) || 0)).toLocaleString(
-                    "es-CO"
-                  )}
-                </span>
-              </p>
-            )}
-
-            <div className="flex justify-end">
-              <button
-                onClick={handleSaveAbono}
-                disabled={abonoSaving || !abonoMonto}
-                className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
-              >
-                {abonoSaving
-                  ? "Registrando..."
-                  : abonoAlumno?.tipo_registro === "regular"
-                    ? "Registrar Abono"
-                    : "Registrar Pago"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Modal>
+      <AbonoModal
+        abonoOpen={abonoOpen}
+        setAbonoOpen={setAbonoOpen}
+        abonoAlumno={abonoAlumno}
+        abonoMatriculas={abonoMatriculas}
+        abonoMatriculaId={abonoMatriculaId}
+        setAbonoMatriculaId={setAbonoMatriculaId}
+        abonoIngresosFiltrados={abonoIngresosFiltrados}
+        loadingIngresos={loadingIngresos}
+        valorTotalAbono={valorTotalAbono}
+        totalPagadoAbono={totalPagadoAbono}
+        saldoPendienteAbono={saldoPendienteAbono}
+        abonoMonto={abonoMonto}
+        setAbonoMonto={setAbonoMonto}
+        abonoMetodo={abonoMetodo}
+        setAbonoMetodo={setAbonoMetodo}
+        abonoConcepto={abonoConcepto}
+        setAbonoConcepto={setAbonoConcepto}
+        abonoFecha={abonoFecha}
+        setAbonoFecha={setAbonoFecha}
+        abonoSaving={abonoSaving}
+        abonoError={abonoError}
+        handleSaveAbono={handleSaveAbono}
+      />
 
       <DeleteConfirm
         open={deleteOpen}
