@@ -60,11 +60,14 @@ const metodos: { value: MetodoPago; label: string }[] = [
 const estadosIngreso: EstadoIngreso[] = ["cobrado", "pendiente", "anulado"];
 
 const emptyStats: IngresoDiarioStats = {
-  totalCobrado: 0,
-  totalPendiente: 0,
-  totalAnulado: 0,
+  totalEfectivo: 0,
+  totalDatafono: 0,
+  totalNequi: 0,
+  totalSistecredito: 0,
+  totalOtro: 0,
+  totalRegistrado: 0,
   diasConMovimientos: 0,
-  promedioCobradoPorDia: 0,
+  promedioPorDia: 0,
   mejorDiaFecha: null,
   mejorDiaMonto: 0,
 };
@@ -203,33 +206,51 @@ export default function CajaDiariaPage() {
       },
       {
         key: "movimientos" as keyof IngresoDiarioRow,
-        label: "Movimientos",
+        label: "Mov.",
         render: (row: IngresoDiarioRow) => <span>{row.movimientos}</span>,
       },
       {
-        key: "total_cobrado" as keyof IngresoDiarioRow,
-        label: "Cobrado",
+        key: "total_efectivo" as keyof IngresoDiarioRow,
+        label: "Efectivo",
         render: (row: IngresoDiarioRow) => (
           <span className="font-semibold text-green-600 dark:text-green-400">
-            {fmt(row.total_cobrado)}
+            {fmt(row.total_efectivo)}
           </span>
         ),
       },
       {
-        key: "total_pendiente" as keyof IngresoDiarioRow,
-        label: "Pendiente",
+        key: "total_datafono" as keyof IngresoDiarioRow,
+        label: "Datáfono",
         render: (row: IngresoDiarioRow) => (
-          <span className="font-semibold text-yellow-600 dark:text-yellow-400">
-            {fmt(row.total_pendiente)}
+          <span className="font-semibold text-blue-600 dark:text-blue-400">
+            {fmt(row.total_datafono)}
           </span>
         ),
       },
       {
-        key: "total_anulado" as keyof IngresoDiarioRow,
-        label: "Anulado",
+        key: "total_nequi" as keyof IngresoDiarioRow,
+        label: "Nequi",
         render: (row: IngresoDiarioRow) => (
-          <span className="font-semibold text-red-500 dark:text-red-400">
-            {fmt(row.total_anulado)}
+          <span className="font-semibold text-purple-600 dark:text-purple-400">
+            {fmt(row.total_nequi)}
+          </span>
+        ),
+      },
+      {
+        key: "total_sistecredito" as keyof IngresoDiarioRow,
+        label: "Sistecrédito",
+        render: (row: IngresoDiarioRow) => (
+          <span className="font-semibold text-amber-600 dark:text-amber-400">
+            {fmt(row.total_sistecredito)}
+          </span>
+        ),
+      },
+      {
+        key: "total_otro" as keyof IngresoDiarioRow,
+        label: "Otro",
+        render: (row: IngresoDiarioRow) => (
+          <span className="font-semibold text-gray-500 dark:text-gray-400">
+            {fmt(row.total_otro)}
           </span>
         ),
       },
@@ -253,7 +274,7 @@ export default function CajaDiariaPage() {
       <AccountingWorkspaceHeader
         badge="Control de caja"
         title="Caja diaria"
-        description="Consolidado diario de ingresos cobrados, pendientes y anulados."
+        description="Consolidado diario de ingresos cobrados, desglosado por método de pago."
       />
 
       {/* Filters */}
@@ -369,16 +390,16 @@ export default function CajaDiariaPage() {
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <AccountingStatCard
           eyebrow="Periodo"
-          label="Cobrado"
-          value={loading ? "..." : fmt(stats.totalCobrado)}
-          detail={`Pendiente: ${fmt(stats.totalPendiente)} · Anulado: ${fmt(stats.totalAnulado)}`}
+          label="Total cobrado"
+          value={loading ? "..." : fmt(stats.totalRegistrado)}
+          detail={`Efectivo: ${fmt(stats.totalEfectivo)} · Nequi: ${fmt(stats.totalNequi)}`}
           tone="success"
           icon={<Banknote size={18} />}
         />
         <AccountingStatCard
           eyebrow="Periodo"
           label="Promedio diario"
-          value={loading ? "..." : fmt(stats.promedioCobradoPorDia)}
+          value={loading ? "..." : fmt(stats.promedioPorDia)}
           detail={`${stats.diasConMovimientos} día${stats.diasConMovimientos === 1 ? "" : "s"} con movimiento.`}
           tone="primary"
           icon={<TrendingUp size={18} />}
@@ -395,7 +416,7 @@ export default function CajaDiariaPage() {
           eyebrow="Periodo"
           label="Días con movimiento"
           value={loading ? "..." : String(stats.diasConMovimientos)}
-          detail={`Total registrado: ${fmt(stats.totalCobrado + stats.totalPendiente + stats.totalAnulado)}`}
+          detail={`Datáfono: ${fmt(stats.totalDatafono)} · Sistecrédito: ${fmt(stats.totalSistecredito)}`}
           tone="default"
           icon={<Calendar size={18} />}
         />
