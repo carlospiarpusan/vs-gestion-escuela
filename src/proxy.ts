@@ -22,10 +22,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { canAccessDashboardPath, getDashboardFallbackPath } from "@/lib/access-control";
+import { createServerTiming } from "@/lib/server-timing";
 
 function applySecurityHeaders(response: NextResponse) {
-  response.headers.set("Content-Security-Policy", "base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
+  response.headers.set(
+    "Content-Security-Policy",
+    "base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+  );
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
@@ -35,6 +38,8 @@ function applySecurityHeaders(response: NextResponse) {
 }
 
 export async function proxy(request: NextRequest) {
+  const timing = createServerTiming();
+
   // --- Crear respuesta mutable para manipular cookies ---
   let response = NextResponse.next({
     request: { headers: request.headers },
@@ -56,9 +61,7 @@ export async function proxy(request: NextRequest) {
         },
         // Escribir cookies tanto en la request como en la response
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({
             request: { headers: request.headers },
           });
@@ -71,7 +74,9 @@ export async function proxy(request: NextRequest) {
   );
 
   // --- Verificar si el usuario tiene una sesión activa ---
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await timing.measure("supabase_auth", () => supabase.auth.getUser(), "Validacion de sesion");
 
   const pathname = request.nextUrl.pathname;
 
@@ -83,34 +88,16 @@ export async function proxy(request: NextRequest) {
   // Si intenta acceder al dashboard sin sesión → redirigir a /login
   if (isProtectedRoute && !user) {
     const loginUrl = new URL("/login", request.url);
-    return applySecurityHeaders(NextResponse.redirect(loginUrl));
-  }
-
-  if (isProtectedRoute && user) {
-    const { data: perfil } = await supabase
-      .from("perfiles")
-      .select("rol, activo")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (!perfil?.activo) {
-      const loginUrl = new URL("/login", request.url);
-      return applySecurityHeaders(NextResponse.redirect(loginUrl));
-    }
-
-    if (!canAccessDashboardPath(perfil.rol, pathname)) {
-      const fallbackUrl = new URL(getDashboardFallbackPath(perfil.rol), request.url);
-      return applySecurityHeaders(NextResponse.redirect(fallbackUrl));
-    }
+    return timing.apply(applySecurityHeaders(NextResponse.redirect(loginUrl)));
   }
 
   // Si ya está logueado e intenta ir a /login o /registro → ir al dashboard
   if (isAuthRoute && user) {
     const dashboardUrl = new URL("/dashboard", request.url);
-    return applySecurityHeaders(NextResponse.redirect(dashboardUrl));
+    return timing.apply(applySecurityHeaders(NextResponse.redirect(dashboardUrl)));
   }
 
-  return applySecurityHeaders(response);
+  return timing.apply(applySecurityHeaders(response));
 }
 
 /**
@@ -119,7 +106,5 @@ export async function proxy(request: NextRequest) {
  * para no afectar el rendimiento de carga de assets.
  */
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

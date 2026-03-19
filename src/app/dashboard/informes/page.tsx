@@ -8,11 +8,13 @@ import {
   Clock3,
   Download,
   Landmark,
+  Printer,
   ReceiptText,
   TrendingDown,
   TrendingUp,
   Wallet,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
 import {
@@ -199,22 +201,18 @@ export default function InformesPage() {
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(createDefaultFilters);
   const [report, setReport] = useState<AccountingReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     setActiveSection(parseSection(searchParams.get("section")));
   }, [searchParams]);
-
   const loadReport = useCallback(async (filters: FilterState, section: ReportSection) => {
     setLoading(true);
-    setError("");
-
     try {
       const nextReport = await fetchAccountingReport(buildParams(filters, section));
       setReport(nextReport);
     } catch (reportError: unknown) {
-      setError(
+      toast.error(
         reportError instanceof Error
           ? reportError.message
           : "No se pudo generar el informe contable."
@@ -260,7 +258,6 @@ export default function InformesPage() {
 
   const handleExportCsv = async () => {
     setExporting(true);
-    setError("");
     try {
       const params = buildParams(appliedFilters, activeSection);
       params.set("format", "csv");
@@ -277,7 +274,7 @@ export default function InformesPage() {
       link.click();
       URL.revokeObjectURL(url);
     } catch (exportError: unknown) {
-      setError(
+      toast.error(
         exportError instanceof Error ? exportError.message : "No se pudo exportar el informe."
       );
     } finally {
@@ -383,6 +380,14 @@ export default function InformesPage() {
             >
               <Download size={16} />
               {exporting ? "Exportando..." : "Exportar CSV"}
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 rounded-2xl border border-purple-500/20 bg-purple-500/5 px-4 py-2.5 text-sm font-semibold text-purple-600 transition-colors hover:bg-purple-500/10 dark:border-purple-400/30 dark:bg-purple-400/10 dark:text-purple-400 print:hidden"
+            >
+              <Printer size={16} />
+              Imprimir Informe
             </button>
           </>
         }
@@ -620,12 +625,6 @@ export default function InformesPage() {
           </label>
         </div>
       </AccountingPanel>
-
-      {error ? (
-        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
-          {error}
-        </div>
-      ) : null}
 
       <div className="mb-4 rounded-2xl border border-[#0071e3]/15 bg-[#0071e3]/6 px-4 py-3 text-sm text-[#0b63c7] dark:border-[#0071e3]/20 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]">
         {loading ? "Generando informe..." : `Informe aplicado para ${periodLabel}.`}

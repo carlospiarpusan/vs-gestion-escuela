@@ -23,6 +23,8 @@ import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
 import { fetchSchoolCategories } from "@/lib/school-categories";
 import type { Instructor, EstadoInstructor } from "@/types/database";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
+import { instructorSchema } from "./schemas";
 
 const PAGE_SIZE = 10;
 
@@ -63,7 +65,6 @@ export default function InstructoresPage() {
   const [editing, setEditing] = useState<Instructor | null>(null);
   const [deleting, setDeleting] = useState<Instructor | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const [categoriasEscuela, setCategoriasEscuela] = useState<string[]>([]);
   const {
     value: form,
@@ -77,41 +78,48 @@ export default function InstructoresPage() {
   // --- Data fetching ----------------------------------------------------
 
   /** Fetch paginated instructors from Supabase, ordered by most-recent first. */
-  const fetchData = useCallback(async (page = 0, search = "") => {
-    if (!perfil?.escuela_id) return;
+  const fetchData = useCallback(
+    async (page = 0, search = "") => {
+      if (!perfil?.escuela_id) return;
 
-    const fetchId = ++fetchIdRef.current;
-    setLoading(true);
-    setTableError("");
+      const fetchId = ++fetchIdRef.current;
+      setLoading(true);
+      setTableError("");
 
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        pageSize: String(PAGE_SIZE),
-      });
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+        });
 
-      if (search.trim()) params.set("q", search.trim());
+        if (search.trim()) params.set("q", search.trim());
 
-      const payload = await fetchJsonWithRetry<InstructoresListResponse>(
-        `/api/instructores?${params.toString()}`,
-        { cache: "no-store" }
-      );
+        const payload = await fetchJsonWithRetry<InstructoresListResponse>(
+          `/api/instructores?${params.toString()}`,
+          { cache: "no-store" }
+        );
 
-      if (fetchId !== fetchIdRef.current) return;
+        if (fetchId !== fetchIdRef.current) return;
 
-      setData(payload.rows || []);
-      setTotalCount(payload.totalCount || 0);
-    } catch (fetchError: unknown) {
-      if (fetchId !== fetchIdRef.current) return;
-      setData([]);
-      setTotalCount(0);
-      setTableError(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar los instructores.");
-    } finally {
-      if (fetchId === fetchIdRef.current) {
-        setLoading(false);
+        setData(payload.rows || []);
+        setTotalCount(payload.totalCount || 0);
+      } catch (fetchError: unknown) {
+        if (fetchId !== fetchIdRef.current) return;
+        setData([]);
+        setTotalCount(0);
+        setTableError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : "No se pudieron cargar los instructores."
+        );
+      } finally {
+        if (fetchId === fetchIdRef.current) {
+          setLoading(false);
+        }
       }
-    }
-  }, [perfil]);
+    },
+    [perfil]
+  );
 
   // Re-fetch whenever page, search, or profile changes.
   useEffect(() => {
@@ -166,7 +174,6 @@ export default function InstructoresPage() {
   const openCreate = () => {
     setEditing(null);
     restoreDraft(emptyForm);
-    setError("");
     setModalOpen(true);
   };
 
@@ -184,7 +191,6 @@ export default function InstructoresPage() {
       estado: row.estado,
       color: row.color,
     });
-    setError("");
     setModalOpen(true);
   };
 
@@ -207,16 +213,12 @@ export default function InstructoresPage() {
   // --- Save (create / update) -------------------------------------------
 
   const handleSave = async () => {
-    if (!form.nombre || !form.apellidos || !form.dni || !form.telefono || !form.licencia) {
-      setError("Nombre, apellidos, cédula, teléfono y licencia son obligatorios.");
-      return;
-    }
-    if (form.especialidades.length === 0) {
-      setError("Selecciona al menos una especialidad.");
+    const result = instructorSchema.safeParse(form);
+    if (!result.success) {
+      toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
       return;
     }
     setSaving(true);
-    setError("");
 
     // Use first selected specialty as the legacy single-value field
     const especialidadPrincipal = form.especialidades[0];
@@ -226,17 +228,25 @@ export default function InstructoresPage() {
 
       if (editing) {
         await runSupabaseMutationWithRetry(() =>
-          supabase.from("instructores").update({
-            nombre: form.nombre, apellidos: form.apellidos, dni: form.dni,
-            email: form.email || null, telefono: form.telefono, licencia: form.licencia,
-            especialidad: especialidadPrincipal,
-            especialidades: form.especialidades,
-            estado: form.estado, color: form.color,
-          }).eq("id", editing.id)
+          supabase
+            .from("instructores")
+            .update({
+              nombre: form.nombre,
+              apellidos: form.apellidos,
+              dni: form.dni,
+              email: form.email || null,
+              telefono: form.telefono,
+              licencia: form.licencia,
+              especialidad: especialidadPrincipal,
+              especialidades: form.especialidades,
+              estado: form.estado,
+              color: form.color,
+            })
+            .eq("id", editing.id)
         );
       } else {
         if (!perfil) {
-          setError("No se encontró el perfil activo para guardar.");
+          toast.error("No se encontró el perfil activo para guardar.");
           setSaving(false);
           return;
         }
@@ -254,7 +264,7 @@ export default function InstructoresPage() {
         }
 
         if (!sedeId) {
-          setError("No se encontró una sede asignada. Contacta al administrador.");
+          toast.error("No se encontró una sede asignada. Contacta al administrador.");
           setSaving(false);
           return;
         }
@@ -277,12 +287,19 @@ export default function InstructoresPage() {
 
         await runSupabaseMutationWithRetry(() =>
           supabase.from("instructores").insert({
-            escuela_id: perfil.escuela_id, sede_id: sedeId, user_id: authJson.user_id,
-            nombre: form.nombre, apellidos: form.apellidos, dni: form.dni,
-            email: form.email || null, telefono: form.telefono, licencia: form.licencia,
+            escuela_id: perfil.escuela_id,
+            sede_id: sedeId,
+            user_id: authJson.user_id,
+            nombre: form.nombre,
+            apellidos: form.apellidos,
+            dni: form.dni,
+            email: form.email || null,
+            telefono: form.telefono,
+            licencia: form.licencia,
             especialidad: especialidadPrincipal,
             especialidades: form.especialidades,
-            estado: form.estado, color: form.color,
+            estado: form.estado,
+            color: form.color,
           })
         );
       }
@@ -290,10 +307,11 @@ export default function InstructoresPage() {
       clearDraft(emptyForm);
       setSaving(false);
       setModalOpen(false);
+      toast.success(editing ? "Instructor actualizado" : "Instructor creado");
       fetchData(currentPage, searchTerm);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al guardar.";
-      setError(message);
+      toast.error(message);
       setSaving(false);
     }
   };
@@ -309,7 +327,7 @@ export default function InstructoresPage() {
       const { error: err } = await supabase.from("instructores").delete().eq("id", deleting.id);
 
       if (err) {
-        setError(err.message);
+        toast.error(err.message);
         setSaving(false);
         return;
       }
@@ -317,10 +335,11 @@ export default function InstructoresPage() {
       setSaving(false);
       setDeleteOpen(false);
       setDeleting(null);
+      toast.success("Instructor eliminado");
       fetchData(currentPage, searchTerm);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al eliminar.";
-      setError(message);
+      toast.error(message);
       setSaving(false);
     }
   };
@@ -329,33 +348,48 @@ export default function InstructoresPage() {
 
   const columns = [
     {
-      key: "nombre" as keyof Instructor, label: "Nombre",
-      render: (r: Instructor) => <span className="font-medium">{r.nombre} {r.apellidos}</span>
+      key: "nombre" as keyof Instructor,
+      label: "Nombre",
+      render: (r: Instructor) => (
+        <span className="font-medium">
+          {r.nombre} {r.apellidos}
+        </span>
+      ),
     },
     { key: "dni" as keyof Instructor, label: "Cédula" },
     { key: "telefono" as keyof Instructor, label: "Teléfono" },
     { key: "licencia" as keyof Instructor, label: "Licencia" },
     {
-      key: "especialidades" as keyof Instructor, label: "Especialidades",
+      key: "especialidades" as keyof Instructor,
+      label: "Especialidades",
       render: (r: Instructor) => {
         const cats = r.especialidades ?? (r.especialidad ? [r.especialidad] : []);
         return (
           <div className="flex flex-wrap gap-1">
             {cats.map((c) => (
-              <span key={c} className="px-2 py-0.5 text-xs rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">{c}</span>
+              <span
+                key={c}
+                className="rounded-full bg-[#0071e3]/10 px-2 py-0.5 text-xs font-medium text-[#0071e3]"
+              >
+                {c}
+              </span>
             ))}
           </div>
         );
-      }
+      },
     },
     {
-      key: "estado" as keyof Instructor, label: "Estado",
+      key: "estado" as keyof Instructor,
+      label: "Estado",
       render: (r: Instructor) => {
-        const c = r.estado === "activo"
-          ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-          : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
-        return <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${c}`}>{r.estado}</span>;
-      }
+        const c =
+          r.estado === "activo"
+            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+        return (
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c}`}>{r.estado}</span>
+        );
+      },
     },
   ];
 
@@ -366,54 +400,125 @@ export default function InstructoresPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Instructores</h2>
-          <p className="text-sm text-[#86868b] mt-0.5">Gestiona los instructores de tu escuela</p>
+          <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+            Instructores
+          </h2>
+          <p className="mt-0.5 text-sm text-[#86868b]">Gestiona los instructores de tu escuela</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors">
+        <button
+          onClick={openCreate}
+          className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
+        >
           <Plus size={16} /> Nuevo Instructor
         </button>
       </div>
 
       {/* Data table */}
-      <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
         {tableError && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
             {tableError}
           </div>
         )}
-        <DataTable columns={columns} data={data} loading={loading} searchPlaceholder="Buscar por nombre o cédula..." serverSide totalCount={totalCount} currentPage={currentPage} onPageChange={handlePageChange} onSearchChange={handleSearchChange} pageSize={PAGE_SIZE} onEdit={openEdit} onDelete={openDelete} />
+        <DataTable
+          columns={columns}
+          data={data}
+          loading={loading}
+          searchPlaceholder="Buscar por nombre o cédula..."
+          serverSide
+          totalCount={totalCount}
+          currentPage={currentPage}
+          onPageChange={handlePageChange}
+          onSearchChange={handleSearchChange}
+          pageSize={PAGE_SIZE}
+          onEdit={openEdit}
+          onDelete={openDelete}
+        />
       </div>
 
       {/* Create / Edit modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Editar Instructor" : "Nuevo Instructor"} maxWidth="max-w-xl">
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? "Editar Instructor" : "Nuevo Instructor"}
+        maxWidth="max-w-xl"
+      >
         <div className="space-y-4">
-          {error && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{error}</p>}
-
           {/* Nombre + Apellidos */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-xs text-[#86868b] mb-1">Nombre *</label><input type="text" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className={inputCls} /></div>
-            <div><label className="block text-xs text-[#86868b] mb-1">Apellidos *</label><input type="text" value={form.apellidos} onChange={e => setForm({ ...form, apellidos: e.target.value })} className={inputCls} /></div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-[#86868b]">Nombre *</label>
+              <input
+                type="text"
+                value={form.nombre}
+                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-[#86868b]">Apellidos *</label>
+              <input
+                type="text"
+                value={form.apellidos}
+                onChange={(e) => setForm({ ...form, apellidos: e.target.value })}
+                className={inputCls}
+              />
+            </div>
           </div>
 
           {/* Cédula + Teléfono */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-xs text-[#86868b] mb-1">Cédula *</label><input type="text" value={form.dni} onChange={e => setForm({ ...form, dni: e.target.value })} className={inputCls} /></div>
-            <div><label className="block text-xs text-[#86868b] mb-1">Teléfono *</label><input type="text" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} className={inputCls} /></div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-[#86868b]">Cédula *</label>
+              <input
+                type="text"
+                value={form.dni}
+                onChange={(e) => setForm({ ...form, dni: e.target.value })}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-[#86868b]">Teléfono *</label>
+              <input
+                type="text"
+                value={form.telefono}
+                onChange={(e) => setForm({ ...form, telefono: e.target.value })}
+                className={inputCls}
+              />
+            </div>
           </div>
 
           {/* Email + Licencia */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-xs text-[#86868b] mb-1">Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={inputCls} /></div>
-            <div><label className="block text-xs text-[#86868b] mb-1">Licencia *</label><input type="text" value={form.licencia} onChange={e => setForm({ ...form, licencia: e.target.value })} className={inputCls} /></div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-[#86868b]">Email</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-[#86868b]">Licencia *</label>
+              <input
+                type="text"
+                value={form.licencia}
+                onChange={(e) => setForm({ ...form, licencia: e.target.value })}
+                className={inputCls}
+              />
+            </div>
           </div>
 
           {/* Especialidades (checkboxes de categorías de la escuela) */}
           <div>
-            <label className="block text-xs text-[#86868b] mb-2">Especialidades *</label>
+            <label className="mb-2 block text-xs text-[#86868b]">Especialidades *</label>
             {categoriasEscuela.length === 0 ? (
-              <p className="text-xs text-[#86868b] italic">La escuela no tiene categorías configuradas.</p>
+              <p className="text-xs text-[#86868b] italic">
+                La escuela no tiene categorías configuradas.
+              </p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {categoriasEscuela.map((cat) => {
@@ -423,10 +528,10 @@ export default function InstructoresPage() {
                       key={cat}
                       type="button"
                       onClick={() => toggleEspecialidad(cat)}
-                      className={`px-3 py-1.5 text-sm rounded-lg border font-medium transition-colors ${
+                      className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
                         selected
-                          ? "bg-[#0071e3] text-white border-[#0071e3]"
-                          : "bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] border-gray-200 dark:border-gray-700 hover:border-[#0071e3]"
+                          ? "border-[#0071e3] bg-[#0071e3] text-white"
+                          : "border-gray-200 bg-white text-[#1d1d1f] hover:border-[#0071e3] dark:border-gray-700 dark:bg-[#0a0a0a] dark:text-[#f5f5f7]"
                       }`}
                     >
                       {cat}
@@ -438,27 +543,59 @@ export default function InstructoresPage() {
           </div>
 
           {/* Estado + Color */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-xs text-[#86868b] mb-1">Estado</label>
-              <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value as EstadoInstructor })} className={inputCls}>
-                {estados.map(e => <option key={e} value={e}>{e}</option>)}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-[#86868b]">Estado</label>
+              <select
+                value={form.estado}
+                onChange={(e) => setForm({ ...form, estado: e.target.value as EstadoInstructor })}
+                className={inputCls}
+              >
+                {estados.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
               </select>
             </div>
-            <div><label className="block text-xs text-[#86868b] mb-1">Color</label>
-              <input type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })} className="w-full h-9 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer" />
+            <div>
+              <label className="mb-1 block text-xs text-[#86868b]">Color</label>
+              <input
+                type="color"
+                value={form.color}
+                onChange={(e) => setForm({ ...form, color: e.target.value })}
+                className="h-9 w-full cursor-pointer rounded-lg border border-gray-200 dark:border-gray-700"
+              />
             </div>
           </div>
 
           {/* Action buttons */}
-          <div className="flex gap-3 justify-end pt-2">
-            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancelar</button>
-            <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-[#0071e3] text-white hover:bg-[#0077ED] transition-colors disabled:opacity-50">{saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Instructor"}</button>
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              onClick={() => setModalOpen(false)}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
+            >
+              {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Instructor"}
+            </button>
           </div>
         </div>
       </Modal>
 
       {/* Delete confirmation */}
-      <DeleteConfirm open={deleteOpen} onClose={() => setDeleteOpen(false)} onConfirm={handleDelete} loading={saving} message={`¿Eliminar a ${deleting?.nombre} ${deleting?.apellidos}?`} />
+      <DeleteConfirm
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={handleDelete}
+        loading={saving}
+        message={`¿Eliminar a ${deleting?.nombre} ${deleting?.apellidos}?`}
+      />
     </div>
   );
 }

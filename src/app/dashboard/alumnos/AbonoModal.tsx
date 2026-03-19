@@ -26,7 +26,6 @@ interface AbonoModalProps {
   abonoFecha: string;
   setAbonoFecha: (val: string) => void;
   abonoSaving: boolean;
-  abonoError: string;
   handleSaveAbono: () => void;
 }
 
@@ -51,7 +50,6 @@ export default function AbonoModal({
   abonoFecha,
   setAbonoFecha,
   abonoSaving,
-  abonoError,
   handleSaveAbono,
 }: AbonoModalProps) {
   return (
@@ -158,12 +156,6 @@ export default function AbonoModal({
               ? "Registrar nuevo abono"
               : "Registrar nuevo pago"}
           </p>
-
-          {abonoError && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
-              {abonoError}
-            </p>
-          )}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>

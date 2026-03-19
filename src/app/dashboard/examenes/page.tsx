@@ -1,14 +1,12 @@
 "use client";
 
+import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
-import {
-  CaleAnalyticsAdminView,
-  CaleBankManagerView,
-} from "@/components/dashboard/examenes/CaleAdminViews";
 import type { CategoriaExamen, Examen, PreguntaExamen, RespuestaExamen } from "@/types/database";
 import {
   AlertCircle,
@@ -35,6 +33,22 @@ import {
   type RespuestaCale,
 } from "@/lib/cale";
 
+const CaleAnalyticsAdminView = dynamic(
+  () =>
+    import("@/components/dashboard/examenes/CaleAdminViews").then(
+      (module) => module.CaleAnalyticsAdminView
+    ),
+  { loading: () => <Spinner compact /> }
+);
+
+const CaleBankManagerView = dynamic(
+  () =>
+    import("@/components/dashboard/examenes/CaleAdminViews").then(
+      (module) => module.CaleBankManagerView
+    ),
+  { loading: () => <Spinner compact /> }
+);
+
 type CategoriaResumen = CategoriaExamen & {
   questionCount: number;
 };
@@ -46,7 +60,14 @@ type IntentoCale = Examen & {
 
 type PracticeQuestion = Pick<
   PreguntaExamen,
-  "id" | "categoria_id" | "pregunta" | "imagen_url" | "opcion_a" | "opcion_b" | "opcion_c" | "opcion_d"
+  | "id"
+  | "categoria_id"
+  | "pregunta"
+  | "imagen_url"
+  | "opcion_a"
+  | "opcion_b"
+  | "opcion_c"
+  | "opcion_d"
 > & {
   categoria_nombre: string;
 };
@@ -198,7 +219,9 @@ async function fetchCaleCategoriesWithCounts(): Promise<CategoriaResumen[]> {
 
   if (error) throw error;
 
-  const categories = ((data as CategoriaExamen[]) || []).filter((item) => item.fuente === CALE_BANK_SOURCE);
+  const categories = ((data as CategoriaExamen[]) || []).filter(
+    (item) => item.fuente === CALE_BANK_SOURCE
+  );
   const withCounts = await Promise.all(
     categories.map(async (category) => {
       const { count, error: countError } = await supabase
@@ -267,7 +290,8 @@ function AlumnoEntrenamientoView() {
   const [categories, setCategories] = useState<CategoriaResumen[]>([]);
   const [history, setHistory] = useState<IntentoCale[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
-  const [questionCount, setQuestionCount] = useState<(typeof CALE_QUESTION_COUNT_OPTIONS)[number]>(20);
+  const [questionCount, setQuestionCount] =
+    useState<(typeof CALE_QUESTION_COUNT_OPTIONS)[number]>(20);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [sessionQuestions, setSessionQuestions] = useState<PracticeQuestion[]>([]);
@@ -354,7 +378,9 @@ function AlumnoEntrenamientoView() {
       setResult(null);
     } catch (startError) {
       console.error("[ExamenesPage] Error iniciando práctica:", startError);
-      setError(startError instanceof Error ? startError.message : "No se pudo iniciar la práctica.");
+      setError(
+        startError instanceof Error ? startError.message : "No se pudo iniciar la práctica."
+      );
     }
   };
 
@@ -407,7 +433,9 @@ function AlumnoEntrenamientoView() {
       setHistory(await fetchMyCaleHistory());
     } catch (submitError) {
       console.error("[ExamenesPage] Error enviando práctica:", submitError);
-      setError(submitError instanceof Error ? submitError.message : "No se pudo calificar el simulacro.");
+      setError(
+        submitError instanceof Error ? submitError.message : "No se pudo calificar el simulacro."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -432,7 +460,11 @@ function AlumnoEntrenamientoView() {
       setElapsedSeconds(0);
     } catch (reviewError) {
       console.error("[ExamenesPage] Error cargando revisión guardada:", reviewError);
-      setError(reviewError instanceof Error ? reviewError.message : "No se pudo cargar la revisión del simulacro.");
+      setError(
+        reviewError instanceof Error
+          ? reviewError.message
+          : "No se pudo cargar la revisión del simulacro."
+      );
     } finally {
       setReviewingExamId(null);
     }
@@ -530,14 +562,8 @@ function AlumnoEntrenamientoView() {
                   label="Banco activo"
                   value={`${categories.reduce((accumulator, item) => accumulator + item.questionCount, 0)} preguntas`}
                 />
-                <InfoPill
-                  label="Objetivo sugerido"
-                  value={`${CALE_PASSING_PERCENTAGE}% o más`}
-                />
-                <InfoPill
-                  label="Explicaciones"
-                  value="Incluidas al final"
-                />
+                <InfoPill label="Objetivo sugerido" value={`${CALE_PASSING_PERCENTAGE}% o más`} />
+                <InfoPill label="Explicaciones" value="Incluidas al final" />
               </div>
 
               <button
@@ -551,16 +577,17 @@ function AlumnoEntrenamientoView() {
           </div>
 
           <div className="apple-panel-muted p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <ShieldCheck size={16} className="text-[#0071e3]" />
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  Tu historial guardado
-                </p>
-              </div>
+            <div className="mb-4 flex items-center gap-2">
+              <ShieldCheck size={16} className="text-[#0071e3]" />
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Tu historial guardado
+              </p>
+            </div>
 
             {history.length === 0 ? (
               <p className="rounded-2xl bg-white/80 px-4 py-6 text-sm text-[#86868b] dark:bg-[#0a0a0a]">
-                Todavía no has presentado simulacros CALE. Empieza con uno de 10 o 20 preguntas para medir tu nivel.
+                Todavía no has presentado simulacros CALE. Empieza con uno de 10 o 20 preguntas para
+                medir tu nivel.
               </p>
             ) : (
               <div className="max-h-[32rem] space-y-2 overflow-y-auto pr-1">
@@ -575,7 +602,9 @@ function AlumnoEntrenamientoView() {
                           {item.meta.percentage}% de acierto
                         </p>
                         <p className="text-xs text-[#86868b]">
-                          {item.meta.questionCount} preguntas · {formatElapsedTime(item.meta.elapsedSeconds)} · {formatDateTime(item.meta.submittedAt)}
+                          {item.meta.questionCount} preguntas ·{" "}
+                          {formatElapsedTime(item.meta.elapsedSeconds)} ·{" "}
+                          {formatDateTime(item.meta.submittedAt)}
                         </p>
                       </div>
                       <span
@@ -594,7 +623,11 @@ function AlumnoEntrenamientoView() {
                         disabled={reviewingExamId === item.id}
                         className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 px-3 py-2 text-xs font-semibold text-[#1d1d1f] transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
                       >
-                        {reviewingExamId === item.id ? <RefreshCw size={14} className="animate-spin" /> : <BookOpenCheck size={14} />}
+                        {reviewingExamId === item.id ? (
+                          <RefreshCw size={14} className="animate-spin" />
+                        ) : (
+                          <BookOpenCheck size={14} />
+                        )}
                         Ver revisión
                       </button>
                     </div>
@@ -624,9 +657,7 @@ function AlumnoEntrenamientoView() {
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                   Pregunta {currentIndex + 1} de {sessionQuestions.length}
                 </p>
-                <p className="text-xs text-[#86868b]">
-                  {currentQuestion.categoria_nombre}
-                </p>
+                <p className="text-xs text-[#86868b]">{currentQuestion.categoria_nombre}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-[#1d1d1f] dark:bg-gray-800 dark:text-[#f5f5f7]">
@@ -641,20 +672,25 @@ function AlumnoEntrenamientoView() {
             <div className="mb-5 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
               <div
                 className="h-full rounded-full bg-[#0071e3]"
-                style={{ width: `${Math.round(((currentIndex + 1) / sessionQuestions.length) * 100)}%` }}
+                style={{
+                  width: `${Math.round(((currentIndex + 1) / sessionQuestions.length) * 100)}%`,
+                }}
               />
             </div>
 
-            <p className="mb-4 text-lg font-medium leading-7 text-[#1d1d1f] dark:text-[#f5f5f7]">
+            <p className="mb-4 text-lg leading-7 font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
               {currentQuestion.pregunta}
             </p>
 
             {currentQuestion.imagen_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={currentQuestion.imagen_url}
                 alt="Imagen de apoyo para la pregunta"
-                className="mb-5 h-56 w-full rounded-[1.5rem] object-contain bg-[#f5f5f7] p-4 dark:bg-[#111]"
+                width={1200}
+                height={640}
+                sizes="(max-width: 768px) 100vw, 960px"
+                unoptimized
+                className="mb-5 h-56 w-full rounded-[1.5rem] bg-[#f5f5f7] object-contain p-4 dark:bg-[#111]"
               />
             )}
 
@@ -688,7 +724,7 @@ function AlumnoEntrenamientoView() {
               })}
             </div>
 
-            <div className="mt-5 flex flex-col gap-3 border-t border-gray-100 pt-5 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-5 flex flex-col gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800">
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setCurrentIndex((current) => Math.max(0, current - 1))}
@@ -699,7 +735,9 @@ function AlumnoEntrenamientoView() {
                   Anterior
                 </button>
                 <button
-                  onClick={() => setCurrentIndex((current) => Math.min(sessionQuestions.length - 1, current + 1))}
+                  onClick={() =>
+                    setCurrentIndex((current) => Math.min(sessionQuestions.length - 1, current + 1))
+                  }
                   disabled={currentIndex + 1 >= sessionQuestions.length}
                   className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
                 >
@@ -713,7 +751,11 @@ function AlumnoEntrenamientoView() {
                 disabled={submitting}
                 className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] bg-[#0071e3] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {submitting ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                {submitting ? (
+                  <RefreshCw size={16} className="animate-spin" />
+                ) : (
+                  <ShieldCheck size={16} />
+                )}
                 {submitting ? "Calificando..." : "Finalizar simulacro"}
               </button>
             </div>
@@ -835,13 +877,16 @@ function AlumnoEntrenamientoView() {
         <div className="space-y-3">
           {result.results.length === 0 && result.summary.incorrectCount === 0 && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
-              Este simulacro no tuvo errores. Por eso no hay preguntas falladas guardadas para revisar.
+              Este simulacro no tuvo errores. Por eso no hay preguntas falladas guardadas para
+              revisar.
             </div>
           )}
 
           {result.results.length === 0 && result.summary.incorrectCount > 0 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-              Este intento ya tenía el resultado final guardado, pero no conservaba el detalle de preguntas falladas. Desde ahora los nuevos simulacros sí guardarán cada error con su respuesta correcta y explicación.
+              Este intento ya tenía el resultado final guardado, pero no conservaba el detalle de
+              preguntas falladas. Desde ahora los nuevos simulacros sí guardarán cada error con su
+              respuesta correcta y explicación.
             </div>
           )}
 
@@ -873,11 +918,14 @@ function AlumnoEntrenamientoView() {
               </p>
 
               {question.imagen_url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={question.imagen_url}
                   alt="Imagen de apoyo de la pregunta"
-                  className="mb-4 h-48 w-full rounded-[1.5rem] object-contain bg-[#f5f5f7] p-4 dark:bg-[#111]"
+                  width={1200}
+                  height={640}
+                  sizes="(max-width: 768px) 100vw, 960px"
+                  unoptimized
+                  className="mb-4 h-48 w-full rounded-[1.5rem] bg-[#f5f5f7] object-contain p-4 dark:bg-[#111]"
                 />
               )}
 
@@ -909,20 +957,31 @@ function AlumnoEntrenamientoView() {
 
               <div className="mt-4 space-y-2">
                 <p className="text-sm text-[#3a3a3c] dark:text-[#d2d2d7]">
-                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tu respuesta:</span>{" "}
-                  {question.selectedAnswer ? getAnswerBadge(question.selectedAnswer) : "Sin respuesta"}
+                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    Tu respuesta:
+                  </span>{" "}
+                  {question.selectedAnswer
+                    ? getAnswerBadge(question.selectedAnswer)
+                    : "Sin respuesta"}
                 </p>
                 <p className="text-sm text-[#3a3a3c] dark:text-[#d2d2d7]">
-                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Respuesta correcta:</span>{" "}
-                  {question.correctAnswer ? getAnswerBadge(question.correctAnswer) : "No disponible"}
+                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    Respuesta correcta:
+                  </span>{" "}
+                  {question.correctAnswer
+                    ? getAnswerBadge(question.correctAnswer)
+                    : "No disponible"}
                 </p>
                 <p className="text-sm text-[#3a3a3c] dark:text-[#d2d2d7]">
-                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Explicación:</span>{" "}
+                  <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    Explicación:
+                  </span>{" "}
                   {question.explicacion || "No hay explicación adicional para esta pregunta."}
                 </p>
                 {question.fundamento_legal && (
                   <p className="text-xs text-[#86868b]">
-                    <span className="font-semibold">Fundamento legal:</span> {question.fundamento_legal}
+                    <span className="font-semibold">Fundamento legal:</span>{" "}
+                    {question.fundamento_legal}
                   </p>
                 )}
               </div>
@@ -1017,7 +1076,7 @@ function StatCard({
 function InfoPill({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[1.5rem] bg-white/80 px-4 py-3 dark:bg-[#0a0a0a]">
-      <p className="text-xs uppercase tracking-[0.18em] text-[#86868b]">{label}</p>
+      <p className="text-xs tracking-[0.18em] text-[#86868b] uppercase">{label}</p>
       <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{value}</p>
     </div>
   );

@@ -5,6 +5,7 @@ import {
   ensureSchoolScope,
   ensureSedeScope,
   parseJsonBody,
+  resolveEscuelaIdForRequest,
 } from "@/lib/api-auth";
 import {
   deleteEmailInvoiceIntegration,
@@ -34,23 +35,19 @@ const integrationSchema = z.object({
   activa: z.boolean().optional().default(true),
 });
 
-function resolveEscuelaId(perfil: { rol: Rol; escuela_id: string | null }, requestedEscuelaId?: string) {
-  if (perfil.rol === "super_admin") {
-    return requestedEscuelaId || null;
-  }
-  return perfil.escuela_id;
-}
-
 export async function GET(request: Request) {
   const authorization = await authorizeApiRequest(ALLOWED_ROLES);
   if (!authorization.ok) return authorization.response;
 
   const { perfil } = authorization;
   const url = new URL(request.url);
-  const escuelaId = resolveEscuelaId(perfil, url.searchParams.get("escuela_id") || undefined);
+  const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
-    return NextResponse.json({ error: "No se encontro una escuela valida para la integracion." }, { status: 400 });
+    return NextResponse.json(
+      { error: "No se encontro una escuela valida para la integracion." },
+      { status: 400 }
+    );
   }
 
   const schoolScopeError = ensureSchoolScope(perfil, escuelaId);
@@ -63,7 +60,10 @@ export async function GET(request: Request) {
     return NextResponse.json(payload);
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "No se pudo cargar la integracion de correo." },
+      {
+        error:
+          error instanceof Error ? error.message : "No se pudo cargar la integracion de correo.",
+      },
       { status: 500 }
     );
   }
@@ -77,9 +77,12 @@ export async function POST(request: Request) {
   const parsed = await parseJsonBody(request, integrationSchema);
   if (!parsed.ok) return parsed.response;
 
-  const escuelaId = resolveEscuelaId(perfil, parsed.data.escuela_id);
+  const escuelaId = resolveEscuelaIdForRequest(request, perfil, parsed.data.escuela_id);
   if (!escuelaId) {
-    return NextResponse.json({ error: "No se encontro una escuela valida para la integracion." }, { status: 400 });
+    return NextResponse.json(
+      { error: "No se encontro una escuela valida para la integracion." },
+      { status: 400 }
+    );
   }
 
   const schoolScopeError = ensureSchoolScope(perfil, escuelaId);
@@ -114,7 +117,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ integration });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "No se pudo guardar la integracion de correo." },
+      {
+        error:
+          error instanceof Error ? error.message : "No se pudo guardar la integracion de correo.",
+      },
       { status: 500 }
     );
   }
@@ -126,10 +132,13 @@ export async function DELETE(request: Request) {
 
   const { perfil } = authorization;
   const url = new URL(request.url);
-  const escuelaId = resolveEscuelaId(perfil, url.searchParams.get("escuela_id") || undefined);
+  const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
-    return NextResponse.json({ error: "No se encontro una escuela valida para la integracion." }, { status: 400 });
+    return NextResponse.json(
+      { error: "No se encontro una escuela valida para la integracion." },
+      { status: 400 }
+    );
   }
 
   const schoolScopeError = ensureSchoolScope(perfil, escuelaId);
@@ -142,7 +151,10 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "No se pudo eliminar la integracion de correo." },
+      {
+        error:
+          error instanceof Error ? error.message : "No se pudo eliminar la integracion de correo.",
+      },
       { status: 500 }
     );
   }

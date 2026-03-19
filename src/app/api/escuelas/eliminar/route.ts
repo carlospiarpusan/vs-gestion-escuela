@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import {
-  authorizeApiRequest,
-  buildSupabaseAdminClient,
-  parseJsonBody,
-} from "@/lib/api-auth";
+import { authorizeApiRequest, buildSupabaseAdminClient, parseJsonBody } from "@/lib/api-auth";
+import { getServerDbPool } from "@/lib/server-db";
 
 const deleteEscuelaSchema = z.object({
   escuela_id: z.string().uuid(),
@@ -35,6 +32,7 @@ export async function POST(request: Request) {
 
     const escuelaId = parsedBody.data.escuela_id;
     const supabaseAdmin = buildSupabaseAdminClient();
+    const pool = getServerDbPool();
 
     const { data: escuela, error: escuelaError } = await supabaseAdmin
       .from("escuelas")
@@ -50,10 +48,7 @@ export async function POST(request: Request) {
     }
 
     if (!escuela) {
-      return NextResponse.json(
-        { error: "La escuela ya no existe." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "La escuela ya no existe." }, { status: 404 });
     }
 
     const { data: perfiles, error: perfilesError } = await supabaseAdmin
@@ -69,48 +64,60 @@ export async function POST(request: Request) {
     }
 
     const userIds = Array.from(new Set((perfiles || []).map((item) => item.id)));
+    const client = await pool.connect();
+    let deletedUsers = 0;
+    const authCleanupErrors: string[] = [];
 
-    const deleteSteps = [
-      () => supabaseAdmin.from("mantenimiento_vehiculos").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("respuestas_examen").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("ingresos").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("gastos").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("examenes").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("horas_trabajo").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("clases").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("vehiculos").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("instructores").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("matriculas_alumno").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("alumnos").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("actividad_log").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("perfiles").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("sedes").delete().eq("escuela_id", escuelaId),
-      () => supabaseAdmin.from("escuelas").delete().eq("id", escuelaId),
-    ];
-
-    for (const step of deleteSteps) {
-      const { error } = await step();
-      if (error) {
-        return NextResponse.json(
-          { error: `No se pudo eliminar completamente la escuela: ${error.message}` },
-          { status: 400 }
-        );
-      }
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `
+          delete from public.perfiles
+          where escuela_id = $1
+        `,
+        [escuelaId]
+      );
+      await client.query(
+        `
+          delete from public.escuelas
+          where id = $1
+        `,
+        [escuelaId]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? `No se pudo eliminar completamente la escuela: ${error.message}`
+              : "No se pudo eliminar completamente la escuela.",
+        },
+        { status: 400 }
+      );
+    } finally {
+      client.release();
     }
 
     for (const userId of userIds) {
-      await deleteAuthUserIfExists(supabaseAdmin, userId);
+      try {
+        await deleteAuthUserIfExists(supabaseAdmin, userId);
+        deletedUsers += 1;
+      } catch (error) {
+        authCleanupErrors.push(
+          error instanceof Error ? error.message : `No se pudo limpiar el usuario ${userId}.`
+        );
+      }
     }
 
     return NextResponse.json({
       success: true,
       deleted_school_id: escuelaId,
-      deleted_users: userIds.length,
+      deleted_users: deletedUsers,
+      auth_cleanup_errors: authCleanupErrors,
     });
   } catch {
-    return NextResponse.json(
-      { error: "Error interno al eliminar la escuela." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Error interno al eliminar la escuela." }, { status: 500 });
   }
 }

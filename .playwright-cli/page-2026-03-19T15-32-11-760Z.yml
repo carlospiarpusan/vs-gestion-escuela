@@ -1,0 +1,28 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - link "← Inicio" [ref=e4] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]: Acceso seguro
+        - heading "AutoEscuelaPro" [level=1] [ref=e9]
+        - paragraph [ref=e10]: Inicia sesión para ver tu panel, pagos y evaluaciones.
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - generic [ref=e13]: Correo electrónico o número de cédula
+          - textbox "Correo electrónico o número de cédula" [ref=e14]:
+            - /placeholder: tu@email.com o número de cédula
+        - generic [ref=e15]:
+          - generic [ref=e16]: Contraseña
+          - generic [ref=e17]:
+            - textbox "Contraseña" [ref=e18]:
+              - /placeholder: Tu contraseña
+            - button "Mostrar contraseña" [ref=e19]:
+              - img [ref=e20]
+        - button "Iniciar Sesión" [ref=e23]
+      - generic [ref=e26]: o
+      - paragraph [ref=e28]:
+        - text: ¿No tienes cuenta?
+        - link "Crear cuenta" [ref=e29] [cursor=pointer]:
+          - /url: /registro
+  - alert [ref=e30]

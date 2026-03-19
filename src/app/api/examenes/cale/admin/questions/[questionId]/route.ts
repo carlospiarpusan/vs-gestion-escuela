@@ -14,7 +14,7 @@ import {
 import { CALE_BANK_SOURCE } from "@/lib/cale";
 import type { Rol } from "@/types/database";
 
-const EDITOR_ROLES: Rol[] = ["super_admin", "admin_escuela"];
+const EDITOR_ROLES: Rol[] = ["super_admin"];
 
 const questionSchema = z.object({
   categoria_id: z.string().uuid(),
@@ -99,20 +99,21 @@ export async function PATCH(
   try {
     const supabaseAdmin = buildSupabaseAdminClient();
 
-    const [{ data: existing, error: existingError }, { data: category, error: categoryError }] = await Promise.all([
-      supabaseAdmin
-        .from("preguntas_examen")
-        .select("id")
-        .eq("id", questionId)
-        .eq("fuente", CALE_BANK_SOURCE)
-        .maybeSingle(),
-      supabaseAdmin
-        .from("categorias_examen")
-        .select("id, nombre")
-        .eq("id", payload.categoria_id)
-        .eq("fuente", CALE_BANK_SOURCE)
-        .maybeSingle(),
-    ]);
+    const [{ data: existing, error: existingError }, { data: category, error: categoryError }] =
+      await Promise.all([
+        supabaseAdmin
+          .from("preguntas_examen")
+          .select("id")
+          .eq("id", questionId)
+          .eq("fuente", CALE_BANK_SOURCE)
+          .maybeSingle(),
+        supabaseAdmin
+          .from("categorias_examen")
+          .select("id, nombre")
+          .eq("id", payload.categoria_id)
+          .eq("fuente", CALE_BANK_SOURCE)
+          .maybeSingle(),
+      ]);
     if (existingError) throw existingError;
     if (categoryError) throw categoryError;
 

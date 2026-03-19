@@ -5,11 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
+import type { Perfil } from "@/types/database";
 import {
   ArrowRight,
   BookOpen,
   Building2,
   Calendar,
+  CarFront,
   CheckCircle,
   Clock,
   CreditCard,
@@ -20,6 +22,15 @@ import {
   UserCog,
   Users,
 } from "lucide-react";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 /* ─────────────────── tipos ─────────────────── */
 interface Stats {
@@ -27,6 +38,19 @@ interface Stats {
   clasesHoy: number;
   examenesPendientes: number;
   ingresosMes: number;
+  alumnosMoto: number;
+  alumnosCarro: number;
+  alumnosCombos: number;
+  alumnosSinCategoria: number;
+  practicaAdicionalMes: number;
+  evaluacionesAptitudMes: number;
+}
+
+interface ComparativeStats {
+  alumnos: number;
+  ingresosMes: number;
+  practicaAdicionalMes: number;
+  evaluacionesAptitudMes: number;
 }
 
 interface AlumnoInfo {
@@ -117,6 +141,43 @@ interface SchoolOverview extends PlatformEscuela {
   capacidadPct: number;
 }
 
+type MonthRange = {
+  start: string;
+  end: string;
+  label: string;
+};
+
+type MatriculaMonthlyRow = {
+  alumno_id: string | null;
+  categorias: string[] | null;
+  fecha_inscripcion: string | null;
+  created_at: string;
+};
+
+type AlumnoMonthlyRow = {
+  id: string;
+  categorias: string[] | null;
+  tipo_registro: "regular" | "aptitud_conductor" | "practica_adicional";
+  fecha_inscripcion: string | null;
+  created_at: string;
+};
+
+type EnrollmentMix = {
+  total: number;
+  moto: number;
+  carro: number;
+  combos: number;
+  unclassified: number;
+};
+
+type MonthlyIncomeRow = {
+  id: string;
+  alumno_id: string | null;
+  categoria: string | null;
+  monto: number | string;
+  fecha: string | null;
+};
+
 /* ─────────────────── helpers ─────────────────── */
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-CO", {
@@ -161,6 +222,178 @@ const RESULTADO_COLOR: Record<ExamenRealizado["resultado"], string> = {
   aprobado: "text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400",
   suspendido: "text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400",
 };
+
+function formatDateOnly(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getMonthRange(offset: number): MonthRange {
+  const anchor = new Date();
+  anchor.setHours(0, 0, 0, 0);
+  const start = new Date(anchor.getFullYear(), anchor.getMonth() + offset, 1);
+  const end = new Date(anchor.getFullYear(), anchor.getMonth() + offset + 1, 1);
+
+  return {
+    start: formatDateOnly(start),
+    end: formatDateOnly(end),
+    label: start.toLocaleDateString("es-CO", { month: "long", year: "numeric" }),
+  };
+}
+
+function resolveMonthlyRecordDate(
+  value: string | null | undefined,
+  fallback: string | null | undefined
+) {
+  return (value ?? fallback ?? "").slice(0, 10);
+}
+
+function isDateWithinRange(
+  value: string | null | undefined,
+  range: MonthRange,
+  fallback?: string | null | undefined
+) {
+  const normalized = resolveMonthlyRecordDate(value, fallback);
+  return normalized >= range.start && normalized < range.end;
+}
+
+function normalizeCategorias(categorias: string[] | null | undefined) {
+  return Array.from(
+    new Set((categorias ?? []).map((categoria) => categoria.trim().toUpperCase()).filter(Boolean))
+  );
+}
+
+function mergeCategorias(actual: string[], next: string[] | null | undefined) {
+  return Array.from(new Set([...actual, ...normalizeCategorias(next)]));
+}
+
+function classifyEnrollmentBucket(categorias: string[]) {
+  if (categorias.length === 0) return "unclassified" as const;
+
+  const hasComboLabel = categorias.some((categoria) => categoria.includes(" Y "));
+  const hasMoto = categorias.some((categoria) => /^(AM|A1|A2|A)\b/.test(categoria));
+  const hasCarro = categorias.some((categoria) => /^(B|C|RC)\d*/.test(categoria));
+
+  if (hasComboLabel || categorias.length > 1 || (hasMoto && hasCarro)) {
+    return "combo" as const;
+  }
+
+  if (hasMoto) return "moto" as const;
+  if (hasCarro) return "carro" as const;
+  return "unclassified" as const;
+}
+
+function summarizeMonthlyEnrollments({
+  matriculas,
+  alumnos,
+  range,
+}: {
+  matriculas: MatriculaMonthlyRow[];
+  alumnos: AlumnoMonthlyRow[];
+  range: MonthRange;
+}): EnrollmentMix {
+  const regularStudents = new Map<string, string[]>();
+
+  for (const alumno of alumnos) {
+    if (
+      alumno.tipo_registro !== "regular" ||
+      !isDateWithinRange(alumno.fecha_inscripcion, range, alumno.created_at)
+    ) {
+      continue;
+    }
+
+    regularStudents.set(alumno.id, normalizeCategorias(alumno.categorias));
+  }
+
+  for (const matricula of matriculas) {
+    if (
+      !matricula.alumno_id ||
+      !isDateWithinRange(matricula.fecha_inscripcion, range, matricula.created_at)
+    ) {
+      continue;
+    }
+
+    const currentCategorias = regularStudents.get(matricula.alumno_id) ?? [];
+    regularStudents.set(
+      matricula.alumno_id,
+      mergeCategorias(currentCategorias, matricula.categorias)
+    );
+  }
+
+  const summary: EnrollmentMix = {
+    total: regularStudents.size,
+    moto: 0,
+    carro: 0,
+    combos: 0,
+    unclassified: 0,
+  };
+
+  for (const categorias of regularStudents.values()) {
+    const bucket = classifyEnrollmentBucket(categorias);
+    if (bucket === "moto") summary.moto += 1;
+    else if (bucket === "carro") summary.carro += 1;
+    else if (bucket === "combo") summary.combos += 1;
+    else summary.unclassified += 1;
+  }
+
+  return summary;
+}
+
+function countIncomeOperationsByCategory(
+  ingresos: MonthlyIncomeRow[],
+  range: MonthRange,
+  categoria: string
+) {
+  const uniqueOperations = new Set<string>();
+
+  for (const ingreso of ingresos) {
+    if (ingreso.categoria !== categoria || !isDateWithinRange(ingreso.fecha, range)) {
+      continue;
+    }
+
+    uniqueOperations.add(ingreso.alumno_id || ingreso.id);
+  }
+
+  return uniqueOperations.size;
+}
+
+function sumIngresosByRange(rows: MonthlyIncomeRow[], range: MonthRange) {
+  return rows.reduce((sum, row) => {
+    if (!isDateWithinRange(row.fecha, range)) return sum;
+    const parsed = Number(row.monto);
+    return sum + (Number.isNaN(parsed) ? 0 : parsed);
+  }, 0);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyDashboardScope(query: any, perfil: Perfil) {
+  let scoped = query;
+
+  if (perfil.escuela_id) {
+    scoped = scoped.eq("escuela_id", perfil.escuela_id);
+  }
+
+  if (perfil.sede_id && perfil.rol !== "admin_escuela") {
+    scoped = scoped.eq("sede_id", perfil.sede_id);
+  }
+
+  return scoped;
+}
+
+function formatComparisonDelta(value: number, kind: "count" | "currency") {
+  if (value === 0) return "Sin cambio vs mes anterior";
+
+  const absolute = Math.abs(value);
+  const formatted = kind === "currency" ? fmt(absolute) : absolute.toLocaleString("es-CO");
+  return value > 0 ? `${formatted} más vs mes anterior` : `${formatted} menos vs mes anterior`;
+}
+
+function getShareLabel(value: number, total: number) {
+  if (total <= 0) return "0% del mes";
+  return `${Math.round((value / total) * 100)}% del mes`;
+}
 
 /* ─────────────────── vista alumno ─────────────────── */
 function AlumnoDashboard() {
@@ -1083,7 +1316,20 @@ function AdminDashboard() {
     clasesHoy: 0,
     examenesPendientes: 0,
     ingresosMes: 0,
+    alumnosMoto: 0,
+    alumnosCarro: 0,
+    alumnosCombos: 0,
+    alumnosSinCategoria: 0,
+    practicaAdicionalMes: 0,
+    evaluacionesAptitudMes: 0,
   });
+  const [comparisonStats, setComparisonStats] = useState<ComparativeStats>({
+    alumnos: 0,
+    ingresosMes: 0,
+    practicaAdicionalMes: 0,
+    evaluacionesAptitudMes: 0,
+  });
+  const [dailyIngresos, setDailyIngresos] = useState<{ date: number; monto: number }[]>([]);
   const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
@@ -1092,81 +1338,140 @@ function AdminDashboard() {
       try {
         const supabase = createClient();
         const hoy = new Date().toISOString().split("T")[0];
-        const primerDiaMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-          .toISOString()
-          .split("T")[0];
-        const primerDiaSiguienteMes = new Date(
-          new Date().getFullYear(),
-          new Date().getMonth() + 1,
-          1
-        )
-          .toISOString()
-          .split("T")[0];
+        const currentMonthRange = getMonthRange(0);
+        const previousMonthRange = getMonthRange(-1);
 
-        const [matriculasRows, alumnosLegacyRows, clasesRes, examenesRes, ingresosRows] =
+        const [matriculasRows, alumnosRows, clasesRes, examenesRes, ingresosRows] =
           await Promise.all([
-            fetchAllSupabaseRows<{ alumno_id: string | null }>((from, to) =>
-              supabase
-                .from("matriculas_alumno")
-                .select("alumno_id")
-                .gte("fecha_inscripcion", primerDiaMes)
-                .lt("fecha_inscripcion", primerDiaSiguienteMes)
-                .order("fecha_inscripcion", { ascending: false })
+            fetchAllSupabaseRows<MatriculaMonthlyRow>((from, to) =>
+              applyDashboardScope(
+                supabase
+                  .from("matriculas_alumno")
+                  .select("alumno_id, categorias, fecha_inscripcion, created_at")
+                  .gte("created_at", `${previousMonthRange.start}T00:00:00`)
+                  .lt("created_at", `${currentMonthRange.end}T00:00:00`)
+                  .order("created_at", { ascending: false }),
+                perfil
+              )
                 .range(from, to)
-                .then(({ data, error }) => ({
-                  data: (data as { alumno_id: string | null }[]) ?? [],
-                  error,
+                .then((result: { data: MatriculaMonthlyRow[] | null; error: unknown }) => ({
+                  data: result.data ?? [],
+                  error: result.error,
                 }))
             ),
-            fetchAllSupabaseRows<{ id: string }>((from, to) =>
-              supabase
-                .from("alumnos")
-                .select("id")
-                .gte("fecha_inscripcion", primerDiaMes)
-                .lt("fecha_inscripcion", primerDiaSiguienteMes)
-                .eq("tipo_registro", "regular")
-                .order("created_at", { ascending: false })
+            fetchAllSupabaseRows<AlumnoMonthlyRow>((from, to) =>
+              applyDashboardScope(
+                supabase
+                  .from("alumnos")
+                  .select("id, categorias, tipo_registro, fecha_inscripcion, created_at")
+                  .gte("created_at", `${previousMonthRange.start}T00:00:00`)
+                  .lt("created_at", `${currentMonthRange.end}T00:00:00`)
+                  .order("created_at", { ascending: false }),
+                perfil
+              )
                 .range(from, to)
-                .then(({ data, error }) => ({ data: (data as { id: string }[]) ?? [], error }))
+                .then((result: { data: AlumnoMonthlyRow[] | null; error: unknown }) => ({
+                  data: result.data ?? [],
+                  error: result.error,
+                }))
             ),
-            supabase.from("clases").select("id", { count: "exact", head: true }).eq("fecha", hoy),
-            supabase
-              .from("examenes")
-              .select("id", { count: "exact", head: true })
-              .eq("resultado", "pendiente"),
-            fetchAllSupabaseRows<{ monto: number | string }>((from, to) =>
+            applyDashboardScope(
+              supabase.from("clases").select("id", { count: "exact", head: true }).eq("fecha", hoy),
+              perfil
+            ),
+            applyDashboardScope(
               supabase
-                .from("ingresos")
-                .select("monto")
-                .gte("fecha", primerDiaMes)
-                .eq("estado", "cobrado")
-                .order("fecha", { ascending: false })
+                .from("examenes")
+                .select("id", { count: "exact", head: true })
+                .eq("resultado", "pendiente"),
+              perfil
+            ),
+            fetchAllSupabaseRows<MonthlyIncomeRow>((from, to) =>
+              applyDashboardScope(
+                supabase
+                  .from("ingresos")
+                  .select("id, alumno_id, categoria, monto, fecha")
+                  .gte("fecha", previousMonthRange.start)
+                  .lt("fecha", currentMonthRange.end)
+                  .eq("estado", "cobrado")
+                  .order("fecha", { ascending: false }),
+                perfil
+              )
                 .range(from, to)
-                .then(({ data, error }) => ({
-                  data: (data as { monto: number | string }[]) ?? [],
-                  error,
+                .then((result: { data: MonthlyIncomeRow[] | null; error: unknown }) => ({
+                  data: result.data ?? [],
+                  error: result.error,
                 }))
             ),
           ]);
 
-        const alumnosDelMes = new Set<string>();
-        for (const matricula of matriculasRows) {
-          if (matricula.alumno_id) alumnosDelMes.add(matricula.alumno_id);
-        }
-        for (const alumno of alumnosLegacyRows) {
-          alumnosDelMes.add(alumno.id);
-        }
+        const currentEnrollmentMix = summarizeMonthlyEnrollments({
+          matriculas: matriculasRows,
+          alumnos: alumnosRows,
+          range: currentMonthRange,
+        });
+        const previousEnrollmentMix = summarizeMonthlyEnrollments({
+          matriculas: matriculasRows,
+          alumnos: alumnosRows,
+          range: previousMonthRange,
+        });
+        const totalIngresos = sumIngresosByRange(ingresosRows, currentMonthRange);
+        const previousIngresos = sumIngresosByRange(ingresosRows, previousMonthRange);
+        const currentPractice = countIncomeOperationsByCategory(
+          ingresosRows,
+          currentMonthRange,
+          "clase_suelta"
+        );
+        const previousPractice = countIncomeOperationsByCategory(
+          ingresosRows,
+          previousMonthRange,
+          "clase_suelta"
+        );
+        const currentAptitud = countIncomeOperationsByCategory(
+          ingresosRows,
+          currentMonthRange,
+          "examen_aptitud"
+        );
+        const previousAptitud = countIncomeOperationsByCategory(
+          ingresosRows,
+          previousMonthRange,
+          "examen_aptitud"
+        );
 
-        const totalIngresos = ingresosRows.reduce((sum, i) => {
-          const parsed = Number(i.monto);
-          return sum + (isNaN(parsed) ? 0 : parsed);
-        }, 0);
+        const dailyDataMap = new Map<string, number>();
+        ingresosRows.forEach((row) => {
+          if (isDateWithinRange(row.fecha, currentMonthRange)) {
+            const day = resolveMonthlyRecordDate(row.fecha, null);
+            if (day) {
+              dailyDataMap.set(day, (dailyDataMap.get(day) || 0) + Number(row.monto || 0));
+            }
+          }
+        });
+        const sortedDailyData = Array.from(dailyDataMap.entries())
+          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+          .map(([date, amount]) => ({
+            date: parseInt(date.split("-")[2], 10),
+            monto: amount,
+          }));
+        setDailyIngresos(sortedDailyData);
 
         setStats({
-          alumnos: alumnosDelMes.size,
+          alumnos: currentEnrollmentMix.total,
           clasesHoy: clasesRes.count ?? 0,
           examenesPendientes: examenesRes.count ?? 0,
           ingresosMes: totalIngresos,
+          alumnosMoto: currentEnrollmentMix.moto,
+          alumnosCarro: currentEnrollmentMix.carro,
+          alumnosCombos: currentEnrollmentMix.combos,
+          alumnosSinCategoria: currentEnrollmentMix.unclassified,
+          practicaAdicionalMes: currentPractice,
+          evaluacionesAptitudMes: currentAptitud,
+        });
+        setComparisonStats({
+          alumnos: previousEnrollmentMix.total,
+          ingresosMes: previousIngresos,
+          practicaAdicionalMes: previousPractice,
+          evaluacionesAptitudMes: previousAptitud,
         });
       } catch (error) {
         console.error("Error al obtener estadísticas:", error);
@@ -1178,6 +1483,7 @@ function AdminDashboard() {
   }, [perfil]);
 
   const nombre = perfil?.nombre || "Usuario";
+  const previousMonthRange = getMonthRange(-1);
 
   const statCards = [
     {
@@ -1203,6 +1509,60 @@ function AdminDashboard() {
       value: `$${stats.ingresosMes.toLocaleString("es-CO")}`,
       icon: <DollarSign size={20} />,
       color: "#bf5af2",
+    },
+  ];
+
+  const courseMixCards = [
+    {
+      label: "Moto",
+      value: stats.alumnosMoto,
+      detail: "AM, A1 y A2",
+      accent: "bg-[#0071e3]/10 text-[#0071e3]",
+      valueClass: "text-[#0071e3]",
+      icon: <Users size={16} />,
+    },
+    {
+      label: "Carro",
+      value: stats.alumnosCarro,
+      detail: "B1, C y RC",
+      accent: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+      valueClass: "text-emerald-600 dark:text-emerald-300",
+      icon: <CarFront size={16} />,
+    },
+    {
+      label: "Combos",
+      value: stats.alumnosCombos,
+      detail: "Matrículas mixtas",
+      accent: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+      valueClass: "text-amber-600 dark:text-amber-300",
+      icon: <BookOpen size={16} />,
+    },
+  ];
+
+  const comparisonCards = [
+    {
+      label: "Cursos nuevos",
+      current: stats.alumnos,
+      previous: comparisonStats.alumnos,
+      kind: "count" as const,
+    },
+    {
+      label: "Ingresos cobrados",
+      current: stats.ingresosMes,
+      previous: comparisonStats.ingresosMes,
+      kind: "currency" as const,
+    },
+    {
+      label: "Práctica adicional",
+      current: stats.practicaAdicionalMes,
+      previous: comparisonStats.practicaAdicionalMes,
+      kind: "count" as const,
+    },
+    {
+      label: "Evaluaciones de aptitud",
+      current: stats.evaluacionesAptitudMes,
+      previous: comparisonStats.evaluacionesAptitudMes,
+      kind: "count" as const,
     },
   ];
 
@@ -1240,7 +1600,177 @@ function AdminDashboard() {
         ))}
       </div>
 
-      <div className="animate-fade-in rounded-3xl border border-gray-100 bg-white p-10 text-center delay-200 dark:border-gray-800 dark:bg-[#1d1d1f]">
+      <div className="animate-fade-in mb-10 grid grid-cols-1 gap-6 delay-150 xl:grid-cols-[1.05fr_0.95fr]">
+        <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Entradas del mes por línea
+              </h3>
+              <p className="mt-1 text-sm text-[#86868b]">
+                Cursos nuevos separados entre moto, carro y combos para seguir la mezcla comercial.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#0071e3]/10 px-3 py-2 text-xs font-semibold text-[#0071e3]">
+              {stats.alumnos.toLocaleString("es-CO")} curso{stats.alumnos === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {courseMixCards.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-[1.75rem] border border-gray-100 bg-[#f7f9fc] p-4 dark:border-gray-800 dark:bg-[#111214]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {item.label}
+                    </p>
+                    <p className="mt-1 text-xs text-[#86868b]">{item.detail}</p>
+                  </div>
+                  <div
+                    className={`flex h-9 w-9 items-center justify-center rounded-2xl ${item.accent}`}
+                  >
+                    {item.icon}
+                  </div>
+                </div>
+                <p className={`mt-5 text-3xl font-semibold ${item.valueClass}`}>{item.value}</p>
+                <p className="mt-2 text-xs text-[#86868b]">
+                  {getShareLabel(item.value, stats.alumnos)}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3 text-xs text-[#86868b]">
+            <span className="rounded-full bg-gray-100 px-3 py-1.5 dark:bg-[#111214]">
+              {stats.practicaAdicionalMes.toLocaleString("es-CO")} prácticas adicionales
+            </span>
+            <span className="rounded-full bg-gray-100 px-3 py-1.5 dark:bg-[#111214]">
+              {stats.evaluacionesAptitudMes.toLocaleString("es-CO")} evaluaciones de aptitud
+            </span>
+            {stats.alumnosSinCategoria > 0 ? (
+              <span className="rounded-full bg-gray-100 px-3 py-1.5 dark:bg-[#111214]">
+                {stats.alumnosSinCategoria.toLocaleString("es-CO")} por clasificar
+              </span>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <div className="mb-5">
+            <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              Analítica comparativa
+            </h3>
+            <p className="mt-1 text-sm text-[#86868b]">
+              Comparación del mes actual contra {previousMonthRange.label}.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {comparisonCards.map((item) => {
+              const diff = item.current - item.previous;
+              const currentValue =
+                item.kind === "currency" ? fmt(item.current) : item.current.toLocaleString("es-CO");
+              const previousValue =
+                item.kind === "currency"
+                  ? fmt(item.previous)
+                  : item.previous.toLocaleString("es-CO");
+
+              return (
+                <div
+                  key={item.label}
+                  className="rounded-[1.75rem] border border-gray-100 bg-[#f7f9fc] px-4 py-4 dark:border-gray-800 dark:bg-[#111214]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                        {item.label}
+                      </p>
+                      <p className="mt-1 text-xs text-[#86868b]">{previousValue} el mes anterior</p>
+                    </div>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        diff > 0
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                          : diff < 0
+                            ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                            : "bg-gray-100 text-[#666] dark:bg-gray-800 dark:text-[#c7c7cc]"
+                      }`}
+                    >
+                      {formatComparisonDelta(diff, item.kind)}
+                    </span>
+                  </div>
+                  <p className="mt-4 text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {currentValue}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+
+      <div className="animate-fade-in mb-10 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm delay-200 dark:border-gray-800 dark:bg-[#1d1d1f]">
+        <h3 className="mb-4 text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+          Evolución de Ingresos del Mes
+        </h3>
+        {loadingStats ? (
+          <div className="h-[300px] w-full animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />
+        ) : dailyIngresos.length === 0 ? (
+          <div className="flex h-[300px] items-center justify-center text-sm text-[#86868b]">
+            No hay datos suficientes para graficar.
+          </div>
+        ) : (
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={dailyIngresos} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorMonto" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0071e3" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#0071e3" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                <XAxis
+                  dataKey="date"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 12, fill: "#86868b" }}
+                  tickFormatter={(val) => `Día ${val}`}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 12, fill: "#86868b" }}
+                  tickFormatter={(val) => `$${(val / 1000).toFixed(0)}k`}
+                />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any) => [`$${Number(value).toLocaleString()}`, "Ingreso"]}
+                  labelFormatter={(val) => `Día ${val} del mes`}
+                  contentStyle={{
+                    borderRadius: "12px",
+                    border: "none",
+                    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="monto"
+                  stroke="#0071e3"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorMonto)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      <div className="animate-fade-in rounded-3xl border border-gray-100 bg-white p-10 text-center delay-300 dark:border-gray-800 dark:bg-[#1d1d1f]">
         <h3 className="mb-2 text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
           Panel de Gestión
         </h3>

@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import type { EstadoVehiculo, Rol, TipoMantenimiento, TipoVehiculo } from "@/types/database";
 
-const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"];
+const ALLOWED_ROLES: Rol[] = [
+  "super_admin",
+  "admin_escuela",
+  "admin_sede",
+  "administrativo",
+  "instructor",
+];
 
 type VehiculoWithBitacoraRow = {
   id: string;
@@ -52,9 +58,7 @@ export async function GET(request: Request) {
   const search = (url.searchParams.get("q") ?? "").trim();
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
-  const escuelaId = perfil.rol === "super_admin"
-    ? (url.searchParams.get("escuela_id") ?? perfil.escuela_id)
-    : perfil.escuela_id;
+  const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
@@ -130,7 +134,8 @@ export async function GET(request: Request) {
     rows: rowsRes.rows.map((row) => ({
       ...row,
       registros_bitacora: Number(row.registros_bitacora || 0),
-      ultimo_registro_monto: row.ultimo_registro_monto == null ? null : toNumber(row.ultimo_registro_monto),
+      ultimo_registro_monto:
+        row.ultimo_registro_monto == null ? null : toNumber(row.ultimo_registro_monto),
       ultimo_registro_km: row.ultimo_registro_km == null ? null : toNumber(row.ultimo_registro_km),
     })),
   });

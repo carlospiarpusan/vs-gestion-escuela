@@ -9,10 +9,12 @@ import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import { fetchSchoolCategories } from "@/lib/school-categories";
 import type { Ingreso, MetodoPago, TipoRegistroAlumno } from "@/types/database";
-import { BookOpen, DollarSign, Plus, X } from "lucide-react";
+import { BookOpen, DollarSign, Plus, X, Printer } from "lucide-react";
+import { toast } from "sonner";
 import AlumnoModal from "./AlumnoModal";
 import MatriculaModal from "./MatriculaModal";
 import AbonoModal from "./AbonoModal";
+import { alumnoSchema, abonoSchema, matriculaSchema } from "./schemas";
 import {
   PAGE_SIZE,
   MONTH_OPTIONS,
@@ -49,8 +51,6 @@ export default function AlumnosPage() {
   const [editing, setEditing] = useState<AlumnoRow | null>(null);
   const [deleting, setDeleting] = useState<AlumnoRow | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [deleteError, setDeleteError] = useState("");
   const {
     value: form,
     setValue: setForm,
@@ -63,7 +63,6 @@ export default function AlumnosPage() {
   const [matriculaOpen, setMatriculaOpen] = useState(false);
   const [matriculaAlumno, setMatriculaAlumno] = useState<AlumnoRow | null>(null);
   const [matriculaSaving, setMatriculaSaving] = useState(false);
-  const [matriculaError, setMatriculaError] = useState("");
   const {
     value: matriculaForm,
     setValue: setMatriculaForm,
@@ -84,7 +83,6 @@ export default function AlumnosPage() {
   const [abonoConcepto, setAbonoConcepto] = useState("");
   const [abonoFecha, setAbonoFecha] = useState(new Date().toISOString().split("T")[0]);
   const [abonoSaving, setAbonoSaving] = useState(false);
-  const [abonoError, setAbonoError] = useState("");
 
   const fetchIdRef = useRef(0);
 
@@ -310,7 +308,6 @@ export default function AlumnosPage() {
   const openCreate = () => {
     setEditing(null);
     restoreAlumnoDraft(emptyForm);
-    setError("");
     setModalOpen(true);
   };
 
@@ -352,13 +349,11 @@ export default function AlumnosPage() {
       tramitador_nombre: matricula?.tramitador_nombre || "",
       tramitador_valor: matricula?.tramitador_valor ? String(matricula.tramitador_valor) : "",
     });
-    setError("");
     setModalOpen(true);
   };
 
   const openDelete = (alumno: AlumnoRow) => {
     setDeleting(alumno);
-    setDeleteError("");
     setDeleteOpen(true);
   };
 
@@ -368,7 +363,6 @@ export default function AlumnosPage() {
       ...emptyMatriculaForm,
       fecha_inscripcion: new Date().toISOString().split("T")[0],
     });
-    setMatriculaError("");
     setMatriculaOpen(true);
   };
 
@@ -380,7 +374,6 @@ export default function AlumnosPage() {
     setAbonoMetodo("efectivo");
     setAbonoConcepto("");
     setAbonoFecha(new Date().toISOString().split("T")[0]);
-    setAbonoError("");
     setAbonoIngresos([]);
     setAbonoOpen(true);
     setLoadingIngresos(true);
@@ -400,8 +393,9 @@ export default function AlumnosPage() {
   // ─── Handlers ───────────────────────────────────────────────────────
 
   const handleSave = async () => {
-    if (!form.nombre || !form.apellidos || !form.dni || !form.telefono) {
-      setError("Nombre, apellidos, cédula y teléfono son obligatorios.");
+    const result = alumnoSchema.safeParse(form);
+    if (!result.success) {
+      toast.error(result.error.issues[0]?.message || "Error de validación.");
       return;
     }
 
@@ -409,7 +403,7 @@ export default function AlumnosPage() {
     const isPractice = form.tipo_registro === "practica_adicional";
 
     if (!isPractice && form.categorias.length === 0) {
-      setError(
+      toast.error(
         isAptitud
           ? "Debes seleccionar la categoría evaluada."
           : "Debes seleccionar al menos una categoría de curso."
@@ -424,17 +418,8 @@ export default function AlumnosPage() {
     const notaPracticaNum =
       form.nota_examen_practico === "" ? null : parseFloat(String(form.nota_examen_practico));
 
-    if (
-      [notaTeoricaNum, notaPracticaNum].some(
-        (nota) => nota !== null && (Number.isNaN(nota) || nota < 0 || nota > 100)
-      )
-    ) {
-      setError("Las calificaciones deben estar entre 0 y 100.");
-      return;
-    }
-
     if (!editing && abonoNum > 0 && valorTotalNum > 0 && abonoNum > valorTotalNum) {
-      setError(
+      toast.error(
         isAptitud
           ? "El pago inicial no puede ser mayor al valor del servicio."
           : "El abono no puede ser mayor al valor total del curso."
@@ -447,22 +432,20 @@ export default function AlumnosPage() {
       form.tramitador_nombre
     );
     if (tramitadorValidationMessage) {
-      setError(tramitadorValidationMessage);
+      toast.error(tramitadorValidationMessage);
       return;
     }
 
     if (!perfil?.escuela_id) {
-      setError("Tu usuario no tiene escuela asignada. Contacta al administrador.");
+      toast.error("Tu usuario no tiene escuela asignada. Contacta al administrador.");
       return;
     }
 
     setSaving(true);
-    setError("");
-
     try {
       const sedeId = await resolveSedeId(perfil.escuela_id, perfil.sede_id);
       if (!sedeId) {
-        setError("No se encontró una sede para esta escuela. Crea una sede primero.");
+        toast.error("No se encontró una sede para esta escuela. Crea una sede primero.");
         setSaving(false);
         return;
       }
@@ -501,13 +484,14 @@ export default function AlumnosPage() {
 
       clearAlumnoDraft(emptyForm);
       setModalOpen(false);
+      toast.success(editing ? "Alumno actualizado" : "Alumno registrado");
       fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo);
     } catch (err: unknown) {
       const message =
         err instanceof Error
           ? err.message
           : (err as { message?: string })?.message || "Error al guardar";
-      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -516,19 +500,20 @@ export default function AlumnosPage() {
   const handleSaveMatricula = async () => {
     if (!matriculaAlumno || !perfil?.escuela_id) return;
     if (matriculaAlumno.tipo_registro !== "regular") {
-      setMatriculaError("Solo los alumnos regulares pueden tener matrículas.");
+      toast.error("Solo los alumnos regulares pueden tener matrículas.");
       return;
     }
 
-    if (matriculaForm.categorias.length === 0) {
-      setMatriculaError("Debes seleccionar al menos una categoría de curso.");
+    const result = matriculaSchema.safeParse(matriculaForm);
+    if (!result.success) {
+      toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
       return;
     }
 
     const valorTotalNum = parseFloat(String(matriculaForm.valor_total)) || 0;
     const abonoNum = parseFloat(String(matriculaForm.abono)) || 0;
     if (abonoNum > 0 && valorTotalNum > 0 && abonoNum > valorTotalNum) {
-      setMatriculaError("El abono no puede ser mayor al valor total del curso.");
+      toast.error("El abono no puede ser mayor al valor total del curso.");
       return;
     }
 
@@ -537,18 +522,16 @@ export default function AlumnosPage() {
       matriculaForm.tramitador_nombre
     );
     if (tramitadorValidationMessage) {
-      setMatriculaError(tramitadorValidationMessage);
+      toast.error(tramitadorValidationMessage);
       return;
     }
 
     setMatriculaSaving(true);
-    setMatriculaError("");
-
     try {
       const sedeId =
         matriculaAlumno.sede_id || (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
       if (!sedeId) {
-        setMatriculaError("No se encontró una sede para esta escuela.");
+        toast.error("No se encontró una sede para esta escuela.");
         setMatriculaSaving(false);
         return;
       }
@@ -576,13 +559,14 @@ export default function AlumnosPage() {
       setMatriculaOpen(false);
       setMatriculaAlumno(null);
       clearMatriculaDraft(emptyMatriculaForm);
+      toast.success("Matrícula creada correctamente");
       fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo);
     } catch (err: unknown) {
       const message =
         err instanceof Error
           ? err.message
           : (err as { message?: string })?.message || "Error al crear la matrícula";
-      setMatriculaError(message);
+      toast.error(message);
     } finally {
       setMatriculaSaving(false);
     }
@@ -591,25 +575,24 @@ export default function AlumnosPage() {
   const handleSaveAbono = async () => {
     if (!abonoAlumno || !perfil?.escuela_id) return;
 
-    const monto = parseFloat(abonoMonto);
-    if (!monto || monto <= 0) {
-      setAbonoError("El monto del abono debe ser mayor a 0.");
+    const result = abonoSchema.safeParse({ monto: abonoMonto });
+    if (!result.success) {
+      toast.error(result.error.issues[0]?.message);
       return;
     }
+    const monto = parseFloat(abonoMonto);
 
     if (!abonoFecha) {
-      setAbonoError("Debes seleccionar una fecha para el abono.");
+      toast.error("Debes seleccionar una fecha para el abono.");
       return;
     }
 
     if (abonoMatriculas.length > 0 && !abonoMatriculaActual) {
-      setAbonoError("Selecciona la matrícula a la que corresponde este abono.");
+      toast.error("Selecciona la matrícula a la que corresponde este abono.");
       return;
     }
 
     setAbonoSaving(true);
-    setAbonoError("");
-
     try {
       await fetchJsonWithRetry("/api/alumnos/abonos", {
         method: "POST",
@@ -637,13 +620,14 @@ export default function AlumnosPage() {
       setAbonoMonto("");
       setAbonoConcepto("");
       setAbonoFecha(new Date().toISOString().split("T")[0]);
+      toast.success("Abono registrado con éxito");
       fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo);
     } catch (err: unknown) {
       const message =
         err instanceof Error
           ? err.message
           : (err as { message?: string })?.message || "Error al registrar";
-      setAbonoError(message);
+      toast.error(message);
     } finally {
       setAbonoSaving(false);
     }
@@ -653,7 +637,6 @@ export default function AlumnosPage() {
     if (!deleting) return;
 
     setSaving(true);
-    setDeleteError("");
     try {
       const supabase = createClient();
       const { error: alumnoError } = await supabase.from("alumnos").delete().eq("id", deleting.id);
@@ -661,9 +644,10 @@ export default function AlumnosPage() {
 
       setDeleteOpen(false);
       setDeleting(null);
+      toast.success("Alumno eliminado");
       fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo);
     } catch (err: unknown) {
-      setDeleteError(err instanceof Error ? err.message : "Error al eliminar");
+      toast.error(err instanceof Error ? err.message : "Error al eliminar");
     } finally {
       setSaving(false);
     }
@@ -1028,6 +1012,22 @@ export default function AlumnosPage() {
               >
                 <DollarSign size={14} />
               </button>
+              {row.tipo_registro === "regular" && (
+                <button
+                  onClick={() => {
+                    if (row.matriculas?.[0]?.id) {
+                      window.open(`/print/contrato/${row.matriculas[0].id}`, "_blank");
+                    } else {
+                      toast.error("El alumno no tiene matrícula para imprimir.");
+                    }
+                  }}
+                  className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-900/20"
+                  title="Imprimir contrato"
+                  aria-label="Imprimir contrato"
+                >
+                  <Printer size={14} />
+                </button>
+              )}
             </>
           )}
         />
@@ -1044,7 +1044,6 @@ export default function AlumnosPage() {
         isPracticeForm={isPracticeForm}
         form={form}
         setForm={setForm}
-        error={error}
         saving={saving}
         handleSave={handleSave}
         toggleCategoria={toggleCategoria}
@@ -1060,7 +1059,6 @@ export default function AlumnosPage() {
         matriculaForm={matriculaForm}
         setMatriculaForm={setMatriculaForm}
         matriculaSaving={matriculaSaving}
-        matriculaError={matriculaError}
         handleSaveMatricula={handleSaveMatricula}
         toggleMatriculaCategoria={toggleMatriculaCategoria}
         categoriasEscuela={categoriasEscuela}
@@ -1088,7 +1086,6 @@ export default function AlumnosPage() {
         abonoFecha={abonoFecha}
         setAbonoFecha={setAbonoFecha}
         abonoSaving={abonoSaving}
-        abonoError={abonoError}
         handleSaveAbono={handleSaveAbono}
       />
 
@@ -1097,12 +1094,6 @@ export default function AlumnosPage() {
         onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
         loading={saving}
-        description={
-          <div className="space-y-3">
-            <p>¿Eliminar este alumno? Esta acción no se puede deshacer.</p>
-            {deleteError && <p className="text-red-500">{deleteError}</p>}
-          </div>
-        }
       />
     </div>
   );

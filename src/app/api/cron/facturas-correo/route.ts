@@ -8,13 +8,13 @@ const CRON_LOCK_KEY = 36036;
 
 function isAuthorizedCronRequest(request: Request) {
   const expectedSecret = process.env.CRON_SECRET;
-  const authHeader = request.headers.get("authorization");
-  if (expectedSecret) {
-    return authHeader === `Bearer ${expectedSecret}`;
+  if (!expectedSecret) {
+    console.error("[CRON facturas-correo] CRON_SECRET no está configurado.");
+    return false;
   }
 
-  const userAgent = (request.headers.get("user-agent") || "").toLowerCase();
-  return userAgent.includes("vercel-cron");
+  const authHeader = request.headers.get("authorization");
+  return authHeader === `Bearer ${expectedSecret}`;
 }
 
 export async function GET(request: Request) {
@@ -39,7 +39,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, results });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "No se pudo ejecutar la sincronizacion automatica." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "No se pudo ejecutar la sincronizacion automatica.",
+      },
       { status: 500 }
     );
   } finally {

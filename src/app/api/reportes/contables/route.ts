@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import { normalizeUuid } from "@/lib/dashboard-scope";
 import { parseExpenseSearch } from "@/lib/expense-search";
 import {
   EXAMEN_INCOME_CATEGORIES,
@@ -7,6 +8,7 @@ import {
   PRACTICA_INCOME_CATEGORIES,
 } from "@/lib/income-view";
 import { getServerDbPool } from "@/lib/server-db";
+import { createServerTiming } from "@/lib/server-timing";
 import type { Rol } from "@/types/database";
 
 type AllowedPerfil = {
@@ -114,6 +116,17 @@ type NamedAggregateRow = {
   nombre: string | null;
   cantidad: number | string | null;
   total: number | string | null;
+};
+
+type TramitadorPortfolioRow = {
+  nombre: string | null;
+  movimientos: number | string | null;
+  pagado: number | string | null;
+  pendiente: number | string | null;
+  vencido: number | string | null;
+  por_vencer: number | string | null;
+  ticket_promedio: number | string | null;
+  ultima_fecha: string | null;
 };
 
 type AgingBucketRow = {
@@ -286,13 +299,14 @@ function parseReportIncludes(value: string | null) {
 }
 
 function resolveScope(
+  request: Request,
   perfil: AllowedPerfil,
   requestedSchoolId: string | null,
   requestedSedeId: string | null
 ): ReportScope {
   if (perfil.rol === "super_admin") {
     return {
-      escuelaId: requestedSchoolId,
+      escuelaId: resolveEscuelaIdForRequest(request, perfil, requestedSchoolId),
       sedeId: requestedSedeId,
     };
   }
@@ -327,32 +341,37 @@ function buildQueryParts({
   search: string;
   filters: QueryFilters;
 }): QueryParts {
+  const escuelaId = normalizeUuid(scope.escuelaId);
+  const sedeId = normalizeUuid(scope.sedeId);
+  const alumnoId = normalizeUuid(filters.alumnoId);
   const values: string[] = [];
   const ingresosWhere: string[] = [];
   const gastosWhere: string[] = [];
   const matriculasWhere: string[] = [];
   const standaloneWhere: string[] = [];
   const expenseSearch = parseExpenseSearch(search);
+  let escuelaRef: string | null = null;
+  let sedeRef: string | null = null;
 
   const addValue = (value: string) => {
     values.push(value);
     return `$${values.length}`;
   };
 
-  if (scope.escuelaId) {
-    const ref = addValue(scope.escuelaId);
-    ingresosWhere.push(`i.escuela_id = ${ref}`);
-    gastosWhere.push(`g.escuela_id = ${ref}`);
-    matriculasWhere.push(`m.escuela_id = ${ref}`);
-    standaloneWhere.push(`a.escuela_id = ${ref}`);
+  if (escuelaId) {
+    escuelaRef = addValue(escuelaId);
+    ingresosWhere.push(`i.escuela_id = ${escuelaRef}`);
+    gastosWhere.push(`g.escuela_id = ${escuelaRef}`);
+    matriculasWhere.push(`m.escuela_id = ${escuelaRef}`);
+    standaloneWhere.push(`a.escuela_id = ${escuelaRef}`);
   }
 
-  if (scope.sedeId) {
-    const ref = addValue(scope.sedeId);
-    ingresosWhere.push(`i.sede_id = ${ref}`);
-    gastosWhere.push(`g.sede_id = ${ref}`);
-    matriculasWhere.push(`m.sede_id = ${ref}`);
-    standaloneWhere.push(`a.sede_id = ${ref}`);
+  if (sedeId) {
+    sedeRef = addValue(sedeId);
+    ingresosWhere.push(`i.sede_id = ${sedeRef}`);
+    gastosWhere.push(`g.sede_id = ${sedeRef}`);
+    matriculasWhere.push(`m.sede_id = ${sedeRef}`);
+    standaloneWhere.push(`a.sede_id = ${sedeRef}`);
   }
 
   const fromRef = addValue(from);
@@ -367,8 +386,8 @@ function buildQueryParts({
   matriculasWhere.push(`m.fecha_inscripcion <= ${toRef}`);
   standaloneWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) <= ${toRef}`);
 
-  if (filters.alumnoId) {
-    const ref = addValue(filters.alumnoId);
+  if (alumnoId) {
+    const ref = addValue(alumnoId);
     ingresosWhere.push(`i.alumno_id = ${ref}`);
     matriculasWhere.push(`m.alumno_id = ${ref}`);
     standaloneWhere.push(`a.id = ${ref}`);
@@ -465,8 +484,8 @@ function buildQueryParts({
   }
 
   if (filters.gastoContraparte) {
-    const ref = addValue(`%${filters.gastoContraparte}%`);
-    gastosWhere.push(`COALESCE(g.proveedor, '') ILIKE ${ref}`);
+    const ref = addValue(filters.gastoContraparte.trim().toLowerCase());
+    gastosWhere.push(`LOWER(COALESCE(g.proveedor, '')) = ${ref}`);
   }
 
   if (filters.gastoEstado) {
@@ -603,23 +622,21 @@ function buildQueryParts({
     gastosWhere.push(`g.recurrente = ${expenseSearch.recurrente ? "true" : "false"}`);
   }
 
-  // Build unfiltered student count subqueries (only scope + date, no ingreso_view)
+  // Reuse the base scope/date placeholders so every query can share the same values array.
   const matriculaScopeWhere: string[] = [];
   const standaloneScopeWhere: string[] = [];
-  if (scope.escuelaId) {
-    matriculaScopeWhere.push(`m.escuela_id = ${addValue(scope.escuelaId)}`);
-    standaloneScopeWhere.push(`a.escuela_id = ${addValue(scope.escuelaId)}`);
+  if (escuelaRef) {
+    matriculaScopeWhere.push(`m.escuela_id = ${escuelaRef}`);
+    standaloneScopeWhere.push(`a.escuela_id = ${escuelaRef}`);
   }
-  if (scope.sedeId) {
-    matriculaScopeWhere.push(`m.sede_id = ${addValue(scope.sedeId)}`);
-    standaloneScopeWhere.push(`a.sede_id = ${addValue(scope.sedeId)}`);
+  if (sedeRef) {
+    matriculaScopeWhere.push(`m.sede_id = ${sedeRef}`);
+    standaloneScopeWhere.push(`a.sede_id = ${sedeRef}`);
   }
-  const scFromRef = addValue(from);
-  const scToRef = addValue(to);
-  matriculaScopeWhere.push(`m.fecha_inscripcion >= ${scFromRef}`);
-  matriculaScopeWhere.push(`m.fecha_inscripcion <= ${scToRef}`);
-  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) >= ${scFromRef}`);
-  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) <= ${scToRef}`);
+  matriculaScopeWhere.push(`m.fecha_inscripcion >= ${fromRef}`);
+  matriculaScopeWhere.push(`m.fecha_inscripcion <= ${toRef}`);
+  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) >= ${fromRef}`);
+  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) <= ${toRef}`);
 
   const matWhere = matriculaScopeWhere.join(" AND ");
   const staWhere = standaloneScopeWhere.join(" AND ");
@@ -941,6 +958,7 @@ async function buildJsonResponse({
     payablesBucketsRes,
     payablesTramitadoresRes,
     payablesTopRes,
+    tramitadorPortfolioRes,
     contractsSummaryRes,
     contractsMonthlyRes,
     contractsOldestRes,
@@ -1273,6 +1291,47 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as CounterpartyAggregateRow[] }),
+    needsBreakdown || needsPayables
+      ? pool.query<TramitadorPortfolioRow>(
+          `
+            ${cte}
+            select
+              coalesce(contraparte, 'Sin tramitador') as nombre,
+              count(*)::int as movimientos,
+              coalesce(sum(case when estado = 'pagado' then monto else 0 end), 0) as pagado,
+              coalesce(sum(case when estado = 'pendiente' then monto else 0 end), 0) as pendiente,
+              coalesce(
+                sum(
+                  case
+                    when estado = 'pendiente' and fecha_vencimiento < current_date then monto
+                    else 0
+                  end
+                ),
+                0
+              ) as vencido,
+              coalesce(
+                sum(
+                  case
+                    when estado = 'pendiente'
+                      and fecha_vencimiento >= current_date
+                      and fecha_vencimiento <= current_date + interval '7 day'
+                    then monto
+                    else 0
+                  end
+                ),
+                0
+              ) as por_vencer,
+              coalesce(avg(monto), 0) as ticket_promedio,
+              max(fecha)::date as ultima_fecha
+            from filtered_gastos
+            where categoria = 'tramitador'
+            group by 1
+            order by pendiente desc, pagado desc, movimientos desc, nombre asc
+            limit 12
+          `,
+          parts.values
+        )
+      : Promise.resolve({ rows: [] as TramitadorPortfolioRow[] }),
     needsContracts
       ? pool.query<ContractsSummaryRow>(
           `
@@ -1521,6 +1580,16 @@ async function buildJsonResponse({
         cantidad: Number(row.cantidad || 0),
         total: toNumber(row.total),
       })),
+      tramitadorPortfolio: tramitadorPortfolioRes.rows.map((row: TramitadorPortfolioRow) => ({
+        nombre: row.nombre || "Sin tramitador",
+        movimientos: Number(row.movimientos || 0),
+        pagado: toNumber(row.pagado),
+        pendiente: toNumber(row.pendiente),
+        vencido: toNumber(row.vencido),
+        porVencer: toNumber(row.por_vencer),
+        ticketPromedio: toNumber(row.ticket_promedio),
+        ultimaFecha: normalizeDateOnly(row.ultima_fecha),
+      })),
       topProveedoresGasto: topProveedoresGastoRes.rows.map((row: AggregateRow) => ({
         concepto: row.concepto,
         cantidad: Number(row.cantidad || 0),
@@ -1743,26 +1812,28 @@ async function buildCsvResponse({
     parts.values
   );
 
+  const CSV_DELIMITER = ";";
+
   const lines = [
     [
       "Fecha",
       "Tipo",
-      "Categoria",
+      "Categoría",
       "Concepto",
       "Monto",
       "Estado",
-      "Metodo de pago",
+      "Método de pago",
       "Factura",
       "Contraparte",
       "Documento",
       "Contrato",
     ]
       .map(formatCsvCell)
-      .join(","),
+      .join(CSV_DELIMITER),
     ...ledgerRes.rows.map((row: LedgerRow & { created_at: string }) =>
       [
         normalizeDateOnly(row.fecha),
-        row.tipo,
+        row.tipo === "ingreso" ? "Ingreso" : "Gasto",
         row.categoria,
         row.concepto,
         toNumber(row.monto),
@@ -1774,11 +1845,13 @@ async function buildCsvResponse({
         row.contrato,
       ]
         .map((value) => formatCsvCell(value as string | number | null))
-        .join(",")
+        .join(CSV_DELIMITER)
     ),
   ];
 
-  return new NextResponse(lines.join("\n"), {
+  const csvContent = "\uFEFF" + lines.join("\n");
+
+  return new NextResponse(csvContent, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
@@ -1788,7 +1861,12 @@ async function buildCsvResponse({
 }
 
 export async function GET(request: Request) {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const timing = createServerTiming();
+  const authz = await timing.measure(
+    "authz",
+    () => authorizeApiRequest(ALLOWED_ROLES),
+    "Autorizacion API"
+  );
   if (!authz.ok) return authz.response;
 
   const perfil = authz.perfil as AllowedPerfil;
@@ -1799,13 +1877,13 @@ export async function GET(request: Request) {
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 10_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 20, 10, 10_000);
   const search = normalizeSearch(url.searchParams.get("q"));
-  const requestedSchoolId = url.searchParams.get("escuela_id");
-  const requestedSedeId = url.searchParams.get("sede_id");
+  const requestedSchoolId = normalizeUuid(url.searchParams.get("escuela_id"));
+  const requestedSedeId = normalizeUuid(url.searchParams.get("sede_id"));
   const format = url.searchParams.get("format");
   const ledgerTipo = url.searchParams.get("ledger_tipo") as "ingreso" | "gasto" | null;
   const includes = parseReportIncludes(url.searchParams.get("include"));
   const filters: QueryFilters = {
-    alumnoId: url.searchParams.get("alumno_id"),
+    alumnoId: normalizeUuid(url.searchParams.get("alumno_id")),
     ingresoCategoria: url.searchParams.get("ingreso_categoria"),
     ingresoEstado: url.searchParams.get("ingreso_estado"),
     ingresoMetodo: url.searchParams.get("ingreso_metodo"),
@@ -1819,34 +1897,52 @@ export async function GET(request: Request) {
   };
 
   try {
-    const scope = resolveScope(perfil, requestedSchoolId, requestedSedeId);
+    const scope = resolveScope(request, perfil, requestedSchoolId, requestedSedeId);
     const pool = getServerDbPool();
-    const parts = buildQueryParts({
-      scope,
-      from,
-      to,
-      search,
-      filters,
-    });
+    const parts = await timing.measure(
+      "query_build",
+      () =>
+        buildQueryParts({
+          scope,
+          from,
+          to,
+          search,
+          filters,
+        }),
+      "Preparacion de SQL"
+    );
 
     if (format === "csv") {
-      return await buildCsvResponse({ pool, parts, from, to, ledgerTipo });
+      const response = await timing.measure(
+        "report_csv",
+        () => buildCsvResponse({ pool, parts, from, to, ledgerTipo }),
+        "Reporte contable CSV"
+      );
+      return timing.apply(response);
     }
 
-    return await buildJsonResponse({
-      pool,
-      parts,
-      page,
-      pageSize,
-      perfil,
-      scope,
-      from,
-      to,
-      includes,
-      ledgerTipo,
-    });
+    const response = await timing.measure(
+      "report_json",
+      () =>
+        buildJsonResponse({
+          pool,
+          parts,
+          page,
+          pageSize,
+          perfil,
+          scope,
+          from,
+          to,
+          includes,
+          ledgerTipo,
+        }),
+      "Reporte contable JSON"
+    );
+    return timing.apply(response);
   } catch (error) {
     console.error("[API REPORTES CONTABLES] Error:", error);
-    return NextResponse.json({ error: "No se pudo generar el informe contable." }, { status: 500 });
+    return timing.apply(
+      NextResponse.json({ error: "No se pudo generar el informe contable." }, { status: 500 })
+    );
   }
 }

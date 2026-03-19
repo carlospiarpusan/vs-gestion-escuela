@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol, TipoMantenimiento } from "@/types/database";
 
-const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"];
+const ALLOWED_ROLES: Rol[] = [
+  "super_admin",
+  "admin_escuela",
+  "admin_sede",
+  "administrativo",
+  "instructor",
+];
 
 type MantenimientoRow = {
   id: string;
@@ -52,9 +58,7 @@ export async function GET(request: Request) {
   const vehiculoId = (url.searchParams.get("vehiculo_id") ?? "").trim();
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 250);
-  const escuelaId = perfil.rol === "super_admin"
-    ? (url.searchParams.get("escuela_id") ?? perfil.escuela_id)
-    : perfil.escuela_id;
+  const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });

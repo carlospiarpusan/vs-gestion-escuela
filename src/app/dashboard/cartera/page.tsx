@@ -24,13 +24,13 @@ import {
   getMonthDateRange,
   MONTH_OPTIONS,
 } from "@/lib/accounting-dashboard";
-import { INCOME_VIEW_ITEMS, type IncomeView } from "@/lib/income-view";
 import type { MetodoPago } from "@/types/database";
 import { AlertTriangle, BookOpen, Clock3, Download, Wallet, X } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
 type CarteraTableRow = AccountingContractPendingRow & { id: string };
+type CarteraView = "all" | "matriculas" | "practicas" | "aptitud";
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -50,9 +50,24 @@ const metodos: { value: MetodoPago; label: string }[] = [
   { value: "otro", label: "Otro" },
 ];
 
-const VIEW_ITEMS = INCOME_VIEW_ITEMS.filter(
-  (v) => v.id === "all" || v.id === "matriculas" || v.id === "practicas" || v.id === "examenes"
-);
+const VIEW_ITEMS: Array<{ id: CarteraView; label: string; description: string }> = [
+  { id: "all", label: "Todo", description: "Toda la cartera pendiente del periodo." },
+  {
+    id: "matriculas",
+    label: "Cursos",
+    description: "Matrícula, mensualidad, material y tasas.",
+  },
+  {
+    id: "practicas",
+    label: "Práctica adicional",
+    description: "Prácticas sueltas fuera del curso regular.",
+  },
+  {
+    id: "aptitud",
+    label: "Evaluaciones de aptitud",
+    description: "Procesos y cobros del módulo de aptitud.",
+  },
+];
 
 function getShare(value: number, total: number) {
   if (total <= 0) return "0%";
@@ -67,7 +82,7 @@ export default function CarteraPage() {
 
   // ─── Filters ──────────────────────────────────────────────────────
 
-  const [activeView, setActiveView] = useState<IncomeView>("all");
+  const [activeView, setActiveView] = useState<CarteraView>("all");
   const [filtroYear, setFiltroYear] = useState("");
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroMetodo, setFiltroMetodo] = useState("");
@@ -116,7 +131,8 @@ export default function CarteraPage() {
         include: "contracts",
       });
 
-      if (activeView !== "all") params.set("ingreso_view", activeView);
+      if (activeView === "aptitud") params.set("ingreso_categoria", "examen_aptitud");
+      else if (activeView !== "all") params.set("ingreso_view", activeView);
       if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
       if (searchTerm) params.set("q", searchTerm);
 
@@ -183,7 +199,8 @@ export default function CarteraPage() {
         pageSize: "10000",
         include: "contracts",
       });
-      if (activeView !== "all") params.set("ingreso_view", activeView);
+      if (activeView === "aptitud") params.set("ingreso_categoria", "examen_aptitud");
+      else if (activeView !== "all") params.set("ingreso_view", activeView);
       if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
       if (searchTerm) params.set("q", searchTerm);
 

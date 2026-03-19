@@ -1,20 +1,80 @@
-const hits = new Map<string, { count: number; resetAt: number }>();
+import { getServerDbPool } from "@/lib/server-db";
 
-export function rateLimit(key: string, limit: number, windowMs: number): { ok: boolean; remaining: number } {
+type RateLimitResult = {
+  ok: boolean;
+  remaining: number;
+};
+
+declare global {
+  var __autoescuelaRateLimitStoreReady: Promise<void> | undefined;
+  var __autoescuelaRateLimitLastCleanupAt: number | undefined;
+}
+
+async function ensureRateLimitStore() {
+  if (!global.__autoescuelaRateLimitStoreReady) {
+    const pool = getServerDbPool();
+    global.__autoescuelaRateLimitStoreReady = (async () => {
+      await pool.query(`
+        create table if not exists public.api_rate_limits (
+          key text primary key,
+          count integer not null,
+          reset_at timestamptz not null
+        )
+      `);
+      await pool.query(`
+        create index if not exists api_rate_limits_reset_at_idx
+          on public.api_rate_limits (reset_at)
+      `);
+    })();
+  }
+
+  return global.__autoescuelaRateLimitStoreReady;
+}
+
+async function cleanupExpiredRateLimits() {
   const now = Date.now();
-  const entry = hits.get(key);
+  const lastCleanupAt = global.__autoescuelaRateLimitLastCleanupAt ?? 0;
+  if (now - lastCleanupAt < 5 * 60 * 1000) return;
 
-  if (!entry || now > entry.resetAt) {
-    hits.set(key, { count: 1, resetAt: now + windowMs });
-    return { ok: true, remaining: limit - 1 };
-  }
+  global.__autoescuelaRateLimitLastCleanupAt = now;
+  const pool = getServerDbPool();
+  await pool.query("delete from public.api_rate_limits where reset_at < now()");
+}
 
-  if (entry.count >= limit) {
-    return { ok: false, remaining: 0 };
-  }
+export async function rateLimit(
+  key: string,
+  limit: number,
+  windowMs: number
+): Promise<RateLimitResult> {
+  await ensureRateLimitStore();
+  void cleanupExpiredRateLimits().catch(() => undefined);
 
-  entry.count++;
-  return { ok: true, remaining: limit - entry.count };
+  const pool = getServerDbPool();
+  const intervalText = `${windowMs} milliseconds`;
+  const { rows } = await pool.query<{ count: number | string | null }>(
+    `
+      insert into public.api_rate_limits as rl (key, count, reset_at)
+      values ($1, 1, now() + $2::interval)
+      on conflict (key) do update
+      set
+        count = case
+          when rl.reset_at <= now() then 1
+          else rl.count + 1
+        end,
+        reset_at = case
+          when rl.reset_at <= now() then now() + $2::interval
+          else rl.reset_at
+        end
+      returning count
+    `,
+    [key, intervalText]
+  );
+
+  const currentCount = Number(rows[0]?.count || 0);
+  return {
+    ok: currentCount <= limit,
+    remaining: Math.max(limit - currentCount, 0),
+  };
 }
 
 export function getRateLimitKey(request: Request, scope: string, suffix?: string) {
@@ -27,14 +87,4 @@ export function getRateLimitKey(request: Request, scope: string, suffix?: string
     "unknown";
 
   return [scope, ip, suffix].filter(Boolean).join(":");
-}
-
-// Clean up old entries every 5 minutes to prevent memory leaks
-if (typeof setInterval !== "undefined") {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of hits) {
-      if (now > entry.resetAt) hits.delete(key);
-    }
-  }, 5 * 60 * 1000);
 }

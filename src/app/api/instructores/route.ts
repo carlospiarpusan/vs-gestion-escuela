@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 
@@ -39,9 +39,7 @@ export async function GET(request: Request) {
   const search = (url.searchParams.get("q") ?? "").trim();
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
-  const escuelaId = perfil.rol === "super_admin"
-    ? (url.searchParams.get("escuela_id") ?? perfil.escuela_id)
-    : perfil.escuela_id;
+  const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });

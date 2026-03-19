@@ -19,6 +19,8 @@ import type {
   Instructor,
 } from "@/types/database";
 import { Plus, Car, ClipboardList } from "lucide-react";
+import { toast } from "sonner";
+import { vehiculoSchema, mantenimientoSchema } from "./schemas";
 
 // ── Vehículos ──────────────────────────────────────────
 const tipos: TipoVehiculo[] = ["coche", "moto", "camion", "autobus"];
@@ -149,17 +151,12 @@ export default function VehiculosPage() {
   // ── Vehículos state ──────────────────────────────────
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [vehiculosTabla, setVehiculosTabla] = useState<VehiculoConBitacora[]>([]);
-  const [, setVehiculosTotalCount] = useState(0);
-  const [vehiculosCurrentPage] = useState(0);
-  const [vehiculosSearchTerm] = useState("");
   const [loadingV, setLoadingV] = useState(true);
-  const [, setTableErrorV] = useState("");
   const [modalVOpen, setModalVOpen] = useState(false);
   const [editingV, setEditingV] = useState<Vehiculo | null>(null);
   const [deletingV, setDeletingV] = useState<Vehiculo | null>(null);
   const [deleteVOpen, setDeleteVOpen] = useState(false);
   const [savingV, setSavingV] = useState(false);
-  const [errorV, setErrorV] = useState("");
   const vehiculosFetchIdRef = useRef(0);
   const {
     value: formV,
@@ -173,23 +170,16 @@ export default function VehiculosPage() {
   // ── Mantenimiento state ──────────────────────────────
   const [mantenimientos, setMantenimientos] = useState<MantenimientoRow[]>([]);
   const [instructores, setInstructores] = useState<Instructor[]>([]);
-  const [, setMantenimientosTotalCount] = useState(0);
-  const [mantenimientosCurrentPage] = useState(0);
-  const [mantenimientosSearchTerm] = useState("");
   const [loadingM, setLoadingM] = useState(true);
-  const [, setTableErrorM] = useState("");
   const [modalMOpen, setModalMOpen] = useState(false);
   const [editingM, setEditingM] = useState<MantenimientoVehiculo | null>(null);
   const [deletingM, setDeletingM] = useState<MantenimientoVehiculo | null>(null);
   const [deleteMOpen, setDeleteMOpen] = useState(false);
   const [savingM, setSavingM] = useState(false);
-  const [errorM, setErrorM] = useState("");
   const [currentInstructorId, setCurrentInstructorId] = useState<string | null>(null);
   const [historialOpen, setHistorialOpen] = useState(false);
   const [historialVehiculoId, setHistorialVehiculoId] = useState<string | null>(null);
   const [historialRegistros, setHistorialRegistros] = useState<MantenimientoRow[]>([]);
-  const [, setHistorialLoading] = useState(false);
-  const [, setHistorialError] = useState("");
   const mantenimientoFetchIdRef = useRef(0);
   const {
     value: formM,
@@ -248,7 +238,6 @@ export default function VehiculosPage() {
 
       const fetchId = ++vehiculosFetchIdRef.current;
       setLoadingV(true);
-      setTableErrorV("");
 
       try {
         const params = new URLSearchParams({
@@ -267,14 +256,10 @@ export default function VehiculosPage() {
         if (fetchId !== vehiculosFetchIdRef.current) return;
 
         setVehiculosTabla(payload.rows || []);
-        setVehiculosTotalCount(payload.totalCount || 0);
-      } catch (fetchError: unknown) {
+      } catch {
         if (fetchId !== vehiculosFetchIdRef.current) return;
         setVehiculosTabla([]);
-        setVehiculosTotalCount(0);
-        setTableErrorV(
-          fetchError instanceof Error ? fetchError.message : "No se pudieron cargar los vehículos."
-        );
+        toast.error("No se pudieron cargar los vehículos.");
       } finally {
         if (fetchId === vehiculosFetchIdRef.current) {
           setLoadingV(false);
@@ -290,7 +275,6 @@ export default function VehiculosPage() {
 
       const fetchId = ++mantenimientoFetchIdRef.current;
       setLoadingM(true);
-      setTableErrorM("");
 
       try {
         const params = new URLSearchParams({
@@ -309,14 +293,10 @@ export default function VehiculosPage() {
         if (fetchId !== mantenimientoFetchIdRef.current) return;
 
         setMantenimientos(payload.rows || []);
-        setMantenimientosTotalCount(payload.totalCount || 0);
-      } catch (fetchError: unknown) {
+      } catch {
         if (fetchId !== mantenimientoFetchIdRef.current) return;
         setMantenimientos([]);
-        setMantenimientosTotalCount(0);
-        setTableErrorM(
-          fetchError instanceof Error ? fetchError.message : "No se pudo cargar la bitácora."
-        );
+        toast.error("No se pudo cargar la bitácora.");
       } finally {
         if (fetchId === mantenimientoFetchIdRef.current) {
           setLoadingM(false);
@@ -327,9 +307,6 @@ export default function VehiculosPage() {
   );
 
   const fetchHistorialVehiculo = useCallback(async (vehiculoId: string) => {
-    setHistorialLoading(true);
-    setHistorialError("");
-
     try {
       const params = new URLSearchParams({
         vehiculo_id: vehiculoId,
@@ -343,15 +320,9 @@ export default function VehiculosPage() {
         }
       );
       setHistorialRegistros(payload.rows || []);
-    } catch (fetchError: unknown) {
+    } catch {
       setHistorialRegistros([]);
-      setHistorialError(
-        fetchError instanceof Error
-          ? fetchError.message
-          : "No se pudo cargar el historial del vehículo."
-      );
-    } finally {
-      setHistorialLoading(false);
+      toast.error("No se pudo cargar el historial del vehículo.");
     }
   }, []);
 
@@ -362,25 +333,18 @@ export default function VehiculosPage() {
 
   useEffect(() => {
     if (!perfil?.escuela_id || tab !== "vehiculos") return;
-    void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
-  }, [fetchVehiculosTable, perfil?.escuela_id, tab, vehiculosCurrentPage, vehiculosSearchTerm]);
+    void fetchVehiculosTable(0, "");
+  }, [fetchVehiculosTable, perfil?.escuela_id, tab]);
 
   useEffect(() => {
     if (!perfil?.escuela_id || tab !== "bitacora") return;
-    void fetchBitacoraTable(mantenimientosCurrentPage, mantenimientosSearchTerm);
-  }, [
-    fetchBitacoraTable,
-    perfil?.escuela_id,
-    tab,
-    mantenimientosCurrentPage,
-    mantenimientosSearchTerm,
-  ]);
+    void fetchBitacoraTable(0, "");
+  }, [fetchBitacoraTable, perfil?.escuela_id, tab]);
 
   // ── Vehiculos CRUD ───────────────────────────────────
   const openCreateV = () => {
     setEditingV(null);
     restoreVehiculoDraft(emptyVForm);
-    setErrorV("");
     setModalVOpen(true);
   };
   const openEditV = (row: Vehiculo) => {
@@ -397,7 +361,6 @@ export default function VehiculosPage() {
       kilometraje: row.kilometraje.toString(),
       notas: row.notas || "",
     });
-    setErrorV("");
     setModalVOpen(true);
   };
   const openDeleteV = (row: Vehiculo) => {
@@ -406,12 +369,12 @@ export default function VehiculosPage() {
   };
 
   const handleSaveV = async () => {
-    if (!formV.marca || !formV.modelo || !formV.matricula) {
-      setErrorV("Marca, modelo y matrícula son obligatorios.");
+    const result = vehiculoSchema.safeParse(formV);
+    if (!result.success) {
+      toast.error(result.error.issues[0]?.message || "Error en el formulario del vehículo.");
       return;
     }
     setSavingV(true);
-    setErrorV("");
     try {
       const supabase = createClient();
       const payload = {
@@ -432,7 +395,7 @@ export default function VehiculosPage() {
         );
       } else {
         if (!perfil) {
-          setErrorV("No se encontró el perfil activo para guardar.");
+          toast.error("No se encontró el perfil activo para guardar.");
           setSavingV(false);
           return;
         }
@@ -448,23 +411,22 @@ export default function VehiculosPage() {
           sedeId = s?.id || null;
         }
         await runSupabaseMutationWithRetry(() =>
-          supabase
-            .from("vehiculos")
-            .insert({
-              ...payload,
-              escuela_id: perfil.escuela_id,
-              sede_id: sedeId,
-              user_id: perfil.id,
-            })
+          supabase.from("vehiculos").insert({
+            ...payload,
+            escuela_id: perfil.escuela_id,
+            sede_id: sedeId,
+            user_id: perfil.id,
+          })
         );
       }
       clearVehiculoDraft(emptyVForm);
       setSavingV(false);
       setModalVOpen(false);
+      toast.success(editingV ? "Vehículo actualizado" : "Vehículo creado");
       await loadCatalogs();
-      void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
+      void fetchVehiculosTable(0, "");
     } catch (e: unknown) {
-      setErrorV(e instanceof Error ? e.message : "Error al guardar");
+      toast.error(e instanceof Error ? e.message : "Error al guardar");
       setSavingV(false);
     }
   };
@@ -475,17 +437,18 @@ export default function VehiculosPage() {
     try {
       const { error: err } = await createClient().from("vehiculos").delete().eq("id", deletingV.id);
       if (err) {
-        setErrorV(err.message);
+        toast.error(err.message);
         setSavingV(false);
         return;
       }
       setSavingV(false);
       setDeleteVOpen(false);
       setDeletingV(null);
+      toast.success("Vehículo eliminado");
       await loadCatalogs();
-      void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
+      void fetchVehiculosTable(0, "");
     } catch (e: unknown) {
-      setErrorV(e instanceof Error ? e.message : "Error al eliminar");
+      toast.error(e instanceof Error ? e.message : "Error al eliminar");
       setSavingV(false);
     }
   };
@@ -497,7 +460,6 @@ export default function VehiculosPage() {
       ...emptyMForm,
       instructor_id: isInstructor ? (currentInstructorId ?? "") : "",
     });
-    setErrorM("");
     setModalMOpen(true);
   };
   const openEditM = (row: MantenimientoVehiculo) => {
@@ -516,7 +478,6 @@ export default function VehiculosPage() {
       fecha: row.fecha,
       notas: row.notas || "",
     });
-    setErrorM("");
     setModalMOpen(true);
   };
   const openDeleteM = (row: MantenimientoVehiculo) => {
@@ -539,12 +500,12 @@ export default function VehiculosPage() {
   );
 
   const handleSaveM = async () => {
-    if (!formM.vehiculo_id || !formM.descripcion) {
-      setErrorM("Vehículo y descripción son obligatorios.");
+    const result = mantenimientoSchema.safeParse(formM);
+    if (!result.success) {
+      toast.error(result.error.issues[0]?.message || "Error en el registro de mantenimiento.");
       return;
     }
     setSavingM(true);
-    setErrorM("");
     try {
       const supabase = createClient();
       let instructorId = isInstructor ? currentInstructorId : formM.instructor_id || null;
@@ -558,7 +519,7 @@ export default function VehiculosPage() {
         setCurrentInstructorId(instructorId);
       }
       if (isInstructor && !instructorId) {
-        setErrorM("No se encontró tu perfil de instructor para asociar este registro.");
+        toast.error("No se encontró tu perfil de instructor para asociar este registro.");
         setSavingM(false);
         return;
       }
@@ -582,7 +543,7 @@ export default function VehiculosPage() {
         );
       } else {
         if (!perfil) {
-          setErrorM("No se encontró el perfil activo para guardar.");
+          toast.error("No se encontró el perfil activo para guardar.");
           setSavingM(false);
           return;
         }
@@ -598,14 +559,12 @@ export default function VehiculosPage() {
           sedeId = s?.id || null;
         }
         await runSupabaseMutationWithRetry(() =>
-          supabase
-            .from("mantenimiento_vehiculos")
-            .insert({
-              ...payload,
-              escuela_id: perfil.escuela_id,
-              sede_id: sedeId,
-              user_id: perfil.id,
-            })
+          supabase.from("mantenimiento_vehiculos").insert({
+            ...payload,
+            escuela_id: perfil.escuela_id,
+            sede_id: sedeId,
+            user_id: perfil.id,
+          })
         );
       }
       await syncVehiculoKilometraje(formM.vehiculo_id, payload.kilometraje_actual);
@@ -615,14 +574,15 @@ export default function VehiculosPage() {
       });
       setSavingM(false);
       setModalMOpen(false);
+      toast.success(editingM ? "Registro actualizado" : "Registro creado");
       await loadCatalogs();
-      void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
-      void fetchBitacoraTable(mantenimientosCurrentPage, mantenimientosSearchTerm);
+      void fetchVehiculosTable(0, "");
+      void fetchBitacoraTable(0, "");
       if (historialOpen && historialVehiculoId === formM.vehiculo_id) {
         void fetchHistorialVehiculo(formM.vehiculo_id);
       }
     } catch (e: unknown) {
-      setErrorM(e instanceof Error ? e.message : "Error al guardar");
+      toast.error(e instanceof Error ? e.message : "Error al guardar");
       setSavingM(false);
     }
   };
@@ -636,21 +596,22 @@ export default function VehiculosPage() {
         .delete()
         .eq("id", deletingM.id);
       if (err) {
-        setErrorM(err.message);
+        toast.error(err.message);
         setSavingM(false);
         return;
       }
       setSavingM(false);
       setDeleteMOpen(false);
       setDeletingM(null);
+      toast.success("Registro eliminado");
       await loadCatalogs();
-      void fetchVehiculosTable(vehiculosCurrentPage, vehiculosSearchTerm);
-      void fetchBitacoraTable(mantenimientosCurrentPage, mantenimientosSearchTerm);
+      void fetchVehiculosTable(0, "");
+      void fetchBitacoraTable(0, "");
       if (historialOpen && historialVehiculoId === deletingM.vehiculo_id) {
         void fetchHistorialVehiculo(deletingM.vehiculo_id);
       }
     } catch (e: unknown) {
-      setErrorM(e instanceof Error ? e.message : "Error al eliminar");
+      toast.error(e instanceof Error ? e.message : "Error al eliminar");
       setSavingM(false);
     }
   };
@@ -866,11 +827,6 @@ export default function VehiculosPage() {
         maxWidth="max-w-xl"
       >
         <div className="space-y-4">
-          {errorV && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
-              {errorV}
-            </p>
-          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Marca *</label>
@@ -1003,11 +959,6 @@ export default function VehiculosPage() {
         maxWidth="max-w-xl"
       >
         <div className="space-y-4">
-          {errorM && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
-              {errorM}
-            </p>
-          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Vehículo *</label>
@@ -1291,7 +1242,6 @@ export default function VehiculosPage() {
         onClose={() => setDeleteVOpen(false)}
         onConfirm={handleDeleteV}
         loading={savingV}
-        error={errorV}
         message={`¿Eliminar ${deletingV?.marca} ${deletingV?.modelo} (${deletingV?.matricula})?`}
       />
       <DeleteConfirm
@@ -1299,7 +1249,6 @@ export default function VehiculosPage() {
         onClose={() => setDeleteMOpen(false)}
         onConfirm={handleDeleteM}
         loading={savingM}
-        error={errorM}
         message="¿Eliminar este registro de bitácora?"
       />
     </div>

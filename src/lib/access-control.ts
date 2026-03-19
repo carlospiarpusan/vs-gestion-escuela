@@ -71,7 +71,11 @@ export function canAccessDashboardPath(rol: Rol | null | undefined, pathname: st
   if (pathname === "/dashboard") return true;
 
   if (rol === "super_admin") {
-    return SUPER_ADMIN_ALLOWED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+    return (
+      pathname.startsWith("/dashboard") &&
+      (SUPER_ADMIN_ALLOWED_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ||
+        DASHBOARD_ROUTE_RULES.some((rule) => pathname.startsWith(rule.prefix)))
+    );
   }
 
   const matchedRule = DASHBOARD_ROUTE_RULES.find((rule) => pathname.startsWith(rule.prefix));

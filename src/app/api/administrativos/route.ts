@@ -1,9 +1,29 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { z } from "zod";
+import {
+  authorizeApiRequest,
+  buildSupabaseAdminClient,
+  ensureSchoolScope,
+  ensureSedeScope,
+  parseJsonBody,
+  resolveEscuelaIdForRequest,
+} from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede"];
+const mutationRoles: Rol[] = ["super_admin", "admin_escuela", "admin_sede"];
+
+const updateAdministrativoSchema = z.object({
+  id: z.string().uuid(),
+  nombre: z.string().trim().min(2).max(200).optional(),
+  sede_id: z.string().uuid().optional(),
+  activo: z.boolean().optional(),
+});
+
+const deleteAdministrativoSchema = z.object({
+  id: z.string().uuid(),
+});
 
 type AdministrativoRow = {
   id: string;
@@ -30,6 +50,52 @@ function parseInteger(value: string | null, fallback: number, min: number, max: 
   return Math.min(max, Math.max(min, Math.floor(parsed)));
 }
 
+async function getAdministrativoTarget(
+  supabaseAdmin: ReturnType<typeof buildSupabaseAdminClient>,
+  id: string
+) {
+  const { data, error } = await supabaseAdmin
+    .from("perfiles")
+    .select("id, rol, escuela_id, sede_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "No se pudo cargar el administrativo.");
+  }
+
+  if (!data || data.rol !== "administrativo") {
+    return null;
+  }
+
+  return data;
+}
+
+async function assertAdministrativoScope(
+  actor: {
+    id: string;
+    rol: Rol;
+    escuela_id: string | null;
+    sede_id: string | null;
+    activo: boolean;
+  },
+  target: { escuela_id: string | null; sede_id: string | null }
+) {
+  if (!target.escuela_id) {
+    return "El administrativo no tiene una escuela válida.";
+  }
+
+  const schoolScopeError = ensureSchoolScope(actor, target.escuela_id);
+  if (schoolScopeError) return schoolScopeError;
+
+  if (actor.rol === "admin_sede") {
+    if (!target.sede_id) return "El administrativo no tiene una sede válida.";
+    return ensureSedeScope(actor, target.sede_id);
+  }
+
+  return null;
+}
+
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
   if (!auth.ok) return auth.response;
@@ -39,9 +105,7 @@ export async function GET(request: Request) {
   const search = (url.searchParams.get("q") ?? "").trim();
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
-  const escuelaId = perfil.rol === "super_admin"
-    ? (url.searchParams.get("escuela_id") ?? perfil.escuela_id)
-    : perfil.escuela_id;
+  const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
@@ -114,4 +178,116 @@ export async function GET(request: Request) {
     totalCount: Number(countRes.rows[0]?.total || 0),
     rows: rowsRes.rows,
   });
+}
+
+export async function PATCH(request: Request) {
+  const authz = await authorizeApiRequest(mutationRoles);
+  if (!authz.ok) return authz.response;
+
+  const parsed = await parseJsonBody(request, updateAdministrativoSchema);
+  if (!parsed.ok) return parsed.response;
+
+  const { id, nombre, sede_id: sedeId, activo } = parsed.data;
+  if (nombre == null && sedeId == null && activo == null) {
+    return NextResponse.json({ error: "No hay cambios para aplicar." }, { status: 400 });
+  }
+
+  try {
+    const supabaseAdmin = buildSupabaseAdminClient();
+    const target = await getAdministrativoTarget(supabaseAdmin, id);
+
+    if (!target) {
+      return NextResponse.json({ error: "El administrativo ya no existe." }, { status: 404 });
+    }
+
+    const scopeError = await assertAdministrativoScope(authz.perfil, target);
+    if (scopeError) {
+      return NextResponse.json({ error: scopeError }, { status: 403 });
+    }
+
+    if (sedeId) {
+      const { data: sede, error: sedeError } = await supabaseAdmin
+        .from("sedes")
+        .select("id, escuela_id")
+        .eq("id", sedeId)
+        .maybeSingle();
+
+      if (sedeError) {
+        return NextResponse.json(
+          { error: "No se pudo validar la sede seleccionada." },
+          { status: 400 }
+        );
+      }
+
+      if (!sede || !target.escuela_id || sede.escuela_id !== target.escuela_id) {
+        return NextResponse.json(
+          { error: "La sede no pertenece a la escuela del administrativo." },
+          { status: 400 }
+        );
+      }
+
+      const targetSedeScopeError = ensureSedeScope(authz.perfil, sedeId);
+      if (targetSedeScopeError) {
+        return NextResponse.json({ error: targetSedeScopeError }, { status: 403 });
+      }
+    }
+
+    const updatePayload: Record<string, string | boolean> = {};
+    if (nombre != null) updatePayload.nombre = nombre.trim();
+    if (sedeId != null) updatePayload.sede_id = sedeId;
+    if (activo != null) updatePayload.activo = activo;
+
+    const { error } = await supabaseAdmin.from("perfiles").update(updatePayload).eq("id", id);
+
+    if (error) {
+      return NextResponse.json(
+        { error: "No se pudo actualizar el administrativo." },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json(
+      { error: "Error interno al actualizar el administrativo." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  const authz = await authorizeApiRequest(mutationRoles);
+  if (!authz.ok) return authz.response;
+
+  const parsed = await parseJsonBody(request, deleteAdministrativoSchema);
+  if (!parsed.ok) return parsed.response;
+
+  try {
+    const supabaseAdmin = buildSupabaseAdminClient();
+    const target = await getAdministrativoTarget(supabaseAdmin, parsed.data.id);
+
+    if (!target) {
+      return NextResponse.json({ error: "El administrativo ya no existe." }, { status: 404 });
+    }
+
+    const scopeError = await assertAdministrativoScope(authz.perfil, target);
+    if (scopeError) {
+      return NextResponse.json({ error: scopeError }, { status: 403 });
+    }
+
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(parsed.data.id);
+    if (error) {
+      return NextResponse.json(
+        { error: "No se pudo eliminar el administrativo." },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json(
+      { error: "Error interno al eliminar el administrativo." },
+      { status: 500 }
+    );
+  }
 }

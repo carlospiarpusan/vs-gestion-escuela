@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
+import { getDashboardSchoolIdFromRequest, normalizeUuid } from "@/lib/dashboard-scope";
 import type { Perfil, Rol } from "@/types/database";
 import type { ZodSchema } from "zod";
 
@@ -73,7 +74,10 @@ export async function authorizeApiRequest(allowedRoles: Rol[]): Promise<Authoriz
   if (!allowedRoles.includes(perfil.rol)) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "No tienes permisos para esta acción." }, { status: 403 }),
+      response: NextResponse.json(
+        { error: "No tienes permisos para esta acción." },
+        { status: 403 }
+      ),
     };
   }
 
@@ -137,13 +141,26 @@ export function ensureSedeScope(perfil: MinimalPerfil, sedeId: string): string |
   return null;
 }
 
+export function resolveEscuelaIdForRequest(
+  request: Request,
+  perfil: Pick<MinimalPerfil, "rol" | "escuela_id">,
+  requestedEscuelaId?: string | null
+) {
+  if (perfil.rol !== "super_admin") {
+    return perfil.escuela_id;
+  }
+
+  return (
+    normalizeUuid(requestedEscuelaId) ||
+    getDashboardSchoolIdFromRequest(request) ||
+    perfil.escuela_id
+  );
+}
+
 export async function parseJsonBody<T>(
   request: Request,
   schema: ZodSchema<T>
-): Promise<
-  | { ok: true; data: T }
-  | { ok: false; response: NextResponse }
-> {
+): Promise<{ ok: true; data: T } | { ok: false; response: NextResponse }> {
   let rawBody: unknown;
 
   try {
@@ -166,8 +183,8 @@ export async function parseJsonBody<T>(
   return { ok: true, data: parsed.data };
 }
 
-export async function findAuthUserByEmail(
-  supabaseAdmin: {
+export async function findAuthUserByEmail(supabaseAdmin: unknown, email: string) {
+  const client = supabaseAdmin as {
     auth: {
       admin: {
         listUsers: (params: { page: number; perPage: number }) => Promise<{
@@ -176,12 +193,11 @@ export async function findAuthUserByEmail(
         }>;
       };
     };
-  },
-  email: string
-) {
+  };
+
   let page = 1;
   while (true) {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+    const { data, error } = await client.auth.admin.listUsers({ page, perPage: 1000 });
     if (error) throw new Error(error.message || "No se pudo consultar usuarios.");
 
     const users = data?.users ?? [];
@@ -190,4 +206,75 @@ export async function findAuthUserByEmail(
     if (users.length < 1000) return null;
     page += 1;
   }
+}
+
+export async function createAuthUserWithRetryOnCollision(
+  supabaseAdmin: unknown,
+  payload: {
+    email: string;
+    password: string;
+    email_confirm: boolean;
+    user_metadata: Record<string, unknown>;
+  },
+  options?: {
+    allowOrphanCleanup?: boolean;
+  }
+) {
+  const client = supabaseAdmin as {
+    auth: {
+      admin: {
+        createUser: (input: {
+          email: string;
+          password: string;
+          email_confirm: boolean;
+          user_metadata: Record<string, unknown>;
+        }) => Promise<{
+          data?: { user?: { id: string } | null };
+          error?: { message?: string } | null;
+        }>;
+        deleteUser: (id: string) => Promise<unknown>;
+      };
+    };
+    from: (table: string) => {
+      select: (columns: string) => {
+        eq: (
+          column: string,
+          value: string
+        ) => {
+          maybeSingle: () => Promise<{
+            data?: { id?: string | null } | null;
+            error?: { message?: string } | null;
+          }>;
+        };
+      };
+    };
+  };
+
+  let result = await client.auth.admin.createUser(payload);
+  if (!isAuthUserAlreadyRegisteredError(result.error?.message)) {
+    return result;
+  }
+
+  if (!options?.allowOrphanCleanup) {
+    return result;
+  }
+
+  const existingUser = await findAuthUserByEmail(client, payload.email);
+  if (!existingUser) {
+    return result;
+  }
+
+  const { data: perfilExistente } = await client
+    .from("perfiles")
+    .select("id")
+    .eq("id", existingUser.id)
+    .maybeSingle();
+
+  if (perfilExistente?.id) {
+    return result;
+  }
+
+  await client.auth.admin.deleteUser(existingUser.id);
+  result = await client.auth.admin.createUser(payload);
+  return result;
 }

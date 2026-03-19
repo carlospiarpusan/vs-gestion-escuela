@@ -18,7 +18,7 @@ import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 
 const VIEWER_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
-const EDITOR_ROLES: Rol[] = ["super_admin", "admin_escuela"];
+const EDITOR_ROLES: Rol[] = ["super_admin"];
 const PAGE_SIZE_DEFAULT = 12;
 const PAGE_SIZE_MAX = 50;
 
@@ -103,11 +103,17 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const page = parseInteger(url.searchParams.get("page"), 0, 0, 10_000);
-    const pageSize = parseInteger(url.searchParams.get("pageSize"), PAGE_SIZE_DEFAULT, 1, PAGE_SIZE_MAX);
+    const pageSize = parseInteger(
+      url.searchParams.get("pageSize"),
+      PAGE_SIZE_DEFAULT,
+      1,
+      PAGE_SIZE_MAX
+    );
     const search = normalizeText(url.searchParams.get("search")) || "";
     const categoryId = normalizeText(url.searchParams.get("categoryId"));
     const difficulty = normalizeText(url.searchParams.get("difficulty"));
-    const includeInactive = canEditBank(authz.perfil.rol) && url.searchParams.get("includeInactive") === "true";
+    const includeInactive =
+      canEditBank(authz.perfil.rol) && url.searchParams.get("includeInactive") === "true";
     const pool = getServerDbPool();
 
     const values: string[] = [CALE_BANK_SOURCE];
@@ -234,16 +240,18 @@ export async function GET(request: Request) {
         dificil: toNumber(statsRow?.dificil),
         updatedAt: statsRow?.updated_at ?? null,
       },
-      categories: (categoriesRes.rows as Array<{
-        id: string;
-        nombre: string;
-        descripcion: string | null;
-        tipo_permiso: string;
-        orden: number | string;
-        fuente: string;
-        question_count: number | string;
-        active_count: number | string;
-      }>).map<CaleBankCategorySummary>((row) => ({
+      categories: (
+        categoriesRes.rows as Array<{
+          id: string;
+          nombre: string;
+          descripcion: string | null;
+          tipo_permiso: string;
+          orden: number | string;
+          fuente: string;
+          question_count: number | string;
+          active_count: number | string;
+        }>
+      ).map<CaleBankCategorySummary>((row) => ({
         id: row.id,
         nombre: row.nombre,
         descripcion: row.descripcion,
@@ -254,29 +262,31 @@ export async function GET(request: Request) {
         questionCount: toNumber(row.question_count),
         activeCount: toNumber(row.active_count),
       })),
-      questions: (listRes.rows as Array<Record<string, unknown>>).map<CaleBankQuestionRow>((row) => ({
-        id: String(row.id),
-        categoria_id: row.categoria_id ? String(row.categoria_id) : null,
-        categoria_nombre: row.categoria_nombre ? String(row.categoria_nombre) : null,
-        pregunta: String(row.pregunta || ""),
-        imagen_url: row.imagen_url ? String(row.imagen_url) : null,
-        opcion_a: String(row.opcion_a || ""),
-        opcion_b: String(row.opcion_b || ""),
-        opcion_c: String(row.opcion_c || ""),
-        opcion_d: row.opcion_d ? String(row.opcion_d) : null,
-        respuesta_correcta: row.respuesta_correcta as CaleBankQuestionRow["respuesta_correcta"],
-        explicacion: row.explicacion ? String(row.explicacion) : null,
-        fundamento_legal: row.fundamento_legal ? String(row.fundamento_legal) : null,
-        tipo_permiso: row.tipo_permiso as CaleBankQuestionRow["tipo_permiso"],
-        dificultad: row.dificultad as CaleBankQuestionRow["dificultad"],
-        activa: Boolean(row.activa),
-        fuente: String(row.fuente || CALE_BANK_SOURCE),
-        codigo_externo: row.codigo_externo ? String(row.codigo_externo) : null,
-        created_by: row.created_by ? String(row.created_by) : null,
-        updated_by: row.updated_by ? String(row.updated_by) : null,
-        updated_at: row.updated_at ? String(row.updated_at) : null,
-        created_at: String(row.created_at || ""),
-      })),
+      questions: (listRes.rows as Array<Record<string, unknown>>).map<CaleBankQuestionRow>(
+        (row) => ({
+          id: String(row.id),
+          categoria_id: row.categoria_id ? String(row.categoria_id) : null,
+          categoria_nombre: row.categoria_nombre ? String(row.categoria_nombre) : null,
+          pregunta: String(row.pregunta || ""),
+          imagen_url: row.imagen_url ? String(row.imagen_url) : null,
+          opcion_a: String(row.opcion_a || ""),
+          opcion_b: String(row.opcion_b || ""),
+          opcion_c: String(row.opcion_c || ""),
+          opcion_d: row.opcion_d ? String(row.opcion_d) : null,
+          respuesta_correcta: row.respuesta_correcta as CaleBankQuestionRow["respuesta_correcta"],
+          explicacion: row.explicacion ? String(row.explicacion) : null,
+          fundamento_legal: row.fundamento_legal ? String(row.fundamento_legal) : null,
+          tipo_permiso: row.tipo_permiso as CaleBankQuestionRow["tipo_permiso"],
+          dificultad: row.dificultad as CaleBankQuestionRow["dificultad"],
+          activa: Boolean(row.activa),
+          fuente: String(row.fuente || CALE_BANK_SOURCE),
+          codigo_externo: row.codigo_externo ? String(row.codigo_externo) : null,
+          created_by: row.created_by ? String(row.created_by) : null,
+          updated_by: row.updated_by ? String(row.updated_by) : null,
+          updated_at: row.updated_at ? String(row.updated_at) : null,
+          created_at: String(row.created_at || ""),
+        })
+      ),
       total: toNumber(countRes.rows[0]?.total),
       page,
       pageSize,

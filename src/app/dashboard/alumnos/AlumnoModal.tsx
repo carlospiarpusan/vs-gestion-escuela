@@ -28,7 +28,6 @@ interface AlumnoModalProps {
   isPracticeForm: boolean;
   form: AlumnoFormType;
   setForm: Dispatch<SetStateAction<AlumnoFormType>>;
-  error: string;
   saving: boolean;
   handleSave: () => void;
   toggleCategoria: (cat: string) => void;
@@ -47,7 +46,6 @@ export default function AlumnoModal({
   isPracticeForm,
   form,
   setForm,
-  error,
   saving,
   handleSave,
   toggleCategoria,
@@ -77,12 +75,6 @@ export default function AlumnoModal({
       maxWidth="max-w-xl"
     >
       <div className="space-y-4">
-        {error && (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
-            {error}
-          </p>
-        )}
-
         {editing && editing.tipo_registro === "regular" && (
           <div className="flex justify-end">
             <button

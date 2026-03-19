@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol, TipoRegistroAlumno } from "@/types/database";
 
@@ -78,10 +78,7 @@ export async function GET(request: Request) {
   const categorias = parseStringArray(url.searchParams.get("categorias"));
   const mes = (url.searchParams.get("mes") ?? "").trim();
 
-  const escuelaId =
-    perfil.rol === "super_admin"
-      ? (url.searchParams.get("escuela_id") ?? perfil.escuela_id)
-      : perfil.escuela_id;
+  const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
   const sedeId = perfil.rol === "admin_sede" ? perfil.sede_id : null;
 
   if (!escuelaId) {

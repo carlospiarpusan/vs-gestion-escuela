@@ -4,7 +4,12 @@ import { simpleParser } from "mailparser";
 import { buildSupabaseAdminClient } from "@/lib/api-auth";
 import { buildElectronicInvoiceNote, parseElectronicInvoiceBinary } from "@/lib/electronic-invoice";
 import { normalizeExpenseCategory } from "@/lib/expense-category";
-import type { CategoriaGasto, FacturaCorreoImportacion, FacturaCorreoIntegracion, MetodoPagoGasto } from "@/types/database";
+import type {
+  CategoriaGasto,
+  FacturaCorreoImportacion,
+  FacturaCorreoIntegracion,
+  MetodoPagoGasto,
+} from "@/types/database";
 
 type IntegrationRow = FacturaCorreoIntegracion & {
   imap_password_encrypted: string | null;
@@ -85,17 +90,37 @@ function toIsoDateTime(value: string | Date | null | undefined) {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
-function deriveEncryptionKey() {
-  const seed = process.env.EMAIL_INVOICE_ENCRYPTION_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!seed) {
-    throw new Error("No hay clave de cifrado disponible para la conexion de correo.");
-  }
+function deriveEncryptionKey(seed: string) {
   return createHash("sha256").update(seed).digest();
+}
+
+function getPrimaryEncryptionSeed() {
+  const seed = process.env.EMAIL_INVOICE_ENCRYPTION_KEY?.trim();
+  if (!seed) {
+    throw new Error(
+      "EMAIL_INVOICE_ENCRYPTION_KEY no esta configurada. Define una clave dedicada para proteger la conexion de correo."
+    );
+  }
+  return seed;
+}
+
+function getDecryptionSeeds() {
+  const primarySeed = process.env.EMAIL_INVOICE_ENCRYPTION_KEY?.trim();
+  const legacySeed = process.env.EMAIL_INVOICE_LEGACY_ENCRYPTION_KEY?.trim();
+  const seeds = [primarySeed, legacySeed].filter((value): value is string => Boolean(value));
+
+  if (seeds.length === 0) {
+    throw new Error(
+      "No hay claves de descifrado configuradas para la conexion de correo. Define EMAIL_INVOICE_ENCRYPTION_KEY."
+    );
+  }
+
+  return seeds;
 }
 
 function encryptSecret(value: string) {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", deriveEncryptionKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", deriveEncryptionKey(getPrimaryEncryptionSeed()), iv);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return `${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted.toString("base64")}`;
@@ -106,13 +131,28 @@ function decryptSecret(value: string) {
   if (!ivB64 || !authTagB64 || !encryptedB64) {
     throw new Error("La credencial cifrada del correo no es valida.");
   }
-  const decipher = createDecipheriv("aes-256-gcm", deriveEncryptionKey(), Buffer.from(ivB64, "base64"));
-  decipher.setAuthTag(Buffer.from(authTagB64, "base64"));
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(encryptedB64, "base64")),
-    decipher.final(),
-  ]);
-  return decrypted.toString("utf8");
+
+  for (const seed of getDecryptionSeeds()) {
+    try {
+      const decipher = createDecipheriv(
+        "aes-256-gcm",
+        deriveEncryptionKey(seed),
+        Buffer.from(ivB64, "base64")
+      );
+      decipher.setAuthTag(Buffer.from(authTagB64, "base64"));
+      const decrypted = Buffer.concat([
+        decipher.update(Buffer.from(encryptedB64, "base64")),
+        decipher.final(),
+      ]);
+      return decrypted.toString("utf8");
+    } catch {
+      // Try the next configured key before failing definitively.
+    }
+  }
+
+  throw new Error(
+    "No se pudo descifrar la credencial de correo con las claves configuradas. Si migraste desde una clave anterior, define EMAIL_INVOICE_LEGACY_ENCRYPTION_KEY."
+  );
 }
 
 function sanitizeIntegration(row: IntegrationRow | null): EmailInvoiceIntegrationView | null {
@@ -134,8 +174,10 @@ function normalizeMailbox(value: string | null | undefined) {
 function inferImapHost(correo: string) {
   const domain = correo.split("@")[1]?.toLowerCase() || "";
   if (domain === "gmail.com" || domain === "googlemail.com") return "imap.gmail.com";
-  if (["outlook.com", "hotmail.com", "live.com", "msn.com", "outlook.es"].includes(domain)) return "outlook.office365.com";
-  if (domain === "icloud.com" || domain === "me.com" || domain === "mac.com") return "imap.mail.me.com";
+  if (["outlook.com", "hotmail.com", "live.com", "msn.com", "outlook.es"].includes(domain))
+    return "outlook.office365.com";
+  if (domain === "icloud.com" || domain === "me.com" || domain === "mac.com")
+    return "imap.mail.me.com";
   if (domain === "yahoo.com" || domain === "ymail.com") return "imap.mail.yahoo.com";
   return "";
 }
@@ -171,8 +213,12 @@ function extractImapErrorDetail(error: unknown) {
 
   return {
     code: typeof candidate.code === "string" ? candidate.code.toUpperCase() : "",
-    responseStatus: typeof candidate.responseStatus === "string" ? candidate.responseStatus.toUpperCase() : "",
-    serverResponseCode: typeof candidate.serverResponseCode === "string" ? candidate.serverResponseCode.toUpperCase() : "",
+    responseStatus:
+      typeof candidate.responseStatus === "string" ? candidate.responseStatus.toUpperCase() : "",
+    serverResponseCode:
+      typeof candidate.serverResponseCode === "string"
+        ? candidate.serverResponseCode.toUpperCase()
+        : "",
     authenticationFailed: Boolean(candidate.authenticationFailed),
     detail,
   };
@@ -182,24 +228,30 @@ function isAuthenticationError(error: unknown) {
   const meta = extractImapErrorDetail(error);
   const normalized = meta.detail.toLowerCase();
 
-  return meta.authenticationFailed
-    || ["AUTHENTICATIONFAILED", "AUTHORIZATIONFAILED", "LOGINFAILED"].includes(meta.serverResponseCode)
-    || normalized.includes("invalid credentials")
-    || normalized.includes("authentication failed")
-    || normalized.includes("login failed")
-    || normalized.includes("username and password not accepted")
-    || normalized.includes("application-specific password")
-    || normalized.includes("app password");
+  return (
+    meta.authenticationFailed ||
+    ["AUTHENTICATIONFAILED", "AUTHORIZATIONFAILED", "LOGINFAILED"].includes(
+      meta.serverResponseCode
+    ) ||
+    normalized.includes("invalid credentials") ||
+    normalized.includes("authentication failed") ||
+    normalized.includes("login failed") ||
+    normalized.includes("username and password not accepted") ||
+    normalized.includes("application-specific password") ||
+    normalized.includes("app password")
+  );
 }
 
 function shouldRetryWithLogin(error: unknown) {
   const meta = extractImapErrorDetail(error);
   const normalized = meta.detail.toLowerCase();
 
-  return isAuthenticationError(error)
-    || normalized.includes("unsupported authentication mechanism")
-    || normalized.includes("auth=plain")
-    || normalized.includes("authenticate");
+  return (
+    isAuthenticationError(error) ||
+    normalized.includes("unsupported authentication mechanism") ||
+    normalized.includes("auth=plain") ||
+    normalized.includes("authenticate")
+  );
 }
 
 function formatImapConnectionError(error: unknown, config: ImapConnectionConfig) {
@@ -211,21 +263,21 @@ function formatImapConnectionError(error: unknown, config: ImapConnectionConfig)
   }
 
   if (
-    normalized.includes("certificate")
-    || normalized.includes("self-signed")
-    || normalized.includes("unable to verify")
-    || normalized.includes("hostname/ip")
-    || normalized.includes("tls")
+    normalized.includes("certificate") ||
+    normalized.includes("self-signed") ||
+    normalized.includes("unable to verify") ||
+    normalized.includes("hostname/ip") ||
+    normalized.includes("tls")
   ) {
     return `No se pudo establecer una conexion segura con ${config.host}. Revisa el host IMAP, el puerto TLS y el certificado del proveedor.`;
   }
 
   if (
-    normalized.includes("mailbox")
-    || normalized.includes("nonexistent")
-    || normalized.includes("does not exist")
-    || normalized.includes("unknown mailbox")
-    || normalized.includes("can't open mailbox")
+    normalized.includes("mailbox") ||
+    normalized.includes("nonexistent") ||
+    normalized.includes("does not exist") ||
+    normalized.includes("unknown mailbox") ||
+    normalized.includes("can't open mailbox")
   ) {
     return `La bandeja IMAP "${config.mailbox}" no existe o no esta disponible para esta cuenta. Verifica el nombre exacto de la bandeja.`;
   }
@@ -300,7 +352,9 @@ async function listRecentImports(escuelaId: string, limit = 12) {
   const supabaseAdmin = buildSupabaseAdminClient();
   const { data, error } = await supabaseAdmin
     .from("facturas_correo_importaciones")
-    .select("id, integracion_id, escuela_id, sede_id, gasto_id, imap_uid, message_id, message_date, remitente, asunto, attachment_name, invoice_number, supplier_name, total, currency, status, detail, created_at")
+    .select(
+      "id, integracion_id, escuela_id, sede_id, gasto_id, imap_uid, message_id, message_date, remitente, asunto, attachment_name, invoice_number, supplier_name, total, currency, status, detail, created_at"
+    )
     .eq("escuela_id", escuelaId)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -344,11 +398,11 @@ async function assertImapConnection(config: {
 export async function saveEmailInvoiceIntegration(input: SaveIntegrationInput) {
   const supabaseAdmin = buildSupabaseAdminClient();
   const current = await getIntegrationBySchool(input.escuelaId);
-  const passwordToStore = input.imapPassword ?? (
-    current?.provider === MANUAL_IMAP_PROVIDER && current.imap_password_encrypted
+  const passwordToStore =
+    input.imapPassword ??
+    (current?.provider === MANUAL_IMAP_PROVIDER && current.imap_password_encrypted
       ? decryptSecret(current.imap_password_encrypted)
-      : null
-  );
+      : null);
 
   if (!passwordToStore) {
     throw new Error("Debes ingresar la clave o app password del correo.");
@@ -374,7 +428,9 @@ export async function saveEmailInvoiceIntegration(input: SaveIntegrationInput) {
     imap_port: input.imapPort,
     imap_secure: input.imapSecure,
     imap_user: input.imapUser.trim(),
-    imap_password_encrypted: input.imapPassword ? encryptSecret(input.imapPassword) : current?.imap_password_encrypted,
+    imap_password_encrypted: input.imapPassword
+      ? encryptSecret(input.imapPassword)
+      : current?.imap_password_encrypted,
     oauth_refresh_token_encrypted: null,
     mailbox: normalizeMailbox(input.mailbox),
     from_filter: optionalText(input.fromFilter),
@@ -392,7 +448,9 @@ export async function saveEmailInvoiceIntegration(input: SaveIntegrationInput) {
     .single();
 
   if (error || !data) {
-    throw new Error(`No se pudo guardar la integracion de correo: ${error?.message || "sin detalle"}`);
+    throw new Error(
+      `No se pudo guardar la integracion de correo: ${error?.message || "sin detalle"}`
+    );
   }
 
   return sanitizeIntegration(data as IntegrationRow);
@@ -416,14 +474,18 @@ function subtractMonths(date: Date, monthsBack: number) {
   return copy;
 }
 
-function buildSearchObject(integration: IntegrationRow, options: Required<EmailInvoiceSyncOptions>): SearchObject {
-  const query: SearchObject = options.mode === "historical"
-    ? {
-        since: subtractMonths(new Date(), options.monthsBack),
-      }
-    : {
-        uid: `${Number(integration.last_uid || 0) + 1}:*`,
-      };
+function buildSearchObject(
+  integration: IntegrationRow,
+  options: Required<EmailInvoiceSyncOptions>
+): SearchObject {
+  const query: SearchObject =
+    options.mode === "historical"
+      ? {
+          since: subtractMonths(new Date(), options.monthsBack),
+        }
+      : {
+          uid: `${Number(integration.last_uid || 0) + 1}:*`,
+        };
 
   if (options.mode !== "historical" && integration.import_only_unseen) {
     query.seen = false;
@@ -440,7 +502,12 @@ function buildSearchObject(integration: IntegrationRow, options: Required<EmailI
   return query;
 }
 
-async function hasImportRecord(integrationId: string, messageId: string | null, imapUid: number | null, attachmentName: string) {
+async function hasImportRecord(
+  integrationId: string,
+  messageId: string | null,
+  imapUid: number | null,
+  attachmentName: string
+) {
   const supabaseAdmin = buildSupabaseAdminClient();
   let query = supabaseAdmin
     .from("facturas_correo_importaciones")
@@ -508,7 +575,11 @@ async function createImportLog(input: {
   }
 }
 
-async function findDuplicateExpense(escuelaId: string, invoiceNumber: string, supplierName: string) {
+async function findDuplicateExpense(
+  escuelaId: string,
+  invoiceNumber: string,
+  supplierName: string
+) {
   const supabaseAdmin = buildSupabaseAdminClient();
   const { data, error } = await supabaseAdmin
     .from("gastos")
@@ -522,9 +593,11 @@ async function findDuplicateExpense(escuelaId: string, invoiceNumber: string, su
   }
 
   const normalizedSupplier = supplierName.trim().toLowerCase();
-  return ((data as Array<{ id: string; proveedor?: string | null }> | null) || []).find((row) =>
-    (row.proveedor || "").trim().toLowerCase() === normalizedSupplier
-  ) || null;
+  return (
+    ((data as Array<{ id: string; proveedor?: string | null }> | null) || []).find(
+      (row) => (row.proveedor || "").trim().toLowerCase() === normalizedSupplier
+    ) || null
+  );
 }
 
 async function insertExpenseFromPreview(input: {
@@ -566,27 +639,35 @@ async function insertExpenseFromPreview(input: {
     .single();
 
   if (error || !data) {
-    throw new Error(`No se pudo registrar el gasto importado desde correo: ${error?.message || "sin detalle"}`);
+    throw new Error(
+      `No se pudo registrar el gasto importado desde correo: ${error?.message || "sin detalle"}`
+    );
   }
 
   return data.id as string;
 }
 
-function extractSenderAddress(parsedFrom: Awaited<ReturnType<typeof simpleParser>>["from"] | undefined) {
+function extractSenderAddress(
+  parsedFrom: Awaited<ReturnType<typeof simpleParser>>["from"] | undefined
+) {
   return parsedFrom?.value?.[0]?.address || null;
 }
 
 function attachmentFileName(name: string | false | undefined | null, fallbackUid: number) {
-  return normalizeText(typeof name === "string" ? name : "") || `${ATTACHMENT_NAME_FALLBACK}-${fallbackUid}.xml`;
+  return (
+    normalizeText(typeof name === "string" ? name : "") ||
+    `${ATTACHMENT_NAME_FALLBACK}-${fallbackUid}.xml`
+  );
 }
 
 function classifyInvoiceAttachmentError(error: unknown) {
-  const message = error instanceof Error ? error.message : "No se pudo procesar el adjunto de factura.";
+  const message =
+    error instanceof Error ? error.message : "No se pudo procesar el adjunto de factura.";
   const normalized = message.toLowerCase();
 
   if (
-    normalized.includes("no corresponde a una factura electronica compatible")
-    || normalized.includes("el zip no contiene un xml de factura electronica")
+    normalized.includes("no corresponde a una factura electronica compatible") ||
+    normalized.includes("el zip no contiene un xml de factura electronica")
   ) {
     return {
       status: "omitida" as const,
@@ -630,11 +711,15 @@ async function syncSingleIntegration(
 
   try {
     if (integration.provider !== MANUAL_IMAP_PROVIDER) {
-      throw new Error("La integracion actual ya no es compatible. Vuelve a conectar el correo usando IMAP manual.");
+      throw new Error(
+        "La integracion actual ya no es compatible. Vuelve a conectar el correo usando IMAP manual."
+      );
     }
 
     if (!integration.imap_password_encrypted) {
-      throw new Error("La integracion IMAP no tiene una app password valida. Vuelve a conectar el correo.");
+      throw new Error(
+        "La integracion IMAP no tiene una app password valida. Vuelve a conectar el correo."
+      );
     }
 
     const connection = await openValidatedImapMailbox({
@@ -661,18 +746,21 @@ async function syncSingleIntegration(
       }
 
       const orderedUids = [...uids].sort((left, right) => left - right);
-      const selectedUids = options.mode === "historical"
-        ? orderedUids.slice(0, options.maxMessages)
-        : orderedUids;
+      const selectedUids =
+        options.mode === "historical" ? orderedUids.slice(0, options.maxMessages) : orderedUids;
       summary.matchedMessages = orderedUids.length;
       summary.truncated = selectedUids.length < orderedUids.length;
 
-      const messages = await client.fetchAll(selectedUids, {
-        uid: true,
-        envelope: true,
-        source: true,
-        internalDate: true,
-      }, { uid: true });
+      const messages = await client.fetchAll(
+        selectedUids,
+        {
+          uid: true,
+          envelope: true,
+          source: true,
+          internalDate: true,
+        },
+        { uid: true }
+      );
 
       for (const message of messages) {
         const uid = Number(message.uid || 0);
@@ -698,8 +786,10 @@ async function syncSingleIntegration(
         }
 
         const parsed = await simpleParser(message.source);
-        const messageId = optionalText(parsed.messageId) || optionalText(message.envelope?.messageId);
-        const remitente = extractSenderAddress(parsed.from) || optionalText(message.envelope?.from?.[0]?.address);
+        const messageId =
+          optionalText(parsed.messageId) || optionalText(message.envelope?.messageId);
+        const remitente =
+          extractSenderAddress(parsed.from) || optionalText(message.envelope?.from?.[0]?.address);
         const asunto = optionalText(parsed.subject) || optionalText(message.envelope?.subject);
         const messageDate = toIsoDateTime(parsed.date || message.internalDate);
 
@@ -762,7 +852,9 @@ async function syncSingleIntegration(
               `Correo origen: ${remitente || integration.correo}`,
               asunto ? `Asunto: ${asunto}` : "",
               messageId ? `Message-ID: ${messageId}` : "",
-            ].filter(Boolean).join("\n");
+            ]
+              .filter(Boolean)
+              .join("\n");
 
             const gastoId = await insertExpenseFromPreview({
               integration,
@@ -835,7 +927,8 @@ async function syncSingleIntegration(
     summary.lastSyncedAt = nowIso;
     return summary;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo sincronizar el correo de facturas.";
+    const message =
+      error instanceof Error ? error.message : "No se pudo sincronizar el correo de facturas.";
     await supabaseAdmin
       .from("facturas_correo_integraciones")
       .update({
@@ -849,7 +942,10 @@ async function syncSingleIntegration(
   }
 }
 
-export async function syncEmailInvoiceIntegrationBySchool(escuelaId: string, options: EmailInvoiceSyncOptions = {}) {
+export async function syncEmailInvoiceIntegrationBySchool(
+  escuelaId: string,
+  options: EmailInvoiceSyncOptions = {}
+) {
   const integration = await getIntegrationBySchool(escuelaId);
   if (!integration || !integration.activa) {
     throw new Error("No hay una conexion de correo activa para esta escuela.");
@@ -868,11 +964,18 @@ export async function syncAllActiveEmailInvoiceIntegrations() {
     .eq("provider", MANUAL_IMAP_PROVIDER);
 
   if (error) {
-    throw new Error(`No se pudieron consultar las integraciones activas de correo: ${error.message}`);
+    throw new Error(
+      `No se pudieron consultar las integraciones activas de correo: ${error.message}`
+    );
   }
 
   const rows = (data as IntegrationRow[]) || [];
-  const results: Array<{ escuelaId: string; imported: number; duplicated: number; errors: number }> = [];
+  const results: Array<{
+    escuelaId: string;
+    imported: number;
+    duplicated: number;
+    errors: number;
+  }> = [];
 
   for (const row of rows) {
     try {

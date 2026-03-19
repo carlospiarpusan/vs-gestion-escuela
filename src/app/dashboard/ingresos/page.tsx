@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
@@ -11,8 +12,6 @@ import {
   AccountingMiniList,
 } from "@/components/dashboard/accounting/AccountingWorkspace";
 import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
-import Modal from "@/components/dashboard/Modal";
-import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import DataTable from "@/components/dashboard/DataTable";
 import { runSupabaseMutationWithRetry } from "@/lib/retry";
 import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
@@ -37,6 +36,13 @@ import type {
   MetodoPago,
 } from "@/types/database";
 import { ArrowDownCircle, ArrowUpCircle, Download, Layers, Plus, Scale, X } from "lucide-react";
+
+const Modal = dynamic(() => import("@/components/dashboard/Modal"), {
+  loading: () => null,
+});
+const DeleteConfirm = dynamic(() => import("@/components/dashboard/DeleteConfirm"), {
+  loading: () => null,
+});
 
 // ─── Types ───────────────────────────────────────────────────────────
 

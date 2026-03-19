@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { authorizeApiRequest, ensureSchoolScope, parseJsonBody } from "@/lib/api-auth";
+import {
+  authorizeApiRequest,
+  ensureSchoolScope,
+  parseJsonBody,
+  resolveEscuelaIdForRequest,
+} from "@/lib/api-auth";
 import { syncEmailInvoiceIntegrationBySchool } from "@/lib/email-invoice-sync";
 import type { Rol } from "@/types/database";
 
@@ -15,13 +20,6 @@ const syncSchema = z.object({
   max_messages: z.number().int().min(1).max(2000).optional(),
 });
 
-function resolveEscuelaId(perfil: { rol: Rol; escuela_id: string | null }, requestedEscuelaId?: string) {
-  if (perfil.rol === "super_admin") {
-    return requestedEscuelaId || null;
-  }
-  return perfil.escuela_id;
-}
-
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest(ALLOWED_ROLES);
   if (!authorization.ok) return authorization.response;
@@ -30,10 +28,13 @@ export async function POST(request: Request) {
   if (!parsed.ok) return parsed.response;
 
   const { perfil } = authorization;
-  const escuelaId = resolveEscuelaId(perfil, parsed.data.escuela_id);
+  const escuelaId = resolveEscuelaIdForRequest(request, perfil, parsed.data.escuela_id);
 
   if (!escuelaId) {
-    return NextResponse.json({ error: "No se encontro una escuela valida para sincronizar." }, { status: 400 });
+    return NextResponse.json(
+      { error: "No se encontro una escuela valida para sincronizar." },
+      { status: 400 }
+    );
   }
 
   const schoolScopeError = ensureSchoolScope(perfil, escuelaId);
@@ -50,7 +51,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ summary });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "No se pudo sincronizar el correo de facturas." },
+      {
+        error:
+          error instanceof Error ? error.message : "No se pudo sincronizar el correo de facturas.",
+      },
       { status: 500 }
     );
   }

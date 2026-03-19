@@ -15,13 +15,16 @@ export async function POST(request: Request) {
     const authz = await authorizeApiRequest(["super_admin"]);
     if (!authz.ok) return authz.response;
 
-    const limiter = rateLimit(
+    const limiter = await rateLimit(
       getRateLimitKey(request, "api:create-admin-escuela", authz.perfil.id),
       10,
       15 * 60 * 1000
     );
     if (!limiter.ok) {
-      return NextResponse.json({ error: "Demasiadas solicitudes. Intenta más tarde." }, { status: 429 });
+      return NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta más tarde." },
+        { status: 429 }
+      );
     }
 
     const parsedBody = await parseJsonBody(request, createAdminEscuelaSchema);
@@ -42,6 +45,14 @@ export async function POST(request: Request) {
     }
 
     const supabaseAdmin = buildSupabaseAdminClient();
+    const { data: sedePrincipal } = await supabaseAdmin
+      .from("sedes")
+      .select("id")
+      .eq("escuela_id", escuela_id)
+      .order("es_principal", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     const createUserPayload = {
       email,
       password,
@@ -52,7 +63,8 @@ export async function POST(request: Request) {
       },
     };
 
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser(createUserPayload);
+    const { data: authData, error: authError } =
+      await supabaseAdmin.auth.admin.createUser(createUserPayload);
 
     if (authError) {
       if (isAuthUserAlreadyRegisteredError(authError.message)) {
@@ -80,7 +92,7 @@ export async function POST(request: Request) {
       {
         id: userId,
         escuela_id,
-        sede_id: null,
+        sede_id: sedePrincipal?.id ?? null,
         nombre,
         email,
         rol: "admin_escuela",

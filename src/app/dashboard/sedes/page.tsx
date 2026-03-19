@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { clearSchoolCategoriesCache } from "@/lib/school-categories";
+import { fetchJsonWithRetry } from "@/lib/retry";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import type { Escuela, Sede, EstadoSede } from "@/types/database";
@@ -13,8 +15,16 @@ const inputCls = "apple-input";
 const labelCls = "apple-label";
 const CATEGORIAS_INDIVIDUALES = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
 const CATEGORIAS_COMBO = [
-  "A2 y B1", "A2 y C1", "A2 y RC1", "A2 y C2", "A2 y C3",
-  "A1 y B1", "A1 y C1", "A1 y RC1", "A1 y C2", "A1 y C3",
+  "A2 y B1",
+  "A2 y C1",
+  "A2 y RC1",
+  "A2 y C2",
+  "A2 y C3",
+  "A1 y B1",
+  "A1 y C1",
+  "A1 y RC1",
+  "A1 y C2",
+  "A1 y C3",
 ];
 const TODAS_CATEGORIAS = [...CATEGORIAS_INDIVIDUALES, ...CATEGORIAS_COMBO];
 
@@ -74,10 +84,7 @@ export default function SedesPage() {
             .select("*")
             .order("es_principal", { ascending: false })
             .order("nombre"),
-          supabase
-            .from("escuelas")
-            .select("id, nombre, categorias")
-            .order("nombre"),
+          supabase.from("escuelas").select("id, nombre, categorias").order("nombre"),
         ]);
 
         if (cancelled) return;
@@ -151,7 +158,9 @@ export default function SedesPage() {
     setForm({
       ...emptyForm,
       escuela_id: escuelaIdInicial,
-      es_principal: escuelaIdInicial ? sedes.filter((sede) => sede.escuela_id === escuelaIdInicial).length === 0 : false,
+      es_principal: escuelaIdInicial
+        ? sedes.filter((sede) => sede.escuela_id === escuelaIdInicial).length === 0
+        : false,
       categorias: escuelaIdInicial ? getSchoolCategories(escuelaIdInicial) : categoriasEscuela,
     });
     setError("");
@@ -212,66 +221,41 @@ export default function SedesPage() {
 
     setSaving(true);
     setError("");
-    const supabase = createClient();
-    const categoriasPayload = TODAS_CATEGORIAS.filter((categoria) => form.categorias.includes(categoria));
+    const categoriasPayload = TODAS_CATEGORIAS.filter((categoria) =>
+      form.categorias.includes(categoria)
+    );
 
-    const { error: escuelaError } = await supabase
-      .from("escuelas")
-      .update({ categorias: categoriasPayload })
-      .eq("id", escuelaId);
-    if (escuelaError) {
-      setError(escuelaError.message);
+    try {
+      await fetchJsonWithRetry("/api/sedes", {
+        method: editing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editing?.id,
+          escuela_id: escuelaId,
+          nombre: form.nombre.trim(),
+          estado: form.estado,
+          es_principal: form.es_principal,
+          direccion: form.direccion.trim() || null,
+          ciudad: form.ciudad.trim() || null,
+          provincia: form.provincia.trim() || null,
+          codigo_postal: form.codigo_postal.trim() || null,
+          telefono: form.telefono.trim() || null,
+          email: form.email.trim().toLowerCase() || null,
+          horario_apertura: form.horario_apertura || null,
+          horario_cierre: form.horario_cierre || null,
+          categorias: categoriasPayload,
+        }),
+      });
+
+      clearSchoolCategoriesCache(escuelaId);
+      setModalOpen(false);
+      setCategoriasEscuela(categoriasPayload);
+      setReloadKey((value) => value + 1);
+    } catch (saveError: unknown) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudo guardar la sede.");
+    } finally {
       setSaving(false);
-      return;
     }
-
-    const payload = {
-      escuela_id: escuelaId,
-      nombre: form.nombre.trim(),
-      estado: form.estado,
-      es_principal: form.es_principal,
-      direccion: form.direccion.trim() || null,
-      ciudad: form.ciudad.trim() || null,
-      provincia: form.provincia.trim() || null,
-      codigo_postal: form.codigo_postal.trim() || null,
-      telefono: form.telefono.trim() || null,
-      email: form.email.trim().toLowerCase() || null,
-      horario_apertura: form.horario_apertura || null,
-      horario_cierre: form.horario_cierre || null,
-    };
-
-    let savedId = editing?.id;
-
-    if (editing) {
-      const { error: err } = await supabase
-        .from("sedes")
-        .update(payload)
-        .eq("id", editing.id);
-      if (err) { setError(err.message); setSaving(false); return; }
-    } else {
-      const { data: inserted, error: err } = await supabase
-        .from("sedes")
-        .insert(payload)
-        .select("id")
-        .single();
-      if (err) { setError(err.message); setSaving(false); return; }
-      savedId = inserted.id;
-    }
-
-    // Si esta sede se marca como principal, quitar es_principal a las demás
-    if (form.es_principal && savedId) {
-      await supabase
-        .from("sedes")
-        .update({ es_principal: false })
-        .eq("escuela_id", escuelaId)
-        .neq("id", savedId)
-        .eq("es_principal", true);
-    }
-
-    setSaving(false);
-    setModalOpen(false);
-    setCategoriasEscuela(categoriasPayload);
-    setReloadKey((value) => value + 1);
   };
 
   /* ── abrir confirmación borrar ── */
@@ -284,10 +268,14 @@ export default function SedesPage() {
   /* ── borrar ── */
   const handleDelete = async () => {
     if (!deleting) return;
-    const totalSedesEscuela = sedes.filter((sede) => sede.escuela_id === deleting.escuela_id).length;
+    const totalSedesEscuela = sedes.filter(
+      (sede) => sede.escuela_id === deleting.escuela_id
+    ).length;
 
     if (deleting.es_principal) {
-      setDeleteError("No puedes eliminar la sede principal. Primero designa otra sede como principal.");
+      setDeleteError(
+        "No puedes eliminar la sede principal. Primero designa otra sede como principal."
+      );
       return;
     }
     if (totalSedesEscuela <= 1) {
@@ -296,54 +284,47 @@ export default function SedesPage() {
     }
 
     setDeleting2(true);
-    const supabase = createClient();
 
-    // Verificar si hay registros asignados a esta sede
-    const [alumnosRes, instructoresRes] = await Promise.all([
-      supabase.from("alumnos").select("id", { count: "exact", head: true }).eq("sede_id", deleting.id),
-      supabase.from("instructores").select("id", { count: "exact", head: true }).eq("sede_id", deleting.id),
-    ]);
-    const totalAsignados = (alumnosRes.count ?? 0) + (instructoresRes.count ?? 0);
+    try {
+      await fetchJsonWithRetry("/api/sedes", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: deleting.id }),
+      });
 
-    if (totalAsignados > 0) {
+      clearSchoolCategoriesCache(deleting.escuela_id);
+      setDeleteOpen(false);
+      setDeleting(null);
+      setReloadKey((value) => value + 1);
+    } catch (deleteErr: unknown) {
       setDeleteError(
-        `Esta sede tiene ${alumnosRes.count ?? 0} alumno(s) y ${instructoresRes.count ?? 0} instructor(es) asignados. Reasígnalos antes de eliminar la sede.`
+        deleteErr instanceof Error ? deleteErr.message : "No se pudo eliminar la sede."
       );
+    } finally {
       setDeleting2(false);
-      return;
     }
-
-    const { error: err } = await supabase.from("sedes").delete().eq("id", deleting.id);
-    if (err) {
-      setDeleteError(err.message);
-      setDeleting2(false);
-      return;
-    }
-
-    setDeleting2(false);
-    setDeleteOpen(false);
-    setDeleting(null);
-    setReloadKey((value) => value + 1);
   };
 
   /* ── render ── */
-  const todasCategoriasActivas = TODAS_CATEGORIAS.every((categoria) => form.categorias.includes(categoria));
+  const todasCategoriasActivas = TODAS_CATEGORIAS.every((categoria) =>
+    form.categorias.includes(categoria)
+  );
 
   return (
     <div>
       {/* Cabecera */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
+          <h2 className="text-2xl font-semibold tracking-tight text-[#1d1d1f] sm:text-3xl dark:text-[#f5f5f7]">
             Sedes
           </h2>
-          <p className="text-sm text-[#86868b] mt-1">
+          <p className="mt-1 text-sm text-[#86868b]">
             {isSuperAdmin
               ? "Gestiona las sedes de todas las escuelas desde un solo panel"
               : "Gestiona las sedes o sucursales de tu escuela"}
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           {isSuperAdmin && (
             <select
               value={filtroEscuela}
@@ -361,7 +342,7 @@ export default function SedesPage() {
           {canEdit && (
             <button
               onClick={openCreate}
-              className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors self-start sm:self-auto"
+              className="flex items-center gap-2 self-start rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] sm:self-auto"
             >
               <Plus size={16} />
               Nueva Sede
@@ -371,20 +352,20 @@ export default function SedesPage() {
       </div>
 
       {isSuperAdmin && (
-        <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 dark:border-gray-800 dark:bg-[#1d1d1f]">
             <p className="text-xs text-[#86868b]">Escuelas con sedes</p>
             <p className="mt-2 text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
               {new Set(sedes.map((sede) => sede.escuela_id)).size}
             </p>
           </div>
-          <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 dark:border-gray-800 dark:bg-[#1d1d1f]">
             <p className="text-xs text-[#86868b]">Sedes visibles</p>
             <p className="mt-2 text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
               {sedesFiltradas.length}
             </p>
           </div>
-          <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 dark:border-gray-800 dark:bg-[#1d1d1f]">
             <p className="text-xs text-[#86868b]">Sedes principales visibles</p>
             <p className="mt-2 text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
               {sedesFiltradas.filter((sede) => sede.es_principal).length}
@@ -396,12 +377,14 @@ export default function SedesPage() {
       {/* Contenido */}
       {loading ? (
         <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#0071e3] border-t-transparent" />
         </div>
       ) : sedesFiltradas.length === 0 ? (
-        <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl p-12 text-center border border-gray-100 dark:border-gray-800">
-          <Building2 size={40} className="mx-auto text-[#86868b] mb-4" />
-          <p className="text-[#1d1d1f] dark:text-[#f5f5f7] font-medium mb-1">Sin sedes registradas</p>
+        <div className="rounded-3xl border border-gray-100 bg-white p-12 text-center dark:border-gray-800 dark:bg-[#1d1d1f]">
+          <Building2 size={40} className="mx-auto mb-4 text-[#86868b]" />
+          <p className="mb-1 font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+            Sin sedes registradas
+          </p>
           <p className="text-sm text-[#86868b]">
             {isSuperAdmin
               ? "No hay sedes para el filtro actual. Crea la primera o cambia de escuela."
@@ -409,24 +392,22 @@ export default function SedesPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sedesFiltradas.map((sede) => (
             <div
               key={sede.id}
-              className={`bg-white dark:bg-[#1d1d1f] rounded-2xl p-5 border transition-shadow hover:shadow-md ${
+              className={`rounded-2xl border bg-white p-5 transition-shadow hover:shadow-md dark:bg-[#1d1d1f] ${
                 sede.es_principal
                   ? "border-[#0071e3]/40 dark:border-[#0071e3]/30"
                   : "border-gray-100 dark:border-gray-800"
               }`}
             >
               {/* Header de la tarjeta */}
-              <div className="flex items-start justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2 min-w-0">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <div
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                      sede.es_principal
-                        ? "bg-[#0071e3]/10"
-                        : "bg-gray-100 dark:bg-gray-800"
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+                      sede.es_principal ? "bg-[#0071e3]/10" : "bg-gray-100 dark:bg-gray-800"
                     }`}
                   >
                     <Building2
@@ -435,20 +416,22 @@ export default function SedesPage() {
                     />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">
+                    <h3 className="truncate text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                       {sede.nombre}
                     </h3>
                     {isSuperAdmin && (
-                      <p className="mt-0.5 text-[11px] text-[#86868b] truncate">{sede.escuela_nombre}</p>
+                      <p className="mt-0.5 truncate text-[11px] text-[#86868b]">
+                        {sede.escuela_nombre}
+                      </p>
                     )}
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="mt-0.5 flex items-center gap-1.5">
                       {sede.es_principal && (
                         <span className="flex items-center gap-0.5 text-[10px] font-medium text-[#0071e3]">
                           <Star size={9} fill="currentColor" /> Principal
                         </span>
                       )}
                       <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
                           sede.estado === "activa"
                             ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                             : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
@@ -460,23 +443,41 @@ export default function SedesPage() {
                   </div>
                 </div>
                 {canEdit && (
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex shrink-0 gap-1">
                     <button
                       onClick={() => openEdit(sede)}
-                      className="p-1.5 rounded-lg text-[#86868b] hover:text-[#0071e3] hover:bg-[#0071e3]/10 transition-colors"
+                      className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-[#0071e3]/10 hover:text-[#0071e3]"
                       title="Editar sede"
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                       </svg>
                     </button>
                     <button
                       onClick={() => openDelete(sede)}
-                      className="p-1.5 rounded-lg text-[#86868b] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
                       title="Eliminar sede"
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <polyline points="3 6 5 6 21 6" />
                         <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
                         <path d="M10 11v6M14 11v6" />
@@ -519,9 +520,13 @@ export default function SedesPage() {
                     </span>
                   </div>
                 )}
-                {!sede.direccion && !sede.ciudad && !sede.telefono && !sede.email && !sede.horario_apertura && (
-                  <span className="italic">Sin información adicional</span>
-                )}
+                {!sede.direccion &&
+                  !sede.ciudad &&
+                  !sede.telefono &&
+                  !sede.email &&
+                  !sede.horario_apertura && (
+                    <span className="italic">Sin información adicional</span>
+                  )}
               </div>
             </div>
           ))}
@@ -537,7 +542,7 @@ export default function SedesPage() {
       >
         <div className="space-y-4">
           {error && (
-            <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
               {error}
             </p>
           )}
@@ -561,6 +566,7 @@ export default function SedesPage() {
                   }));
                 }}
                 className={inputCls}
+                disabled={Boolean(editing)}
               >
                 <option value="">Selecciona una escuela</option>
                 {escuelas.map((escuela) => (
@@ -573,7 +579,7 @@ export default function SedesPage() {
           )}
 
           {/* Nombre y Estado */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Nombre *</label>
               <input
@@ -598,7 +604,7 @@ export default function SedesPage() {
           </div>
 
           {/* Sede principal */}
-          <label className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-gray-200 p-3 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50">
             <div className="relative">
               <input
                 type="checkbox"
@@ -606,13 +612,21 @@ export default function SedesPage() {
                 onChange={(e) => setForm({ ...form, es_principal: e.target.checked })}
                 className="sr-only"
               />
-              <div className={`w-10 h-6 rounded-full transition-colors ${form.es_principal ? "bg-[#0071e3]" : "bg-gray-200 dark:bg-gray-700"}`}>
-                <div className={`w-4 h-4 bg-white rounded-full shadow absolute top-1 transition-transform ${form.es_principal ? "translate-x-5" : "translate-x-1"}`} />
+              <div
+                className={`h-6 w-10 rounded-full transition-colors ${form.es_principal ? "bg-[#0071e3]" : "bg-gray-200 dark:bg-gray-700"}`}
+              >
+                <div
+                  className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.es_principal ? "translate-x-5" : "translate-x-1"}`}
+                />
               </div>
             </div>
             <div>
-              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Sede principal</p>
-              <p className="text-xs text-[#86868b]">Se asignará automáticamente a los nuevos registros</p>
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Sede principal
+              </p>
+              <p className="text-xs text-[#86868b]">
+                Se asignará automáticamente a los nuevos registros
+              </p>
             </div>
           </label>
 
@@ -620,7 +634,7 @@ export default function SedesPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <label className={labelCls}>Categorías habilitadas</label>
-                <p className="text-xs text-[#86868b] mt-1">
+                <p className="mt-1 text-xs text-[#86868b]">
                   {isSuperAdmin
                     ? "Esta selección aplica a la escuela elegida y se actualiza desde esta misma edición."
                     : "Esta selección aplica a toda la escuela y ahora se administra desde la edición de sedes."}
@@ -629,7 +643,7 @@ export default function SedesPage() {
               <button
                 type="button"
                 onClick={toggleTodasCategorias}
-                className="px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-white dark:hover:bg-[#1d1d1f] transition-colors"
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-white dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-[#1d1d1f]"
               >
                 {todasCategoriasActivas ? "Desmarcar todas" : "Seleccionar todas"}
               </button>
@@ -637,10 +651,10 @@ export default function SedesPage() {
 
             <div className="mt-4 space-y-4">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] mb-2">
+                <p className="mb-2 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
                   Individuales
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
                   {CATEGORIAS_INDIVIDUALES.map((categoria) => {
                     const activa = form.categorias.includes(categoria);
                     return (
@@ -648,10 +662,10 @@ export default function SedesPage() {
                         key={categoria}
                         type="button"
                         onClick={() => toggleCategoria(categoria)}
-                        className={`px-3 py-2 rounded-xl border text-sm font-semibold transition-colors ${
+                        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
                           activa
                             ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                            : "border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-gray-600"
+                            : "border-gray-200 text-[#1d1d1f] hover:border-gray-300 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:border-gray-600"
                         }`}
                       >
                         {categoria}
@@ -662,10 +676,10 @@ export default function SedesPage() {
               </div>
 
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] mb-2">
+                <p className="mb-2 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
                   Combos
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {CATEGORIAS_COMBO.map((categoria) => {
                     const activa = form.categorias.includes(categoria);
                     return (
@@ -673,10 +687,10 @@ export default function SedesPage() {
                         key={categoria}
                         type="button"
                         onClick={() => toggleCategoria(categoria)}
-                        className={`px-3 py-2 rounded-xl border text-sm font-semibold text-left transition-colors ${
+                        className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors ${
                           activa
                             ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                            : "border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-gray-600"
+                            : "border-gray-200 text-[#1d1d1f] hover:border-gray-300 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:border-gray-600"
                         }`}
                       >
                         {categoria}
@@ -701,7 +715,7 @@ export default function SedesPage() {
           </div>
 
           {/* Ciudad y Departamento/Provincia */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Ciudad</label>
               <input
@@ -725,7 +739,7 @@ export default function SedesPage() {
           </div>
 
           {/* Código postal y Teléfono */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Código postal</label>
               <input
@@ -761,7 +775,7 @@ export default function SedesPage() {
           </div>
 
           {/* Horarios */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Apertura</label>
               <input
@@ -783,17 +797,17 @@ export default function SedesPage() {
           </div>
 
           {/* Botones */}
-          <div className="flex gap-3 justify-end pt-2">
+          <div className="flex justify-end gap-3 pt-2">
             <button
               onClick={() => setModalOpen(false)}
-              className="px-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg bg-[#0071e3] text-white hover:bg-[#0077ED] transition-colors disabled:opacity-50"
+              className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
             >
               {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Sede"}
             </button>
@@ -804,7 +818,10 @@ export default function SedesPage() {
       {/* ── Modal Eliminar ── */}
       <DeleteConfirm
         open={deleteOpen}
-        onClose={() => { setDeleteOpen(false); setDeleteError(""); }}
+        onClose={() => {
+          setDeleteOpen(false);
+          setDeleteError("");
+        }}
         onConfirm={handleDelete}
         loading={deleting2}
         title="Eliminar sede"
@@ -815,7 +832,7 @@ export default function SedesPage() {
               <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">{deleting?.nombre}</strong>?
             </p>
             {deleteError && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
+              <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
                 <AlertTriangle size={15} className="mt-0.5 shrink-0" />
                 <span>{deleteError}</span>
               </div>

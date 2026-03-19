@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import {
   authorizeApiRequest,
   buildSupabaseAdminClient,
+  createAuthUserWithRetryOnCollision,
   ensureNonReservedAuthEmail,
   ensureSchoolScope,
   ensureSedeScope,
-  findAuthUserByEmail,
   normalizeCedula,
   normalizeEmail,
   parseJsonBody,
@@ -16,16 +16,24 @@ import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
-    const authz = await authorizeApiRequest(["super_admin", "admin_escuela", "admin_sede", "administrativo"]);
+    const authz = await authorizeApiRequest([
+      "super_admin",
+      "admin_escuela",
+      "admin_sede",
+      "administrativo",
+    ]);
     if (!authz.ok) return authz.response;
 
-    const limiter = rateLimit(
+    const limiter = await rateLimit(
       getRateLimitKey(request, "api:create-instructor-auth", authz.perfil.id),
       20,
       15 * 60 * 1000
     );
     if (!limiter.ok) {
-      return NextResponse.json({ error: "Demasiadas solicitudes. Intenta más tarde." }, { status: 429 });
+      return NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta más tarde." },
+        { status: 429 }
+      );
     }
 
     const parsedBody = await parseJsonBody(request, createInstructorSchema);
@@ -72,35 +80,20 @@ export async function POST(request: Request) {
 
     const authEmail = email || `${dni}@instructor.local`;
     const authPassword = dni;
-    const existingUser = await findAuthUserByEmail(supabaseAdmin, authEmail);
-
-    if (existingUser) {
-      const { data: perfilExistente } = await supabaseAdmin
-        .from("perfiles")
-        .select("id, escuela_id")
-        .eq("id", existingUser.id)
-        .maybeSingle();
-
-      if (perfilExistente || email) {
-        return NextResponse.json(
-          { error: "La cédula o correo ya tiene una cuenta registrada." },
-          { status: 400 }
-        );
-      }
-
-      await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
-    }
-
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email: authEmail,
-      password: authPassword,
-      email_confirm: true,
-      user_metadata: {
-        nombre,
-        rol: "instructor",
-        debe_cambiar_password: true,
+    const { data: authData, error: authError } = await createAuthUserWithRetryOnCollision(
+      supabaseAdmin,
+      {
+        email: authEmail,
+        password: authPassword,
+        email_confirm: true,
+        user_metadata: {
+          nombre,
+          rol: "instructor",
+          debe_cambiar_password: true,
+        },
       },
-    });
+      { allowOrphanCleanup: !email }
+    );
 
     if (authError || !authData?.user) {
       if (isAuthUserAlreadyRegisteredError(authError?.message)) {

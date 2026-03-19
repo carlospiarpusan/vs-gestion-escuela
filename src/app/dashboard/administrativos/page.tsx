@@ -7,7 +7,7 @@ import { useDraftForm } from "@/hooks/useDraftForm";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
-import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
+import { fetchJsonWithRetry } from "@/lib/retry";
 import type { Perfil, Sede } from "@/types/database";
 import { Plus, Power } from "lucide-react";
 
@@ -64,41 +64,48 @@ export default function AdministrativosPage() {
     perfil?.rol === "admin_escuela" ||
     perfil?.rol === "admin_sede";
 
-  const fetchAdministrativos = useCallback(async (page = 0, search = "") => {
-    if (!perfil?.escuela_id) return;
+  const fetchAdministrativos = useCallback(
+    async (page = 0, search = "") => {
+      if (!perfil?.escuela_id) return;
 
-    const fetchId = ++fetchIdRef.current;
-    setLoading(true);
-    setTableError("");
+      const fetchId = ++fetchIdRef.current;
+      setLoading(true);
+      setTableError("");
 
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        pageSize: String(PAGE_SIZE),
-      });
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+        });
 
-      if (search.trim()) params.set("q", search.trim());
+        if (search.trim()) params.set("q", search.trim());
 
-      const payload = await fetchJsonWithRetry<AdministrativosListResponse>(
-        `/api/administrativos?${params.toString()}`,
-        { cache: "no-store" }
-      );
+        const payload = await fetchJsonWithRetry<AdministrativosListResponse>(
+          `/api/administrativos?${params.toString()}`,
+          { cache: "no-store" }
+        );
 
-      if (fetchId !== fetchIdRef.current) return;
+        if (fetchId !== fetchIdRef.current) return;
 
-      setData(payload.rows || []);
-      setTotalCount(payload.totalCount || 0);
-    } catch (fetchError: unknown) {
-      if (fetchId !== fetchIdRef.current) return;
-      setData([]);
-      setTotalCount(0);
-      setTableError(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar los administrativos.");
-    } finally {
-      if (fetchId === fetchIdRef.current) {
-        setLoading(false);
+        setData(payload.rows || []);
+        setTotalCount(payload.totalCount || 0);
+      } catch (fetchError: unknown) {
+        if (fetchId !== fetchIdRef.current) return;
+        setData([]);
+        setTotalCount(0);
+        setTableError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : "No se pudieron cargar los administrativos."
+        );
+      } finally {
+        if (fetchId === fetchIdRef.current) {
+          setLoading(false);
+        }
       }
-    }
-  }, [perfil?.escuela_id]);
+    },
+    [perfil?.escuela_id]
+  );
 
   useEffect(() => {
     if (!perfil?.escuela_id) return;
@@ -145,7 +152,7 @@ export default function AdministrativosPage() {
     setEditing(row);
     setForm({
       nombre: row.nombre,
-      cedula: "",        // la cédula no se muestra ni edita (son credenciales auth)
+      cedula: "", // la cédula no se muestra ni edita (son credenciales auth)
       email: row.email,
       sede_id: row.sede_id ?? "",
     });
@@ -165,17 +172,15 @@ export default function AdministrativosPage() {
 
     try {
       if (editing) {
-        // EDITAR: actualizar directamente en la tabla perfiles
-        const supabase = createClient();
-        await runSupabaseMutationWithRetry(() =>
-          supabase
-            .from("perfiles")
-            .update({
-              nombre: form.nombre.trim(),
-              sede_id: form.sede_id,
-            })
-            .eq("id", editing.id)
-        );
+        await fetchJsonWithRetry("/api/administrativos", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editing.id,
+            nombre: form.nombre.trim(),
+            sede_id: form.sede_id,
+          }),
+        });
       } else {
         // CREAR: llamar a la API que crea el usuario en Supabase Auth + perfil
         if (!form.cedula.trim()) {
@@ -211,10 +216,14 @@ export default function AdministrativosPage() {
 
   // Activar / desactivar
   const toggleActivo = async (row: AdminRow) => {
-    const supabase = createClient();
-    await runSupabaseMutationWithRetry(() =>
-      supabase.from("perfiles").update({ activo: !row.activo }).eq("id", row.id)
-    );
+    await fetchJsonWithRetry("/api/administrativos", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: row.id,
+        activo: !row.activo,
+      }),
+    });
     setReloadKey((value) => value + 1);
   };
 
@@ -223,10 +232,11 @@ export default function AdministrativosPage() {
     if (!deleting) return;
     setSaving(true);
     try {
-      const supabase = createClient();
-      await runSupabaseMutationWithRetry(() =>
-        supabase.from("perfiles").delete().eq("id", deleting.id)
-      );
+      await fetchJsonWithRetry("/api/administrativos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: deleting.id }),
+      });
       setSaving(false);
       setDeleteOpen(false);
       setDeleting(null);
@@ -246,55 +256,58 @@ export default function AdministrativosPage() {
     const sedesMap = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
     return data.map((row) => ({
       ...row,
-      sede_nombre: row.sede_nombre ?? (row.sede_id ? sedesMap.get(row.sede_id) ?? "—" : "—"),
+      sede_nombre: row.sede_nombre ?? (row.sede_id ? (sedesMap.get(row.sede_id) ?? "—") : "—"),
     }));
   }, [data, sedes]);
 
-  const columns = useMemo(() => ([
-    {
-      key: "nombre" as keyof AdminRow,
-      label: "Nombre",
-      render: (row: AdminRow) => (
-        <div>
-          <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{row.nombre}</p>
-          <p className="text-xs text-[#86868b]">{row.email}</p>
-        </div>
-      ),
-    },
-    {
-      key: "sede_nombre" as keyof AdminRow,
-      label: "Sede",
-      render: (row: AdminRow) => (
-        <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
-          {row.sede_nombre || "—"}
-        </span>
-      ),
-    },
-    {
-      key: "activo" as keyof AdminRow,
-      label: "Estado",
-      render: (row: AdminRow) => (
-        <span
-          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-            row.activo
-              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-              : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-          }`}
-        >
-          {row.activo ? "Activo" : "Inactivo"}
-        </span>
-      ),
-    },
-    {
-      key: "created_at" as keyof AdminRow,
-      label: "Alta",
-      render: (row: AdminRow) => (
-        <span className="text-sm text-[#86868b]">
-          {new Date(row.created_at).toLocaleDateString("es-CO")}
-        </span>
-      ),
-    },
-  ]), []);
+  const columns = useMemo(
+    () => [
+      {
+        key: "nombre" as keyof AdminRow,
+        label: "Nombre",
+        render: (row: AdminRow) => (
+          <div>
+            <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{row.nombre}</p>
+            <p className="text-xs text-[#86868b]">{row.email}</p>
+          </div>
+        ),
+      },
+      {
+        key: "sede_nombre" as keyof AdminRow,
+        label: "Sede",
+        render: (row: AdminRow) => (
+          <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+            {row.sede_nombre || "—"}
+          </span>
+        ),
+      },
+      {
+        key: "activo" as keyof AdminRow,
+        label: "Estado",
+        render: (row: AdminRow) => (
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+              row.activo
+                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+            }`}
+          >
+            {row.activo ? "Activo" : "Inactivo"}
+          </span>
+        ),
+      },
+      {
+        key: "created_at" as keyof AdminRow,
+        label: "Alta",
+        render: (row: AdminRow) => (
+          <span className="text-sm text-[#86868b]">
+            {new Date(row.created_at).toLocaleDateString("es-CO")}
+          </span>
+        ),
+      },
+    ],
+    []
+  );
 
   const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page);
@@ -308,19 +321,19 @@ export default function AdministrativosPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
             Administrativos
           </h2>
-          <p className="text-sm text-[#86868b] mt-0.5">
+          <p className="mt-0.5 text-sm text-[#86868b]">
             Gestiona los administrativos asignados a cada sede
           </p>
         </div>
         {canEdit && (
           <button
             onClick={openCreate}
-            className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors"
+            className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
           >
             <Plus size={16} /> Nuevo Administrativo
           </button>
@@ -328,7 +341,7 @@ export default function AdministrativosPage() {
       </div>
 
       {/* Lista */}
-      <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
         {tableError && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
             {tableError}
@@ -347,19 +360,27 @@ export default function AdministrativosPage() {
           onSearchChange={handleSearchChange}
           pageSize={PAGE_SIZE}
           onEdit={canEdit ? openEdit : undefined}
-          onDelete={canEdit ? (row) => {
-            setDeleting(row);
-            setDeleteOpen(true);
-          } : undefined}
-          extraActions={canEdit ? ((row) => (
-            <button
-              onClick={() => toggleActivo(row)}
-              title={row.activo ? "Desactivar" : "Activar"}
-              className="apple-icon-button hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
-            >
-              <Power size={14} />
-            </button>
-          )) : undefined}
+          onDelete={
+            canEdit
+              ? (row) => {
+                  setDeleting(row);
+                  setDeleteOpen(true);
+                }
+              : undefined
+          }
+          extraActions={
+            canEdit
+              ? (row) => (
+                  <button
+                    onClick={() => toggleActivo(row)}
+                    title={row.activo ? "Desactivar" : "Activar"}
+                    className="apple-icon-button hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+                  >
+                    <Power size={14} />
+                  </button>
+                )
+              : undefined
+          }
         />
       </div>
 
@@ -372,7 +393,9 @@ export default function AdministrativosPage() {
       >
         <div className="space-y-4">
           {error && (
-            <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{error}</p>
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
+              {error}
+            </p>
           )}
 
           <div>
@@ -388,7 +411,7 @@ export default function AdministrativosPage() {
 
           {/* Cédula y email solo al crear */}
           {!editing && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelCls}>Cédula *</label>
                 <input
@@ -398,7 +421,7 @@ export default function AdministrativosPage() {
                   placeholder="Número de cédula"
                   className={inputCls}
                 />
-                <p className="text-xs text-[#86868b] mt-1">Usada como contraseña inicial</p>
+                <p className="mt-1 text-xs text-[#86868b]">Usada como contraseña inicial</p>
               </div>
               <div>
                 <label className={labelCls}>Email (opcional)</label>
@@ -421,9 +444,11 @@ export default function AdministrativosPage() {
                 type="text"
                 value={form.email}
                 disabled
-                className={`${inputCls} opacity-50 cursor-not-allowed`}
+                className={`${inputCls} cursor-not-allowed opacity-50`}
               />
-              <p className="text-xs text-[#86868b] mt-1">Las credenciales de acceso no se pueden cambiar aquí.</p>
+              <p className="mt-1 text-xs text-[#86868b]">
+                Las credenciales de acceso no se pueden cambiar aquí.
+              </p>
             </div>
           )}
 
@@ -438,23 +463,24 @@ export default function AdministrativosPage() {
               <option value="">Selecciona una sede</option>
               {sedesDisponibles.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.nombre}{s.es_principal ? " (Principal)" : ""}
+                  {s.nombre}
+                  {s.es_principal ? " (Principal)" : ""}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="flex gap-3 justify-end pt-2">
+          <div className="flex justify-end gap-3 pt-2">
             <button
               onClick={() => setModalOpen(false)}
-              className="px-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg bg-[#0071e3] text-white hover:bg-[#0077ED] transition-colors disabled:opacity-50"
+              className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
             >
               {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Administrativo"}
             </button>

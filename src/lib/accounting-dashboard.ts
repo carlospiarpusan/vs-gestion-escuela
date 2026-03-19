@@ -32,6 +32,17 @@ export type AccountingNamedBreakdownRow = {
   total: number;
 };
 
+export type AccountingTramitadorPortfolioRow = {
+  nombre: string;
+  movimientos: number;
+  pagado: number;
+  pendiente: number;
+  vencido: number;
+  porVencer: number;
+  ticketPromedio: number;
+  ultimaFecha: string;
+};
+
 export type AccountingDailySeriesRow = {
   fecha: string;
   ingresos: number;
@@ -188,6 +199,7 @@ export type AccountingReportResponse = {
     topConceptosGasto: AccountingBreakdownRow[];
     topProveedoresGasto: AccountingBreakdownRow[];
     topTramitadoresGasto: AccountingNamedBreakdownRow[];
+    tramitadorPortfolio: AccountingTramitadorPortfolioRow[];
   };
   series: {
     diaria: AccountingDailySeriesRow[];
@@ -281,14 +293,15 @@ export function downloadCsv(
   headers: string[],
   rows: Array<Array<string | number | null>>
 ) {
+  const CSV_DELIMITER = ";";
   const escapeCell = (value: string | number | null) =>
     `"${String(value ?? "").replace(/"/g, '""')}"`;
   const csv = [
-    headers.map(escapeCell).join(","),
-    ...rows.map((row) => row.map(escapeCell).join(",")),
+    headers.map(escapeCell).join(CSV_DELIMITER),
+    ...rows.map((row) => row.map(escapeCell).join(CSV_DELIMITER)),
   ].join("\n");
 
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

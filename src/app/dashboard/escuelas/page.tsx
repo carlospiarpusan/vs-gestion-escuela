@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
+import { clearSchoolCategoriesCache } from "@/lib/school-categories";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
@@ -17,8 +18,16 @@ const estados: EstadoEscuela[] = ["activa", "inactiva", "suspendida"];
 
 const CATEGORIAS_INDIVIDUALES = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
 const CATEGORIAS_COMBO = [
-  "A2 y B1", "A2 y C1", "A2 y RC1", "A2 y C2", "A2 y C3",
-  "A1 y B1", "A1 y C1", "A1 y RC1", "A1 y C2", "A1 y C3",
+  "A2 y B1",
+  "A2 y C1",
+  "A2 y RC1",
+  "A2 y C2",
+  "A2 y C3",
+  "A1 y B1",
+  "A1 y C1",
+  "A1 y RC1",
+  "A1 y C2",
+  "A1 y C3",
 ];
 
 const emptyEscuelaForm = {
@@ -177,64 +186,33 @@ export default function EscuelasPage() {
             .eq("id", editing.id)
         );
       } else {
-        const { data: nuevaEscuela } = await runSupabaseMutationWithRetry(() =>
-          supabase
-            .from("escuelas")
-            .insert([{
-              nombre: escuelaForm.nombre,
-              cif: escuelaForm.cif,
-              telefono: escuelaForm.telefono || null,
-              email: escuelaForm.email || null,
-              direccion: escuelaForm.direccion || null,
-              plan: escuelaForm.plan,
-              estado: escuelaForm.estado,
-              max_alumnos: escuelaForm.max_alumnos,
-              max_sedes: escuelaForm.max_sedes,
-              categorias: escuelaForm.categorias,
-              fecha_alta: new Date().toISOString().split("T")[0],
-            }])
-            .select()
-            .single()
-        );
-
-        if (nuevaEscuela) {
-          // Crear Sede 1 automáticamente como sede principal
-          await runSupabaseMutationWithRetry(() =>
-            supabase.from("sedes").insert([{
-              escuela_id: nuevaEscuela.id,
-              nombre: "Sede 1",
-              direccion: escuelaForm.direccion || null,
-              telefono: escuelaForm.telefono || null,
-              email: escuelaForm.email || null,
-              es_principal: true,
-              estado: "activa",
-            }])
-          );
-
-          if (crearAdmin) {
-            try {
-              await fetchJsonWithRetry("/api/crear-admin-escuela", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  escuela_id: nuevaEscuela.id,
+        await fetchJsonWithRetry("/api/escuelas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nombre: escuelaForm.nombre,
+            cif: escuelaForm.cif,
+            telefono: escuelaForm.telefono || null,
+            email: escuelaForm.email || null,
+            direccion: escuelaForm.direccion || null,
+            plan: escuelaForm.plan,
+            estado: escuelaForm.estado,
+            max_alumnos: escuelaForm.max_alumnos,
+            max_sedes: escuelaForm.max_sedes,
+            categorias: escuelaForm.categorias,
+            crear_admin: crearAdmin,
+            admin: crearAdmin
+              ? {
                   nombre: adminForm.nombre,
                   email: adminForm.email,
                   password: adminForm.password,
-                }),
-              });
-            } catch (adminErr: unknown) {
-              // Rollback: eliminar sede y escuela para no dejar datos huérfanos
-              await supabase.from("sedes").delete().eq("escuela_id", nuevaEscuela.id);
-              await supabase.from("escuelas").delete().eq("id", nuevaEscuela.id);
-              throw adminErr instanceof Error
-                ? adminErr
-                : new Error("Error al crear el administrador");
-            }
-          }
-        }
+                }
+              : undefined,
+          }),
+        });
       }
 
+      clearSchoolCategoriesCache(editing?.id);
       clearEscuelaDraft(emptyEscuelaForm);
       clearAdminDraft(emptyAdminForm);
       setModalOpen(false);
@@ -261,6 +239,7 @@ export default function EscuelasPage() {
         body: JSON.stringify({ escuela_id: deleting.id }),
       });
 
+      clearSchoolCategoriesCache(deleting.id);
       setDeleteOpen(false);
       setDeleting(null);
       fetchEscuelas();
@@ -294,14 +273,12 @@ export default function EscuelasPage() {
       label: "Escuela",
       render: (row: Escuela) => (
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[#0071e3]/10 flex items-center justify-center flex-shrink-0">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[#0071e3]/10">
             <Building2 size={14} className="text-[#0071e3]" />
           </div>
           <div>
             <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{row.nombre}</p>
-            {row.direccion && (
-              <p className="text-xs text-[#86868b]">{row.direccion}</p>
-            )}
+            {row.direccion && <p className="text-xs text-[#86868b]">{row.direccion}</p>}
           </div>
         </div>
       ),
@@ -313,7 +290,9 @@ export default function EscuelasPage() {
       key: "plan" as keyof Escuela,
       label: "Plan",
       render: (row: Escuela) => (
-        <span className={`px-2 py-0.5 text-xs rounded-full font-medium capitalize ${planColors[row.plan]}`}>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${planColors[row.plan]}`}
+        >
           {row.plan}
         </span>
       ),
@@ -323,11 +302,14 @@ export default function EscuelasPage() {
       label: "Categorías",
       render: (row: Escuela) => {
         const cats = row.categorias || [];
-        if (cats.length === 0) return <span className="text-[#86868b] text-xs">—</span>;
+        if (cats.length === 0) return <span className="text-xs text-[#86868b]">—</span>;
         return (
           <div className="flex flex-wrap gap-1">
             {cats.map((c) => (
-              <span key={c} className="px-1.5 py-0.5 text-[10px] rounded-md bg-[#0071e3]/10 text-[#0071e3] font-semibold">
+              <span
+                key={c}
+                className="rounded-md bg-[#0071e3]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#0071e3]"
+              >
                 {c}
               </span>
             ))}
@@ -339,7 +321,9 @@ export default function EscuelasPage() {
       key: "estado" as keyof Escuela,
       label: "Estado",
       render: (row: Escuela) => (
-        <span className={`px-2 py-0.5 text-xs rounded-full font-medium capitalize ${estadoColors[row.estado]}`}>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${estadoColors[row.estado]}`}
+        >
           {row.estado}
         </span>
       ),
@@ -349,18 +333,16 @@ export default function EscuelasPage() {
   return (
     <div>
       {/* Cabecera */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-            Escuelas
-          </h2>
-          <p className="text-sm text-[#86868b] mt-0.5">
+          <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Escuelas</h2>
+          <p className="mt-0.5 text-sm text-[#86868b]">
             Gestiona todas las autoescuelas de la plataforma
           </p>
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-[#0071e3] text-white text-sm rounded-lg hover:bg-[#0077ED] transition-colors"
+          className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
         >
           <Plus size={16} />
           Nueva Escuela
@@ -368,7 +350,7 @@ export default function EscuelasPage() {
       </div>
 
       {/* Tabla */}
-      <div className="bg-white dark:bg-[#1d1d1f] rounded-2xl p-4 sm:p-6">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
         <DataTable
           columns={columns}
           data={escuelas}
@@ -389,18 +371,18 @@ export default function EscuelasPage() {
       >
         <div className="space-y-5">
           {error && (
-            <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
               {error}
             </p>
           )}
 
           {/* Sección: Datos de la escuela */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] mb-3">
+            <p className="mb-3 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
               Datos de la escuela
             </p>
             <div className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className={labelClass}>Nombre *</label>
                   <input
@@ -423,7 +405,7 @@ export default function EscuelasPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className={labelClass}>Teléfono</label>
                   <input
@@ -461,13 +443,14 @@ export default function EscuelasPage() {
               <div>
                 <label className={labelClass}>
                   Categorías habilitadas{" "}
-                  <span className="normal-case font-normal">
-                    ({escuelaForm.categorias.length} seleccionada{escuelaForm.categorias.length !== 1 ? "s" : ""})
+                  <span className="font-normal normal-case">
+                    ({escuelaForm.categorias.length} seleccionada
+                    {escuelaForm.categorias.length !== 1 ? "s" : ""})
                   </span>
                 </label>
-                <div className="space-y-2 mt-1">
+                <div className="mt-1 space-y-2">
                   <div>
-                    <p className="text-[10px] text-[#86868b] mb-1.5">Individuales</p>
+                    <p className="mb-1.5 text-[10px] text-[#86868b]">Individuales</p>
                     <div className="flex flex-wrap gap-1.5">
                       {CATEGORIAS_INDIVIDUALES.map((cat) => {
                         const sel = escuelaForm.categorias.includes(cat);
@@ -476,10 +459,10 @@ export default function EscuelasPage() {
                             key={cat}
                             type="button"
                             onClick={() => toggleCategoria(cat)}
-                            className={`px-3 py-1 text-xs rounded-lg font-semibold border-2 transition-colors ${
+                            className={`rounded-lg border-2 px-3 py-1 text-xs font-semibold transition-colors ${
                               sel
                                 ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                                : "border-gray-200 dark:border-gray-700 text-[#86868b] hover:border-gray-300"
+                                : "border-gray-200 text-[#86868b] hover:border-gray-300 dark:border-gray-700"
                             }`}
                           >
                             {cat}
@@ -489,7 +472,7 @@ export default function EscuelasPage() {
                     </div>
                   </div>
                   <div>
-                    <p className="text-[10px] text-[#86868b] mb-1.5">Combos</p>
+                    <p className="mb-1.5 text-[10px] text-[#86868b]">Combos</p>
                     <div className="flex flex-wrap gap-1.5">
                       {CATEGORIAS_COMBO.map((cat) => {
                         const sel = escuelaForm.categorias.includes(cat);
@@ -498,10 +481,10 @@ export default function EscuelasPage() {
                             key={cat}
                             type="button"
                             onClick={() => toggleCategoria(cat)}
-                            className={`px-3 py-1 text-xs rounded-lg font-semibold border-2 transition-colors ${
+                            className={`rounded-lg border-2 px-3 py-1 text-xs font-semibold transition-colors ${
                               sel
                                 ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                                : "border-gray-200 dark:border-gray-700 text-[#86868b] hover:border-gray-300"
+                                : "border-gray-200 text-[#86868b] hover:border-gray-300 dark:border-gray-700"
                             }`}
                           >
                             {cat}
@@ -513,16 +496,20 @@ export default function EscuelasPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className={labelClass}>Plan</label>
                   <select
                     value={escuelaForm.plan}
-                    onChange={(e) => setEscuelaForm({ ...escuelaForm, plan: e.target.value as PlanEscuela })}
+                    onChange={(e) =>
+                      setEscuelaForm({ ...escuelaForm, plan: e.target.value as PlanEscuela })
+                    }
                     className={inputClass}
                   >
                     {planes.map((p) => (
-                      <option key={p} value={p} className="capitalize">{p}</option>
+                      <option key={p} value={p} className="capitalize">
+                        {p}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -530,11 +517,15 @@ export default function EscuelasPage() {
                   <label className={labelClass}>Estado</label>
                   <select
                     value={escuelaForm.estado}
-                    onChange={(e) => setEscuelaForm({ ...escuelaForm, estado: e.target.value as EstadoEscuela })}
+                    onChange={(e) =>
+                      setEscuelaForm({ ...escuelaForm, estado: e.target.value as EstadoEscuela })
+                    }
                     className={inputClass}
                   >
                     {estados.map((e) => (
-                      <option key={e} value={e} className="capitalize">{e}</option>
+                      <option key={e} value={e} className="capitalize">
+                        {e}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -545,23 +536,23 @@ export default function EscuelasPage() {
           {/* Sección: Administrador (solo en creación) */}
           {!editing && (
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b]">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
                   Administrador de la escuela
                 </p>
-                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <label className="flex cursor-pointer items-center gap-1.5 select-none">
                   <input
                     type="checkbox"
                     checked={crearAdmin}
                     onChange={(e) => setCrearAdmin(e.target.checked)}
-                    className="w-3.5 h-3.5 accent-[#0071e3]"
+                    className="h-3.5 w-3.5 accent-[#0071e3]"
                   />
                   <span className="text-xs text-[#86868b]">Crear ahora</span>
                 </label>
               </div>
 
               {crearAdmin ? (
-                <div className="space-y-3 p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#0a0a0a] border border-gray-200 dark:border-gray-800">
+                <div className="space-y-3 rounded-xl border border-gray-200 bg-[#f5f5f7] p-4 dark:border-gray-800 dark:bg-[#0a0a0a]">
                   <div>
                     <label className={labelClass}>Nombre completo *</label>
                     <input
@@ -572,7 +563,7 @@ export default function EscuelasPage() {
                       className={inputClass}
                     />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <label className={labelClass}>Correo *</label>
                       <input
@@ -596,7 +587,7 @@ export default function EscuelasPage() {
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+                          className="absolute top-1/2 right-2.5 -translate-y-1/2 text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
                         >
                           {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                         </button>
@@ -605,7 +596,7 @@ export default function EscuelasPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-[#86868b] px-1">
+                <p className="px-1 text-xs text-[#86868b]">
                   Podrás crear el administrador más adelante desde el panel de usuarios.
                 </p>
               )}
@@ -613,17 +604,17 @@ export default function EscuelasPage() {
           )}
 
           {/* Botones */}
-          <div className="flex gap-3 justify-end pt-1">
+          <div className="flex justify-end gap-3 pt-1">
             <button
               onClick={() => setModalOpen(false)}
-              className="px-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg bg-[#0071e3] text-white hover:bg-[#0077ED] transition-colors disabled:opacity-50"
+              className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
             >
               {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Escuela"}
             </button>
@@ -634,7 +625,7 @@ export default function EscuelasPage() {
       {/* Error eliminación */}
       {deleteError && deleteOpen && (
         <div className="fixed inset-x-0 top-4 z-[60] flex justify-center">
-          <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-lg shadow-lg border border-red-200 dark:border-red-800">
+          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-500 shadow-lg dark:border-red-800 dark:bg-red-900/20">
             {deleteError}
           </p>
         </div>
@@ -643,7 +634,10 @@ export default function EscuelasPage() {
       {/* Confirmación eliminar */}
       <DeleteConfirm
         open={deleteOpen}
-        onClose={() => { setDeleteOpen(false); setDeleteError(""); }}
+        onClose={() => {
+          setDeleteOpen(false);
+          setDeleteError("");
+        }}
         onConfirm={handleDelete}
         loading={saving}
         message={`¿Eliminar la escuela "${deleting?.nombre}"? Se eliminarán todos sus datos. Esta acción no se puede deshacer.`}
