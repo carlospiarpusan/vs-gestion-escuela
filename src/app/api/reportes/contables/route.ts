@@ -260,7 +260,7 @@ const ADMINISTRATIVE_EXPENSE_CATEGORIES = [
 ];
 const PEOPLE_EXPENSE_CATEGORIES = ["nominas", "tramitador"];
 const TRAMITADOR_EXPENSE_CATEGORY = "tramitador";
-const REPORT_CACHE_TTL_MS = 45 * 1000;
+const REPORT_CACHE_TTL_MS = 120 * 1000;
 
 function parseDateInput(value: string | null, fallback: string) {
   if (!value) return fallback;

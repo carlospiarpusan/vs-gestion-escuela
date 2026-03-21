@@ -49,7 +49,7 @@ type IncomeLedgerSqlRow = {
   created_at: string;
 };
 
-const CACHE_TTL_MS = 45 * 1000;
+const CACHE_TTL_MS = 120 * 1000;
 
 export async function GET(request: Request) {
   const timing = createServerTiming();
@@ -61,13 +61,20 @@ export async function GET(request: Request) {
   if (!authz.ok) return authz.response;
 
   const perfil = authz.perfil as AllowedPerfil;
-  const { url, from, to, page, pageSize, search, scope } = buildFinanceListContext(request, perfil, {
-    defaultPageSize: 15,
-  });
+  const { url, from, to, page, pageSize, search, scope } = buildFinanceListContext(
+    request,
+    perfil,
+    {
+      defaultPageSize: 15,
+    }
+  );
 
   if (!scope.escuelaId) {
     return timing.apply(
-      NextResponse.json({ error: "Selecciona una escuela activa para ver ingresos." }, { status: 400 })
+      NextResponse.json(
+        { error: "Selecciona una escuela activa para ver ingresos." },
+        { status: 400 }
+      )
     );
   }
 
@@ -111,7 +118,6 @@ export async function GET(request: Request) {
               byLineRes,
               byMethodRes,
               topConceptsRes,
-              ledgerCountRes,
               ledgerRowsRes,
             ] = await Promise.all([
               pool.query<IncomeSummarySqlRow>(
@@ -187,14 +193,6 @@ export async function GET(request: Request) {
                 `,
                 parts.values
               ),
-              pool.query<LedgerCountRow>(
-                `
-                  ${cte}
-                  select count(*)::int as total
-                  from filtered_ingresos
-                `,
-                parts.values
-              ),
               pool.query<IncomeLedgerSqlRow>(
                 `
                   ${cte}
@@ -249,7 +247,7 @@ export async function GET(request: Request) {
                 })),
               },
               ledger: {
-                totalCount: Number(ledgerCountRes.rows[0]?.total || 0),
+                totalCount: Number(summary?.total_ingresos || 0),
                 rows: ledgerRowsRes.rows.map((row) => ({
                   id: row.id,
                   fecha: normalizeDateOnly(row.fecha),

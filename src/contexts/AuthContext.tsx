@@ -120,7 +120,11 @@ export function AuthProvider({
       const nextOptions =
         options ??
         (((
-          await supabase.from("escuelas").select("id, nombre").order("nombre", { ascending: true })
+          await supabase
+            .from("escuelas")
+            .select("id, nombre")
+            .order("nombre", { ascending: true })
+            .limit(100)
         ).data as DashboardSchoolOption[] | null) ||
           []);
 
@@ -199,7 +203,9 @@ export function AuthProvider({
 
         const { data: perfilData, error: perfilError } = await supabase
           .from("perfiles")
-          .select("*")
+          .select(
+            "id, escuela_id, sede_id, nombre, email, rol, telefono, avatar_url, activo, ultimo_acceso, created_at"
+          )
           .eq("id", currentUser.id)
           .single();
 

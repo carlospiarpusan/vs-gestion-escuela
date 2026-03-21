@@ -54,7 +54,9 @@ export async function getDashboardInitialAuthState(): Promise<DashboardInitialAu
 
   const { data: perfilData, error: perfilError } = await supabase
     .from("perfiles")
-    .select("*")
+    .select(
+      "id, escuela_id, sede_id, nombre, email, rol, telefono, avatar_url, activo, ultimo_acceso, created_at"
+    )
     .eq("id", user.id)
     .maybeSingle();
 
@@ -68,7 +70,8 @@ export async function getDashboardInitialAuthState(): Promise<DashboardInitialAu
     const { data: schoolRows } = await supabase
       .from("escuelas")
       .select("id, nombre")
-      .order("nombre", { ascending: true });
+      .order("nombre", { ascending: true })
+      .limit(100);
 
     const schoolOptions = (schoolRows as DashboardSchoolOption[] | null) ?? [];
     const cookieSchoolId = normalizeUuid(cookieStore.get(DASHBOARD_SCHOOL_COOKIE)?.value ?? null);

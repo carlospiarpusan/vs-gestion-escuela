@@ -138,10 +138,7 @@ export default function ClasesPage() {
   // Cargar datos cuando el perfil este disponible o cambie la pagina/busqueda
   useEffect(() => {
     if (!escuelaId) return;
-    const timeoutId = window.setTimeout(() => {
-      void fetchData(currentPage, searchTerm);
-    }, 0);
-    return () => window.clearTimeout(timeoutId);
+    void fetchData(currentPage, searchTerm);
   }, [escuelaId, fetchData, currentPage, searchTerm]);
 
   useEffect(() => {

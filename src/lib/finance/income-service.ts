@@ -3,7 +3,7 @@ import { FINANCE_INCOME_CACHE_PREFIX } from "@/lib/dashboard-client-cache";
 import { getFinanceResourceCached } from "@/lib/finance/cache";
 import type { IncomeDashboardResponse } from "@/lib/finance/types";
 
-export const FINANCE_DASHBOARD_CACHE_TTL_MS = 45 * 1000;
+export const FINANCE_DASHBOARD_CACHE_TTL_MS = 120 * 1000;
 
 function buildRequestParams(params: URLSearchParams, forceFresh?: boolean) {
   const nextParams = new URLSearchParams(params);
