@@ -7,10 +7,11 @@ import {
   normalizeText,
   parseJsonBody,
 } from "@/lib/api-auth";
+import { getAuditedRolesForCapabilityAction } from "@/lib/role-capabilities";
 import { getServerDbPool } from "@/lib/server-db";
 import type { EstadoSede, Rol } from "@/types/database";
 
-const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela"];
+const ALLOWED_ROLES: Rol[] = getAuditedRolesForCapabilityAction("branches", "create");
 
 const upsertSedeSchema = z.object({
   id: z.string().uuid().optional(),

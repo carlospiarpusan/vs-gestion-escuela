@@ -6,15 +6,15 @@ import {
   normalizeText,
   parseJsonBody,
 } from "@/lib/api-auth";
+import { getAuditedRolesForCapabilityAction } from "@/lib/role-capabilities";
 import {
   buildManualCaleQuestionCode,
   normalizeCaleQuestionPrompt,
   type CaleBankQuestionRow,
 } from "@/lib/cale-admin";
 import { CALE_BANK_SOURCE } from "@/lib/cale";
-import type { Rol } from "@/types/database";
 
-const EDITOR_ROLES: Rol[] = ["super_admin"];
+const EDITOR_ROLES = getAuditedRolesForCapabilityAction("exams", "configure");
 
 const questionSchema = z.object({
   categoria_id: z.string().uuid(),

@@ -1,0 +1,46 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - link "← Inicio" [ref=e6] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e7]: Plataforma operativa
+          - heading "Operación clara desde el primer día" [level=2] [ref=e8]
+          - paragraph [ref=e9]: Menos dispersión entre WhatsApp, hojas de cálculo y cuadernos. Más control diario en alumnos, pagos, agenda y flota.
+        - generic [ref=e10]:
+          - article [ref=e11]:
+            - paragraph [ref=e12]: Operación diaria
+            - paragraph [ref=e13]: Consulta clases, alumnos, instructores y flota sin cambiar de sistema.
+          - article [ref=e14]:
+            - paragraph [ref=e15]: Finanzas claras
+            - paragraph [ref=e16]: Revisa ingresos, gastos, cartera y caja diaria desde el mismo panel.
+          - article [ref=e17]:
+            - paragraph [ref=e18]: Acceso por rol
+            - paragraph [ref=e19]: Cada usuario entra directo a lo que necesita según su responsabilidad.
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - generic [ref=e22]: Acceso seguro
+          - heading "Inicia sesión" [level=1] [ref=e23]
+          - paragraph [ref=e24]: Entra a tu panel para revisar operación, pagos, alumnos, evaluaciones y el día a día de tu autoescuela.
+        - generic [ref=e25]:
+          - generic [ref=e26]:
+            - generic [ref=e27]: Correo electrónico o número de cédula
+            - textbox "Correo electrónico o número de cédula" [ref=e28]:
+              - /placeholder: tu@email.com o número de cédula
+          - generic [ref=e29]:
+            - generic [ref=e30]: Contraseña
+            - generic [ref=e31]:
+              - textbox "Contraseña" [ref=e32]:
+                - /placeholder: Tu contraseña
+              - button "Mostrar contraseña" [ref=e33]:
+                - img [ref=e34]
+          - button "Iniciar Sesión" [ref=e37]
+        - generic [ref=e40]: o
+        - paragraph [ref=e42]:
+          - text: ¿No tienes cuenta?
+          - link "Crear cuenta" [ref=e43] [cursor=pointer]:
+            - /url: /registro
+  - button "Open Next.js Dev Tools" [ref=e49] [cursor=pointer]:
+    - img [ref=e50]
+  - alert [ref=e53]

@@ -5,6 +5,11 @@ import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
 import { clearSchoolCategoriesCache } from "@/lib/school-categories";
+import {
+  SCHOOL_PLAN_ORDER,
+  SCHOOL_PLAN_DESCRIPTORS,
+  getSchoolPlanDescriptor,
+} from "@/lib/school-plans";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
@@ -13,7 +18,7 @@ import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
 import type { Escuela, EstadoEscuela, PlanEscuela } from "@/types/database";
 import { Plus, Building2, Eye, EyeOff } from "lucide-react";
 
-const planes: PlanEscuela[] = ["gratuito", "basico", "profesional", "enterprise"];
+const planes: PlanEscuela[] = SCHOOL_PLAN_ORDER;
 const estados: EstadoEscuela[] = ["activa", "inactiva", "suspendida"];
 
 const CATEGORIAS_INDIVIDUALES = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
@@ -83,6 +88,7 @@ export default function EscuelasPage() {
   } = useDraftForm("dashboard:escuelas:admin-form", emptyAdminForm, {
     persist: modalOpen && !editing && crearAdmin,
   });
+  const selectedPlan = getSchoolPlanDescriptor(escuelaForm.plan);
 
   const fetchEscuelas = useCallback(async () => {
     const supabase = createClient();
@@ -254,13 +260,6 @@ export default function EscuelasPage() {
     }
   };
 
-  const planColors: Record<string, string> = {
-    gratuito: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-    basico: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-    profesional: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-    enterprise: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  };
-
   const estadoColors: Record<string, string> = {
     activa: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
     inactiva: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
@@ -289,13 +288,16 @@ export default function EscuelasPage() {
     {
       key: "plan" as keyof Escuela,
       label: "Plan",
-      render: (row: Escuela) => (
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${planColors[row.plan]}`}
-        >
-          {row.plan}
-        </span>
-      ),
+      render: (row: Escuela) => {
+        const plan = getSchoolPlanDescriptor(row.plan);
+        return (
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${plan?.badgeClassName ?? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"}`}
+          >
+            {plan?.label ?? row.plan}
+          </span>
+        );
+      },
     },
     {
       key: "categorias" as keyof Escuela,
@@ -347,6 +349,38 @@ export default function EscuelasPage() {
           <Plus size={16} />
           Nueva Escuela
         </button>
+      </div>
+
+      <div className="mb-6 grid gap-4 xl:grid-cols-4">
+        {SCHOOL_PLAN_ORDER.map((planId) => {
+          const plan = SCHOOL_PLAN_DESCRIPTORS[planId];
+          return (
+            <article
+              key={plan.id}
+              className={`rounded-2xl border px-4 py-4 ${plan.panelClassName}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${plan.badgeClassName}`}
+                >
+                  {plan.badge}
+                </span>
+                <span className="text-[11px] font-semibold tracking-[0.16em] text-[#66707a] uppercase">
+                  {plan.label}
+                </span>
+              </div>
+              <p className="mt-3 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                {plan.audience}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[#66707a] dark:text-[#aeb6bf]">
+                {plan.dashboardDescription}
+              </p>
+              <p className={`mt-3 text-xs font-medium ${plan.accentClassName}`}>
+                {plan.capacityGuide}
+              </p>
+            </article>
+          );
+        })}
       </div>
 
       {/* Tabla */}
@@ -507,8 +541,8 @@ export default function EscuelasPage() {
                     className={inputClass}
                   >
                     {planes.map((p) => (
-                      <option key={p} value={p} className="capitalize">
-                        {p}
+                      <option key={p} value={p}>
+                        {SCHOOL_PLAN_DESCRIPTORS[p].label}
                       </option>
                     ))}
                   </select>
@@ -530,6 +564,39 @@ export default function EscuelasPage() {
                   </select>
                 </div>
               </div>
+
+              {selectedPlan ? (
+                <div className={`rounded-2xl border px-4 py-4 ${selectedPlan.panelClassName}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${selectedPlan.badgeClassName}`}
+                      >
+                        {selectedPlan.badge}
+                      </span>
+                      <p className="mt-3 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                        {selectedPlan.label}
+                      </p>
+                    </div>
+                    <p className={`text-xs font-medium ${selectedPlan.accentClassName}`}>
+                      {selectedPlan.capacityGuide}
+                    </p>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-[#66707a] dark:text-[#aeb6bf]">
+                    {selectedPlan.summary}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedPlan.focusPoints.map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-full border border-[rgba(15,23,42,0.08)] bg-white/70 px-2.5 py-1 text-[11px] font-medium text-[#4b5563] dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-[#c7c7cc]"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
 

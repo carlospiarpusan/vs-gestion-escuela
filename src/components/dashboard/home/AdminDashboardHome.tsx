@@ -123,7 +123,7 @@ export default function AdminDashboardHome() {
   const statCards = [
     {
       label: "Alumnos del mes",
-      value: stats.alumnos.toString(),
+      value: stats.cursosNuevosMes.toString(),
       icon: <Users size={20} />,
     },
     {
@@ -232,7 +232,7 @@ export default function AdminDashboardHome() {
             value: stat.value,
             detail:
               stat.label === "Alumnos del mes"
-                ? "Regulares activos y pre-registrados en seguimiento."
+                ? "Regulares inscritos durante el mes actual."
                 : stat.label === "Clases Hoy"
                   ? "Agenda práctica y teórica del día."
                   : stat.label === "Exámenes Pendientes"

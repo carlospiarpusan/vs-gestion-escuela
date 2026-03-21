@@ -1,4 +1,5 @@
 import type { Rol } from "@/types/database";
+import { getDashboardRolesForCapabilityModule } from "@/lib/role-capabilities";
 
 export type DashboardAreaId =
   | "overview"
@@ -25,7 +26,8 @@ export type DashboardIconKey =
   | "staff"
   | "branches"
   | "schools"
-  | "logbook";
+  | "logbook"
+  | "permissions";
 
 export type DashboardModuleId =
   | "home"
@@ -44,7 +46,8 @@ export type DashboardModuleId =
   | "staff"
   | "branches"
   | "schools"
-  | "logbook";
+  | "logbook"
+  | "permissions";
 
 export type DashboardAreaDescriptor = {
   id: DashboardAreaId;
@@ -144,7 +147,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Expedientes, matrículas, categorías y seguimiento del alumno.",
     area: "operation",
     icon: "students",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "recepcion"],
+    roles: getDashboardRolesForCapabilityModule("students", ["recepcion"]),
     priority: 10,
     mobilePriority: 1,
     homePriority: 10,
@@ -158,7 +161,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Programación, control y estado de clases teóricas y prácticas.",
     area: "operation",
     icon: "classes",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+    roles: getDashboardRolesForCapabilityModule("classes"),
     priority: 20,
     homePriority: 20,
   },
@@ -171,7 +174,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Disponibilidad, mantenimiento y bitácora operativa de la flota.",
     area: "operation",
     icon: "vehicles",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
+    roles: getDashboardRolesForCapabilityModule("vehicles", ["instructor"]),
     priority: 30,
     mobilePriority: 2,
     homePriority: 30,
@@ -185,7 +188,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Registro y cierre mensual de horas trabajadas por instructor.",
     area: "operation",
     icon: "hours",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
+    roles: getDashboardRolesForCapabilityModule("hours", ["instructor"]),
     priority: 40,
     mobilePriority: 3,
     homePriority: 40,
@@ -199,7 +202,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Libro de ingresos, abonos y control de recaudo.",
     area: "finance",
     icon: "income",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+    roles: getDashboardRolesForCapabilityModule("income"),
     priority: 50,
     mobilePriority: 1,
     homePriority: 50,
@@ -213,7 +216,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Pendientes por cobrar, segmentación y seguimiento de deuda.",
     area: "finance",
     icon: "portfolio",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+    roles: getDashboardRolesForCapabilityModule("portfolio"),
     priority: 60,
     homePriority: 60,
   },
@@ -226,7 +229,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Vista diaria de recaudo y movimientos por método de pago.",
     area: "finance",
     icon: "cash",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+    roles: getDashboardRolesForCapabilityModule("cash"),
     priority: 70,
     homePriority: 70,
   },
@@ -239,7 +242,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Libro de gastos, cuentas por pagar e importación de facturas.",
     area: "finance",
     icon: "expenses",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+    roles: getDashboardRolesForCapabilityModule("expenses"),
     priority: 80,
     mobilePriority: 2,
     homePriority: 80,
@@ -253,7 +256,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Correo de facturas, importaciones y sincronización automática del gasto.",
     area: "finance",
     icon: "automation",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+    roles: getDashboardRolesForCapabilityModule("automation"),
     priority: 85,
     homePriority: 55,
   },
@@ -266,7 +269,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Vista analítica y de lectura para toma de decisiones.",
     area: "finance",
     icon: "reports",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+    roles: getDashboardRolesForCapabilityModule("reports"),
     priority: 90,
     mobilePriority: 3,
     homePriority: 90,
@@ -280,7 +283,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Práctica, seguimiento y administración de evaluaciones.",
     area: "exams",
     icon: "exams",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "alumno"],
+    roles: getDashboardRolesForCapabilityModule("exams", ["alumno"]),
     priority: 100,
     mobilePriority: 4,
     homePriority: 100,
@@ -294,7 +297,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Equipo instructor, disponibilidad y datos operativos.",
     area: "configuration",
     icon: "instructors",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo"],
+    roles: getDashboardRolesForCapabilityModule("instructors"),
     priority: 110,
     homePriority: 110,
   },
@@ -307,9 +310,21 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Personal administrativo y control de accesos internos.",
     area: "configuration",
     icon: "staff",
-    roles: ["super_admin", "admin_escuela", "admin_sede"],
+    roles: getDashboardRolesForCapabilityModule("staff"),
     priority: 120,
     homePriority: 120,
+  },
+  {
+    id: "permissions",
+    label: "Permisos",
+    shortLabel: "Permisos",
+    href: "/dashboard/permisos",
+    pathPrefix: "/dashboard/permisos",
+    description: "Matriz de roles, alcances y restricciones operativas.",
+    area: "configuration",
+    icon: "permissions",
+    roles: getDashboardRolesForCapabilityModule("permissions"),
+    priority: 125,
   },
   {
     id: "branches",
@@ -320,7 +335,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Estructura física y operativa de sedes.",
     area: "configuration",
     icon: "branches",
-    roles: ["super_admin", "admin_escuela", "admin_sede"],
+    roles: getDashboardRolesForCapabilityModule("branches"),
     priority: 130,
     homePriority: 130,
   },
@@ -333,7 +348,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Vista global de escuelas, planes, cupos y estado de plataforma.",
     area: "platform",
     icon: "schools",
-    roles: ["super_admin"],
+    roles: getDashboardRolesForCapabilityModule("schools"),
     priority: 140,
     mobilePriority: 1,
     homePriority: 10,
@@ -347,7 +362,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Acceso legado al registro contextual de bitácora de vehículos.",
     area: "operation",
     icon: "logbook",
-    roles: ["super_admin", "admin_escuela", "admin_sede", "administrativo", "instructor"],
+    roles: getDashboardRolesForCapabilityModule("logbook", ["instructor"]),
     priority: 35,
     visibleInNav: false,
   },
@@ -359,7 +374,10 @@ export function getDashboardArea(areaId: DashboardAreaId) {
   return areaIndex.get(areaId) ?? null;
 }
 
-export function isDashboardModuleVisibleToRole(module: DashboardModuleDescriptor, rol?: Rol | null) {
+export function isDashboardModuleVisibleToRole(
+  module: DashboardModuleDescriptor,
+  rol?: Rol | null
+) {
   return Boolean(rol && module.roles.includes(rol));
 }
 

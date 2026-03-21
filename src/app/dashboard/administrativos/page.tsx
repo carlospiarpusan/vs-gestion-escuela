@@ -13,6 +13,7 @@ import {
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
 import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import type { Perfil, Sede } from "@/types/database";
@@ -66,10 +67,8 @@ export default function AdministrativosPage() {
     persist: modalOpen && !editing,
   });
 
-  const canEdit =
-    perfil?.rol === "super_admin" ||
-    perfil?.rol === "admin_escuela" ||
-    perfil?.rol === "admin_sede";
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canEdit = canAuditedRolePerformAction(auditedRole, "staff", "create");
 
   const fetchAdministrativos = useCallback(
     async (page = 0, search = "") => {
@@ -97,7 +96,9 @@ export default function AdministrativosPage() {
           },
           params,
           loader: () =>
-            fetchJsonWithRetry<AdministrativosListResponse>(`/api/administrativos?${params.toString()}`),
+            fetchJsonWithRetry<AdministrativosListResponse>(
+              `/api/administrativos?${params.toString()}`
+            ),
         });
 
         if (fetchId !== fetchIdRef.current) return;
@@ -388,7 +389,9 @@ export default function AdministrativosPage() {
             Administrativos
           </h2>
           <p className="mt-0.5 text-sm text-[#86868b]">
-            Gestiona los administrativos asignados a cada sede
+            {canEdit
+              ? "Gestiona los administrativos asignados a cada sede"
+              : "Consulta los administrativos visibles dentro de tu alcance"}
           </p>
         </div>
         {canEdit && (

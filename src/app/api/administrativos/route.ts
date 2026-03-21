@@ -8,14 +8,21 @@ import {
   parseJsonBody,
   resolveEscuelaIdForRequest,
 } from "@/lib/api-auth";
-import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import {
+  buildDashboardListServerCacheKey,
+  isFreshDashboardDataRequested,
+} from "@/lib/dashboard-server-cache";
+import {
+  getAuditedRolesForCapabilityAction,
+  getAuditedRolesForCapabilityModule,
+} from "@/lib/role-capabilities";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 
-const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede"];
-const mutationRoles: Rol[] = ["super_admin", "admin_escuela", "admin_sede"];
+const ALLOWED_ROLES: Rol[] = getAuditedRolesForCapabilityModule("staff");
+const mutationRoles: Rol[] = getAuditedRolesForCapabilityAction("staff", "create");
 
 const updateAdministrativoSchema = z.object({
   id: z.string().uuid(),

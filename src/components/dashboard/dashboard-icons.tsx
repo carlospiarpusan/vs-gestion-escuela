@@ -13,6 +13,7 @@ import {
   Home,
   Landmark,
   ReceiptText,
+  ShieldCheck,
   TrendingDown,
   UserCheck,
   UserCog,
@@ -57,6 +58,8 @@ export function renderDashboardIcon(icon: DashboardIconKey, size = 18): ReactNod
       return <Building2 size={size} />;
     case "logbook":
       return <BookOpen size={size} />;
+    case "permissions":
+      return <ShieldCheck size={size} />;
     default:
       return <Home size={size} />;
   }

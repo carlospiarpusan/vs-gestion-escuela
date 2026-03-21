@@ -7,6 +7,10 @@ import {
   parseJsonBody,
 } from "@/lib/api-auth";
 import {
+  getAuditedRolesForCapabilityAction,
+  getAuditedRolesForCapabilityModule,
+} from "@/lib/role-capabilities";
+import {
   buildManualCaleQuestionCode,
   normalizeCaleQuestionPrompt,
   type CaleBankAdminResponse,
@@ -15,10 +19,9 @@ import {
 } from "@/lib/cale-admin";
 import { CALE_BANK_SOURCE } from "@/lib/cale";
 import { getServerDbPool } from "@/lib/server-db";
-import type { Rol } from "@/types/database";
 
-const VIEWER_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
-const EDITOR_ROLES: Rol[] = ["super_admin"];
+const VIEWER_ROLES = getAuditedRolesForCapabilityModule("exams");
+const EDITOR_ROLES = getAuditedRolesForCapabilityAction("exams", "configure");
 const PAGE_SIZE_DEFAULT = 12;
 const PAGE_SIZE_MAX = 50;
 
@@ -51,8 +54,8 @@ function toNumber(value: unknown) {
   return 0;
 }
 
-function canEditBank(role: Rol) {
-  return EDITOR_ROLES.includes(role);
+function canEditBank(role: string) {
+  return EDITOR_ROLES.includes(role as (typeof EDITOR_ROLES)[number]);
 }
 
 function normalizeQuestionPayload(input: z.infer<typeof questionSchema>) {

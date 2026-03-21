@@ -36,6 +36,7 @@ export interface SuperAdminDashboardStats {
   sedesActivas: number;
   adminsEscuela: number;
   alumnos: number;
+  alumnosMes: number;
   ingresosMes: number;
 }
 
@@ -43,7 +44,7 @@ export interface SuperAdminSchoolOverview {
   id: string;
   nombre: string;
   estado: "activa" | "inactiva" | "suspendida";
-  plan: string;
+  plan: PlanEscuela;
   max_alumnos: number;
   max_sedes: number;
   created_at: string;
@@ -205,6 +206,7 @@ export function createEmptySuperAdminDashboardSummary(): SuperAdminDashboardResp
       sedesActivas: 0,
       adminsEscuela: 0,
       alumnos: 0,
+      alumnosMes: 0,
       ingresosMes: 0,
     },
     schoolOverviews: [],
@@ -231,3 +233,4 @@ export function buildDashboardSummaryCacheKey(
 ) {
   return `dashboard-summary:${kind}:${scope.id || "anon"}:${scope.rol || "unknown"}:${scope.escuela_id || "global"}:${scope.sede_id || "all"}`;
 }
+import type { PlanEscuela } from "@/types/database";

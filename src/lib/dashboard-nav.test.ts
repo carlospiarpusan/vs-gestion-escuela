@@ -9,6 +9,26 @@ import {
 } from "./dashboard-nav";
 
 describe("dashboard navigation config", () => {
+  it("keeps super_admin navigation limited to global modules", () => {
+    const navigation = getDashboardNavigationForRole("super_admin");
+
+    expect(navigation.map((area) => area.id)).toEqual([
+      "overview",
+      "finance",
+      "exams",
+      "configuration",
+      "platform",
+    ]);
+    expect(navigation[1]?.modules.map((module) => module.id)).toEqual(["reports"]);
+    expect(navigation[2]?.modules.map((module) => module.id)).toEqual(["exams"]);
+    expect(navigation[3]?.modules.map((module) => module.id)).toEqual([
+      "staff",
+      "permissions",
+      "branches",
+    ]);
+    expect(navigation[4]?.modules.map((module) => module.id)).toEqual(["schools"]);
+  });
+
   it("groups admin_escuela modules by priority area order", () => {
     const navigation = getDashboardNavigationForRole("admin_escuela");
 
@@ -33,6 +53,13 @@ describe("dashboard navigation config", () => {
       "automation",
       "reports",
     ]);
+    expect(navigation[3]?.modules.map((module) => module.id)).toEqual(["exams"]);
+    expect(navigation[4]?.modules.map((module) => module.id)).toEqual([
+      "instructors",
+      "staff",
+      "permissions",
+      "branches",
+    ]);
   });
 
   it("matches dashboard routes to the most specific module", () => {
@@ -40,6 +67,9 @@ describe("dashboard navigation config", () => {
     expect(findDashboardModuleByPath("/dashboard/gastos")).toMatchObject({ id: "expenses" });
     expect(findDashboardModuleByPath("/dashboard/automatizacion")).toMatchObject({
       id: "automation",
+    });
+    expect(findDashboardModuleByPath("/dashboard/permisos")).toMatchObject({
+      id: "permissions",
     });
     expect(findDashboardModuleByPath("/dashboard/bitacora")).toMatchObject({ id: "logbook" });
   });

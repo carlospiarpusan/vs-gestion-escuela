@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { clearSchoolCategoriesCache } from "@/lib/school-categories";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
@@ -50,7 +51,8 @@ type SedeRow = Sede & { escuela_nombre?: string };
 
 export default function SedesPage() {
   const { perfil } = useAuth();
-  const canEdit = perfil?.rol === "super_admin" || perfil?.rol === "admin_escuela";
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canEdit = canAuditedRolePerformAction(auditedRole, "branches", "create");
   const isSuperAdmin = perfil?.rol === "super_admin";
 
   const [sedes, setSedes] = useState<SedeRow[]>([]);
@@ -321,7 +323,9 @@ export default function SedesPage() {
           <p className="mt-1 text-sm text-[#86868b]">
             {isSuperAdmin
               ? "Gestiona las sedes de todas las escuelas desde un solo panel"
-              : "Gestiona las sedes o sucursales de tu escuela"}
+              : canEdit
+                ? "Gestiona las sedes o sucursales de tu escuela"
+                : "Consulta las sedes visibles de tu escuela en modo solo lectura"}
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

@@ -9,12 +9,13 @@ import {
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardCacheTags } from "@/lib/server-cache-tags";
+import type { PlanEscuela } from "@/types/database";
 
 type OverviewRow = {
   id: string;
   nombre: string;
   estado: "activa" | "inactiva" | "suspendida";
-  plan: string;
+  plan: PlanEscuela;
   max_alumnos: number | string | null;
   max_sedes: number | string | null;
   created_at: string;
@@ -27,6 +28,10 @@ type OverviewRow = {
 
 type IncomeRow = {
   ingresos_mes: number | string | null;
+};
+
+type MonthlyStudentsRow = {
+  alumnos_mes: number | string | null;
 };
 
 function toNumber(value: unknown) {
@@ -50,7 +55,7 @@ export async function GET() {
       tags: buildDashboardCacheTags("superadmin"),
       loader: async () => {
         const nextResponse = createEmptySuperAdminDashboardSummary();
-        const [overviewsRes, ingresosMesRes] = await Promise.all([
+        const [overviewsRes, ingresosMesRes, alumnosMesRes] = await Promise.all([
           pool.query<OverviewRow>(
             `
               with sedes_agg as (
@@ -109,6 +114,31 @@ export async function GET() {
             `,
             [currentMonth.start, currentMonth.end]
           ),
+          pool.query<MonthlyStudentsRow>(
+            `
+              with enrollment_sources as (
+                select a.id as alumno_id
+                from public.alumnos a
+                where a.tipo_registro = 'regular'
+                  and coalesce(a.fecha_inscripcion, a.created_at::date) >= $1::date
+                  and coalesce(a.fecha_inscripcion, a.created_at::date) < $2::date
+
+                union
+
+                select m.alumno_id
+                from public.matriculas_alumno m
+                inner join public.alumnos a
+                  on a.id = m.alumno_id
+                where m.alumno_id is not null
+                  and a.tipo_registro = 'regular'
+                  and coalesce(m.fecha_inscripcion, m.created_at::date) >= $1::date
+                  and coalesce(m.fecha_inscripcion, m.created_at::date) < $2::date
+              )
+              select count(distinct alumno_id)::int as alumnos_mes
+              from enrollment_sources
+            `,
+            [currentMonth.start, currentMonth.end]
+          ),
         ]);
 
         nextResponse.schoolOverviews = overviewsRes.rows.map((row) => {
@@ -144,6 +174,7 @@ export async function GET() {
             0
           ),
           alumnos: nextResponse.schoolOverviews.reduce((sum, row) => sum + row.alumnosTotal, 0),
+          alumnosMes: toNumber(alumnosMesRes.rows[0]?.alumnos_mes),
           ingresosMes: toNumber(ingresosMesRes.rows[0]?.ingresos_mes),
         };
 
@@ -158,9 +189,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Error al construir el resumen superadmin:", error);
-    return NextResponse.json(
-      { error: "No se pudo cargar el resumen central." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "No se pudo cargar el resumen central." }, { status: 500 });
   }
 }

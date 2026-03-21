@@ -1,0 +1,349 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - navigation [ref=e3]:
+      - generic [ref=e5]:
+        - link "A AutoEscuelaPro Software para autoescuelas en Colombia" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e7]: A
+          - generic [ref=e8]:
+            - generic [ref=e9]: AutoEscuelaPro
+            - generic [ref=e10]: Software para autoescuelas en Colombia
+        - generic [ref=e11]:
+          - link "Funciones" [ref=e12] [cursor=pointer]:
+            - /url: "#features"
+          - link "Implementación" [ref=e13] [cursor=pointer]:
+            - /url: "#how-it-works"
+          - link "FAQ" [ref=e14] [cursor=pointer]:
+            - /url: "#faq"
+          - link "Planes" [ref=e15] [cursor=pointer]:
+            - /url: "#pricing"
+        - generic [ref=e16]:
+          - link "Iniciar Sesión" [ref=e17] [cursor=pointer]:
+            - /url: /login
+          - link "Crear cuenta" [ref=e18] [cursor=pointer]:
+            - /url: /registro
+    - generic [ref=e20]:
+      - generic [ref=e21]:
+        - generic [ref=e23]:
+          - img [ref=e24]
+          - text: El estándar para autoescuelas en Colombia
+        - heading "Toma el control total de tu autoescuela." [level=1] [ref=e27]
+        - paragraph [ref=e28]: Cámbiate a una operación predecible. Gestiona alumnos, agenda, flota y finanzas desde un solo lugar, eliminando el caos del papel y los Excel dispersos.
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - img [ref=e32]
+            - paragraph [ref=e35]: "Deja de perder dinero: Control absoluto sobre alumnos, clases y horas operativas."
+          - generic [ref=e36]:
+            - img [ref=e38]
+            - paragraph [ref=e41]: "Dile adiós al caos financiero: Separa y domina tus ingresos, cartera y caja diaria."
+          - generic [ref=e42]:
+            - img [ref=e44]
+            - paragraph [ref=e47]: "Protege tu flota: Gestión proactiva de vehículos y mantenimientos en un solo clic."
+        - generic [ref=e48]:
+          - link "Toma el control hoy mismo" [ref=e49] [cursor=pointer]:
+            - /url: /registro
+            - generic [ref=e50]:
+              - text: Toma el control hoy mismo
+              - img [ref=e51]
+          - link "Explorar módulos operacionales" [ref=e53] [cursor=pointer]:
+            - /url: "#features"
+        - generic [ref=e54]:
+          - paragraph [ref=e55]: "Diseñado exclusivamente para:"
+          - generic [ref=e56]:
+            - generic [ref=e57]: software para autoescuelas en Colombia
+            - generic [ref=e58]: software para escuelas de conducción
+            - generic [ref=e59]: gestión de autoescuelas
+      - generic [ref=e60]:
+        - generic [ref=e61]:
+          - generic [ref=e63]:
+            - generic [ref=e64]: Operación Inmediata
+            - heading "Módulos de alto rendimiento" [level=2] [ref=e65]
+          - generic [ref=e66]:
+            - article [ref=e67]:
+              - generic [ref=e68]:
+                - img [ref=e70]
+                - generic [ref=e72]:
+                  - heading "Operación diaria" [level=3] [ref=e73]
+                  - paragraph [ref=e74]: Alumnos, matrículas, clases, horas, exámenes e instructores en el mismo flujo.
+            - article [ref=e75]:
+              - generic [ref=e76]:
+                - img [ref=e78]
+                - generic [ref=e80]:
+                  - heading "Finanzas separadas" [level=3] [ref=e81]
+                  - paragraph [ref=e82]: Ingresos, cartera, caja diaria, gastos e informes con responsabilidades claras.
+            - article [ref=e83]:
+              - generic [ref=e84]:
+                - img [ref=e86]
+                - generic [ref=e89]:
+                  - heading "Flota y soporte" [level=3] [ref=e90]
+                  - paragraph [ref=e91]: Vehículos, bitácora, mantenimiento, sedes e importación de facturas por correo.
+        - generic [ref=e94]:
+          - img [ref=e96]
+          - generic [ref=e99]:
+            - paragraph [ref=e100]: Seguridad ante todo
+            - paragraph [ref=e101]: Respaldos automáticos diarios, cifrado de extremo a extremo y roles de usuario estrictos para garantizar que tu información financiera y operativa esté siempre segura.
+    - generic [ref=e103]:
+      - generic [ref=e104]:
+        - generic [ref=e105]: Funciones del producto
+        - heading "Visibilidad real, sin promesas vacías" [level=2] [ref=e106]
+        - paragraph [ref=e107]: Todo lo que necesitas para operar hoy mismo, más nuestra visión de mejoras continuas diseñadas inteligentemente.
+      - generic [ref=e108]:
+        - article [ref=e109]:
+          - generic [ref=e110]:
+            - generic [ref=e111]:
+              - img [ref=e113]
+              - generic [ref=e115]: Disponible
+            - paragraph [ref=e116]: Tranquilidad Operativa
+            - heading "Gestiona alumnos, agendas y clases sin el caos del papel" [level=3] [ref=e117]
+            - paragraph [ref=e118]: Toma el control total de los expedientes, contratos, horarios e instructores. Olvídate de perseguir hojas sueltas.
+            - paragraph [ref=e119]: Visibilidad inmediata de cada alumno y cero dolores de cabeza administrativos.
+            - generic [ref=e120]:
+              - generic [ref=e121]: Alumnos
+              - generic [ref=e122]: Matrículas
+              - generic [ref=e123]: Clases
+              - generic [ref=e124]: Horas
+              - generic [ref=e125]: Exámenes
+              - generic [ref=e126]: Instructores
+        - article [ref=e127]:
+          - generic [ref=e128]:
+            - generic [ref=e129]:
+              - img [ref=e131]
+              - generic [ref=e133]: Disponible
+            - paragraph [ref=e134]: Control Financiero
+            - heading "Conoce el estado real de tu dinero, sin mezclar cuentas" [level=3] [ref=e135]
+            - paragraph [ref=e136]: Visualiza tu caja diaria, haz seguimiento impecable de cartera y domina los egresos. Por fin verás la rentabilidad real.
+            - paragraph [ref=e137]: Cierra cada día con la confianza de que cada peso está justificado y conciliado.
+            - generic [ref=e138]:
+              - generic [ref=e139]: Ingresos
+              - generic [ref=e140]: Cartera
+              - generic [ref=e141]: Caja diaria
+              - generic [ref=e142]: Gastos
+              - generic [ref=e143]: Informes
+        - article [ref=e144]:
+          - generic [ref=e145]:
+            - generic [ref=e146]:
+              - img [ref=e148]
+              - generic [ref=e152]: Disponible
+            - paragraph [ref=e153]: Protección de Flota
+            - heading "La inteligencia de tus vehículos a la vista en tiempo real" [level=3] [ref=e154]
+            - paragraph [ref=e155]: Asegura la operatividad de tus carros y motos. Controla su disponibilidad, prevén mantenimientos y organiza cada sede estratégicamente.
+            - paragraph [ref=e156]: "Elimina la improvisación: menos vehículos parados significa más clases facturadas."
+            - generic [ref=e157]:
+              - generic [ref=e158]: Vehículos
+              - generic [ref=e159]: Mantenimiento
+              - generic [ref=e160]: Bitácora
+              - generic [ref=e161]: Sedes
+              - generic [ref=e162]: Administrativos
+        - article [ref=e163]:
+          - generic [ref=e164]:
+            - generic [ref=e165]:
+              - img [ref=e167]
+              - generic [ref=e172]: Disponible
+            - paragraph [ref=e173]: Automatización
+            - heading "Deja que el sistema haga el trabajo pesado por ti" [level=3] [ref=e174]
+            - paragraph [ref=e175]: "Sistematiza procesos repetitivos: envía facturas automáticamente, importa documentos sin esfuerzo y exporta analíticas al instante."
+            - paragraph [ref=e176]: Tu equipo dejará de ser esclavo de las labores mecánicas y se centrará en hacer crecer tu escuela.
+            - generic [ref=e177]:
+              - generic [ref=e178]: Correo de facturas
+              - generic [ref=e179]: Importaciones
+              - generic [ref=e180]: Exportaciones
+              - generic [ref=e181]: Automatización
+      - generic [ref=e182]:
+        - generic [ref=e183]:
+          - generic [ref=e184]:
+            - generic [ref=e185]: Próximamente
+            - heading "Evolución estratégica sin fricciones" [level=3] [ref=e186]
+            - paragraph [ref=e187]: No vendemos promesas al aire. Estas extensiones en automatización y analítica ya están en la hoja de ruta para multiplicar la eficiencia de los módulos que ya usas.
+          - link "Comienza tu transformación" [ref=e188] [cursor=pointer]:
+            - /url: /registro
+        - generic [ref=e189]:
+          - article [ref=e190]:
+            - paragraph [ref=e193]: Próximamente
+            - heading "Automatizaciones operativas más amplias" [level=4] [ref=e194]
+            - paragraph [ref=e195]: Seguimientos y tareas repetitivas más allá del correo de facturas, con más acciones guiadas por módulo.
+          - article [ref=e196]:
+            - paragraph [ref=e199]: Próximamente
+            - heading "Analítica ejecutiva más profunda" [level=4] [ref=e200]
+            - paragraph [ref=e201]: Más comparativos, alertas y lecturas gerenciales sobre cartera, recaudo, gasto y rendimiento operativo.
+          - article [ref=e202]:
+            - paragraph [ref=e205]: Próximamente
+            - heading "Flujos extendidos de seguimiento" [level=4] [ref=e206]
+            - paragraph [ref=e207]: Más soporte para recorridos internos de seguimiento y control sin abrir procesos paralelos fuera del sistema.
+    - generic [ref=e209]:
+      - generic [ref=e211]:
+        - generic [ref=e212]: Implementación simple
+        - heading "Una puesta en marcha pensada para autoescuelas que necesitan operar rápido" [level=2] [ref=e213]
+        - paragraph [ref=e214]: La propuesta no es llenarte de configuración. Es dejar la base lista para empezar a controlar alumnos, agenda, finanzas y flota con una estructura clara.
+      - generic [ref=e215]:
+        - article [ref=e216]:
+          - generic [ref=e217]: "01"
+          - generic [ref=e218]:
+            - heading "Crea tu cuenta o solicita una demo" [level=3] [ref=e219]
+            - paragraph [ref=e220]: Empieza con una prueba guiada del sistema o crea la cuenta para dejar lista la base de tu autoescuela.
+        - article [ref=e221]:
+          - generic [ref=e222]: "02"
+          - generic [ref=e223]:
+            - heading "Configura sedes, usuarios, vehículos y categorías" [level=3] [ref=e224]
+            - paragraph [ref=e225]: La estructura inicial queda preparada para operar con alumnos, agenda, finanzas y flota desde el mismo panel.
+        - article [ref=e226]:
+          - generic [ref=e227]: "03"
+          - generic [ref=e228]:
+            - heading "Empieza a operar con módulos visibles y separados" [level=3] [ref=e229]
+            - paragraph [ref=e230]: "Cada tarea vive donde corresponde: alumnos, clases, ingresos, cartera, gastos, informes y vehículos."
+      - generic [ref=e231]:
+        - link "Crear cuenta" [ref=e232] [cursor=pointer]:
+          - /url: /registro
+        - link "Ver planes y acompañamiento" [ref=e233] [cursor=pointer]:
+          - /url: "#pricing"
+    - generic [ref=e235]:
+      - generic [ref=e236]:
+        - generic [ref=e237]: Respaldo Absoluto
+        - heading "Decisiones basadas en datos, no en intuición" [level=2] [ref=e238]
+        - paragraph [ref=e239]: AutoEscuela Pro no es una herramienta más. Es la base tecnológica diseñada específicamente para elevar los estándares de las escuelas líderes.
+      - generic [ref=e240]:
+        - article [ref=e241]:
+          - img [ref=e243]
+          - paragraph [ref=e246]: Hecho a tu medida
+          - heading "El idioma de tu negocio, diseñado para Colombia" [level=3] [ref=e247]
+          - paragraph [ref=e248]: No adaptamos un sistema genérico. Construimos una solución basada exclusivamente en las prioridades, regulaciones y urgencias de las escuelas de conducción colombianas.
+        - article [ref=e249]:
+          - img [ref=e251]
+          - paragraph [ref=e255]: Crecimiento Ilimitado
+          - 'heading "Escala sin miedo: Gestiona múltiples sedes" [level=3] [ref=e256]'
+          - paragraph [ref=e257]: Empieza organizando una escuela y expande tu dominio. Maneja infinitas sedes, alumnos y vehículos con la misma facilidad y control desde tu cuenta principal.
+        - article [ref=e258]:
+          - img [ref=e260]
+          - paragraph [ref=e264]: Control de Accesos
+          - heading "Información inteligente para cada persona" [level=3] [ref=e265]
+          - paragraph [ref=e266]: Protege tus datos financieros y operativos. Administradores, instructores y alumnos ven únicamente lo que necesitan, garantizando el orden y la privacidad.
+    - generic [ref=e268]:
+      - generic [ref=e270]:
+        - generic [ref=e271]: Planes y acompañamiento
+        - heading "Una propuesta comercial ajustada a la operación de tu autoescuela" [level=2] [ref=e272]
+        - paragraph [ref=e273]: La home no vende un plan abstracto. Te invita a validar si el sistema encaja con tu nivel de operación, sedes, flota y equipo.
+      - generic [ref=e274]:
+        - generic [ref=e275]:
+          - generic [ref=e276]:
+            - generic [ref=e277]: Demo guiada
+            - generic [ref=e278]: Implementación acompañada
+          - generic [ref=e279]:
+            - article [ref=e280]:
+              - img [ref=e281]
+              - heading "Escuela en crecimiento" [level=3] [ref=e284]
+              - paragraph [ref=e285]: Para una sede que necesita ordenar alumnos, clases, ingresos, cartera y caja diaria con rapidez.
+            - article [ref=e286]:
+              - img [ref=e287]
+              - heading "Operación multi-sede" [level=3] [ref=e291]
+              - paragraph [ref=e292]: Para escuelas que necesitan control por sede, usuarios, flota, gastos e informes más visibles.
+          - generic [ref=e293]:
+            - generic [ref=e294]:
+              - img [ref=e295]
+              - paragraph [ref=e298]: "La demo se orienta a tu operación real: alumnos, pagos, sedes, instructores y flota."
+            - paragraph [ref=e299]: El enfoque comercial está pensado para autoescuelas en Colombia que necesitan ordenar su operación antes de crecer.
+        - generic [ref=e300]:
+          - generic [ref=e301]:
+            - generic [ref=e302]:
+              - img [ref=e303]
+              - paragraph [ref=e305]: Qué incluye
+            - generic [ref=e306]:
+              - generic [ref=e307]:
+                - img [ref=e308]
+                - paragraph [ref=e311]: Demo guiada para validar el flujo real de tu autoescuela.
+              - generic [ref=e312]:
+                - img [ref=e313]
+                - paragraph [ref=e316]: Acompañamiento inicial para sedes, vehículos, usuarios y estructura operativa.
+              - generic [ref=e317]:
+                - img [ref=e318]
+                - paragraph [ref=e321]: Propuesta ajustada al tamaño de tu escuela y su forma de trabajar.
+          - generic [ref=e322]:
+            - link "Crear cuenta" [ref=e323] [cursor=pointer]:
+              - /url: /registro
+            - link "Solicitar acompañamiento" [ref=e324] [cursor=pointer]:
+              - /url: "#contacto"
+    - generic [ref=e326]:
+      - generic [ref=e328]:
+        - generic [ref=e329]: Preguntas frecuentes
+        - heading "Respuestas claras para escuelas de conducción en Colombia" [level=2] [ref=e330]
+        - paragraph [ref=e331]: La home responde lo básico que suelen buscar los administradores antes de pedir una demo o crear su cuenta.
+      - generic [ref=e332]:
+        - group [ref=e333]:
+          - generic "¿Para qué tipo de autoescuela sirve AutoEscuela Pro?" [ref=e334] [cursor=pointer]
+        - group [ref=e335]:
+          - generic "¿Funciona para varias sedes?" [ref=e336] [cursor=pointer]
+        - group [ref=e337]:
+          - generic "¿Qué controla hoy en pagos y finanzas?" [ref=e338] [cursor=pointer]
+        - group [ref=e339]:
+          - generic "¿Sirve para operar en Colombia?" [ref=e340] [cursor=pointer]
+    - generic [ref=e343]:
+      - generic [ref=e344]: Listo para ordenar tu operación
+      - heading "Tu autoescuela puede pasar de varias herramientas sueltas a una operación más clara esta misma semana." [level=2] [ref=e345]
+      - paragraph [ref=e346]: Si hoy repartes alumnos, agenda, cartera, caja, gastos y vehículos entre distintas hojas o chats, aquí ya tienes una base mucho más ordenada para trabajar en escritorio y móvil.
+      - generic [ref=e347]:
+        - link "Crear cuenta" [ref=e348] [cursor=pointer]:
+          - /url: /registro
+        - link "Solicitar demo" [ref=e349] [cursor=pointer]:
+          - /url: "#pricing"
+    - contentinfo [ref=e350]:
+      - generic [ref=e351]:
+        - generic [ref=e352]:
+          - generic [ref=e353]:
+            - generic [ref=e354]: AutoEscuelaPro
+            - paragraph [ref=e355]: Software para autoescuelas y escuelas de conducción en Colombia diseñado para que la operación se vea clara, trazable y profesional desde el primer día.
+            - generic [ref=e356]:
+              - generic [ref=e357]:
+                - paragraph [ref=e358]: Enfoque
+                - paragraph [ref=e359]: Operación diaria
+                - paragraph [ref=e360]: Alumnos, matrículas, agenda, cartera, caja, gastos y flota.
+              - generic [ref=e361]:
+                - paragraph [ref=e362]: Cobertura
+                - paragraph [ref=e363]: Colombia
+                - paragraph [ref=e364]: Enfoque comercial y operativo para escuelas nuevas y multi-sede.
+            - generic [ref=e365]:
+              - link "Crear cuenta" [ref=e366] [cursor=pointer]:
+                - /url: /registro
+              - link "Iniciar sesión" [ref=e367] [cursor=pointer]:
+                - /url: /login
+          - generic [ref=e368]:
+            - generic [ref=e369]:
+              - heading "Producto" [level=3] [ref=e370]
+              - list [ref=e371]:
+                - listitem [ref=e372]:
+                  - link "Funciones disponibles" [ref=e373] [cursor=pointer]:
+                    - /url: "#features"
+                - listitem [ref=e374]:
+                  - link "Próximamente" [ref=e375] [cursor=pointer]:
+                    - /url: "#features"
+                - listitem [ref=e376]:
+                  - link "Cómo funciona" [ref=e377] [cursor=pointer]:
+                    - /url: "#how-it-works"
+                - listitem [ref=e378]:
+                  - link "Preguntas frecuentes" [ref=e379] [cursor=pointer]:
+                    - /url: "#faq"
+                - listitem [ref=e380]:
+                  - link "Planes" [ref=e381] [cursor=pointer]:
+                    - /url: "#pricing"
+            - generic [ref=e382]:
+              - heading "Acceso" [level=3] [ref=e383]
+              - list [ref=e384]:
+                - listitem [ref=e385]:
+                  - link "Crear cuenta" [ref=e386] [cursor=pointer]:
+                    - /url: /registro
+                - listitem [ref=e387]:
+                  - link "Iniciar sesión" [ref=e388] [cursor=pointer]:
+                    - /url: /login
+                - listitem [ref=e389]:
+                  - link "Solicitar acompañamiento" [ref=e390] [cursor=pointer]:
+                    - /url: "#contacto"
+            - generic [ref=e391]:
+              - heading "Legal" [level=3] [ref=e392]
+              - list [ref=e393]:
+                - listitem [ref=e394]:
+                  - link "Política de privacidad" [ref=e395] [cursor=pointer]:
+                    - /url: /privacidad
+                - listitem [ref=e396]:
+                  - link "Términos y condiciones" [ref=e397] [cursor=pointer]:
+                    - /url: /terminos
+        - generic [ref=e398]:
+          - paragraph [ref=e399]: Copyright © 2026 AutoEscuelaPro. Todos los derechos reservados.
+          - paragraph [ref=e400]: Hecho para escuelas de conducción en Colombia.
+  - alert [ref=e401]

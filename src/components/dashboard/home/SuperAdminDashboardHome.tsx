@@ -4,18 +4,20 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
+  CircleAlert,
   Building2,
-  DollarSign,
+  Layers3,
   MapPin,
-  ShieldAlert,
+  ShieldX,
+  TriangleAlert,
   UserCog,
-  Users,
 } from "lucide-react";
 import {
   type SuperAdminDashboardResponse,
   type SuperAdminDashboardStats as PlatformStats,
   type SuperAdminSchoolOverview as SchoolOverview,
 } from "@/lib/dashboard-admin-summary";
+import { getSchoolPlanDescriptor } from "@/lib/school-plans";
 import { getDashboardSummaryCached, readDashboardSummaryCache } from "@/lib/dashboard-client-cache";
 import HomePriorityActions from "@/components/dashboard/HomePriorityActions";
 import ListState from "@/components/dashboard/ListState";
@@ -23,7 +25,7 @@ import PageScaffold from "@/components/dashboard/PageScaffold";
 import SummaryRow from "@/components/dashboard/SummaryRow";
 import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
 import { useAuth } from "@/hooks/useAuth";
-import { DashboardLoadingState, fmt } from "@/components/dashboard/home/dashboard-home-shared";
+import { DashboardLoadingState } from "@/components/dashboard/home/dashboard-home-shared";
 
 export default function SuperAdminDashboardHome() {
   const { perfil } = useAuth();
@@ -34,6 +36,7 @@ export default function SuperAdminDashboardHome() {
     sedesActivas: 0,
     adminsEscuela: 0,
     alumnos: 0,
+    alumnosMes: 0,
     ingresosMes: 0,
   });
   const [schoolOverviews, setSchoolOverviews] = useState<SchoolOverview[]>([]);
@@ -113,9 +116,51 @@ export default function SuperAdminDashboardHome() {
       counts.set(school.plan, (counts.get(school.plan) ?? 0) + 1);
     }
     return Array.from(counts.entries())
-      .map(([plan, count]) => ({ plan, count }))
+      .map(([plan, count]) => ({
+        plan,
+        count,
+        descriptor: getSchoolPlanDescriptor(plan),
+      }))
       .sort((a, b) => b.count - a.count);
   }, [schoolOverviews]);
+
+  const globalActionItems = useMemo(
+    () => [
+      {
+        id: "schools",
+        label: "Escuelas",
+        href: "/dashboard/escuelas",
+        description: "Administra planes, capacidad, estado y crecimiento de cada escuela.",
+        areaLabel: "Plataforma",
+        icon: "schools" as const,
+      },
+      {
+        id: "reports",
+        label: "Informes globales",
+        href: "/dashboard/informes",
+        description: "Consulta la lectura ejecutiva consolidada de la plataforma.",
+        areaLabel: "Finanzas",
+        icon: "reports" as const,
+      },
+      {
+        id: "exams",
+        label: "Evaluaciones y CALE",
+        href: "/dashboard/examenes?section=banco",
+        description: "Gestiona el banco maestro y edita, crea o elimina preguntas de evaluación.",
+        areaLabel: "Exámenes",
+        icon: "exams" as const,
+      },
+      {
+        id: "permissions",
+        label: "Permisos",
+        href: "/dashboard/permisos",
+        description: "Revisa el alcance real de cada rol antes de abrir nuevos accesos.",
+        areaLabel: "Configuración",
+        icon: "permissions" as const,
+      },
+    ],
+    []
+  );
 
   const platformAlerts = useMemo(() => {
     const alerts: Array<{
@@ -170,42 +215,69 @@ export default function SuperAdminDashboardHome() {
     return alerts.slice(0, 6);
   }, [schoolOverviews]);
 
+  const platformState = useMemo(() => {
+    const suspendedSchools = schoolOverviews.filter(
+      (school) => school.estado === "suspendida"
+    ).length;
+    const schoolsWithoutAdmins = schoolOverviews.filter(
+      (school) => school.adminsActivos === 0
+    ).length;
+    const schoolsWithoutPrincipal = schoolOverviews.filter(
+      (school) => !school.hasPrincipalSede
+    ).length;
+    const schoolsWithoutCoverage = schoolOverviews.filter(
+      (school) => school.sedesActivas === 0
+    ).length;
+    const schoolsNearCapacity = schoolOverviews.filter(
+      (school) => school.max_alumnos > 0 && school.capacidadPct >= 90
+    ).length;
+
+    return {
+      suspendedSchools,
+      schoolsWithoutAdmins,
+      schoolsWithoutPrincipal,
+      schoolsWithoutCoverage,
+      schoolsNearCapacity,
+      activePlans: new Set(schoolOverviews.map((school) => school.plan)).size,
+    };
+  }, [schoolOverviews]);
+
   const statCards = [
     {
-      label: "Escuelas",
-      value: stats.escuelas.toString(),
-      helper: `${stats.escuelasActivas} activas`,
+      label: "Escuelas activas",
+      value: `${stats.escuelasActivas}/${stats.escuelas}`,
+      helper: `${platformState.suspendedSchools} suspendidas requieren revisión`,
       icon: <Building2 size={18} />,
     },
     {
       label: "Sedes activas",
       value: stats.sedesActivas.toString(),
-      helper: "Cobertura operativa",
+      helper: `${platformState.schoolsWithoutCoverage} escuelas sin cobertura activa`,
       icon: <MapPin size={18} />,
     },
     {
-      label: "Admins de escuela",
+      label: "Admins vigentes",
       value: stats.adminsEscuela.toString(),
-      helper: "Accesos vigentes",
+      helper: `${platformState.schoolsWithoutAdmins} escuelas sin admin activo`,
       icon: <UserCog size={18} />,
     },
     {
-      label: "Alumnos del mes",
-      value: stats.alumnos.toString(),
-      helper: "Base activa del sistema",
-      icon: <Users size={18} />,
+      label: "Planes activos",
+      value: platformState.activePlans.toString(),
+      helper: "Lectura comercial y de capacidad de la red",
+      icon: <Layers3 size={18} />,
     },
     {
-      label: "Ingresos del mes",
-      value: fmt(stats.ingresosMes),
-      helper: "Cobrado en todas las escuelas",
-      icon: <DollarSign size={18} />,
+      label: "Sin sede principal",
+      value: platformState.schoolsWithoutPrincipal.toString(),
+      helper: "Escuelas que aún no tienen estructura base completa",
+      icon: <ShieldX size={18} />,
     },
     {
-      label: "Alertas",
-      value: platformAlerts.length.toString(),
-      helper: "Escuelas para revisar",
-      icon: <ShieldAlert size={18} />,
+      label: "Riesgo de capacidad",
+      value: platformState.schoolsNearCapacity.toString(),
+      helper: "Escuelas al 90% o más de su límite",
+      icon: <TriangleAlert size={18} />,
     },
   ];
 
@@ -218,17 +290,17 @@ export default function SuperAdminDashboardHome() {
       <PageScaffold
         eyebrow="Vista global"
         title="Control central de la plataforma"
-        description="Supervisa escuelas, sedes, capacidad y alertas operativas desde un solo lugar."
+        description="Gobierna la red completa de escuelas: estructura, planes, capacidad, evaluaciones maestras y focos de riesgo de la plataforma."
         aside={
           <div className="rounded-[22px] border border-[rgba(15,23,42,0.08)] bg-white/72 px-4 py-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
             <p className="text-[11px] font-semibold tracking-[0.16em] text-[#66707a] uppercase">
-              Estado general
+              Vigilancia activa
             </p>
             <p className="mt-3 text-3xl font-semibold text-[#111214] dark:text-[#f5f5f7]">
-              {loading ? "..." : `${stats.escuelasActivas}/${stats.escuelas}`}
+              {loading ? "..." : platformAlerts.length.toString()}
             </p>
             <p className="mt-2 text-sm leading-6 text-[#66707a] dark:text-[#aeb6bf]">
-              Escuelas activas sobre el total registrado.
+              Focos globales abiertos entre estructura, capacidad y escuelas suspendidas.
             </p>
           </div>
         }
@@ -242,11 +314,11 @@ export default function SuperAdminDashboardHome() {
             detail: stat.helper,
             icon: stat.icon,
             tone:
-              stat.label === "Alertas"
+              stat.label === "Riesgo de capacidad"
                 ? "danger"
-                : stat.label === "Ingresos del mes"
+                : stat.label === "Planes activos"
                   ? "success"
-                  : stat.label === "Admins de escuela"
+                  : stat.label === "Admins vigentes"
                     ? "warning"
                     : "primary",
           }))}
@@ -255,9 +327,9 @@ export default function SuperAdminDashboardHome() {
 
       <div className="mt-6">
         <HomePriorityActions
-          rol={perfil?.rol}
-          title="Entradas clave de administración central"
-          description="La navegación está organizada por áreas; aquí tienes los módulos con mayor prioridad de gestión."
+          items={globalActionItems}
+          title="Funciones globales del super admin"
+          description="Este rol no opera el día a día de una escuela. Se concentra en estructura, evaluaciones maestras, control de accesos e informes globales."
         />
       </div>
 
@@ -267,10 +339,10 @@ export default function SuperAdminDashboardHome() {
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  Escuelas recientes
+                  Altas recientes
                 </h3>
                 <p className="mt-1 text-sm text-[#86868b]">
-                  Nuevas escuelas y su estado actual dentro de la plataforma.
+                  Nuevas escuelas y cómo quedaron configuradas dentro de la plataforma.
                 </p>
               </div>
               <Link
@@ -288,55 +360,63 @@ export default function SuperAdminDashboardHome() {
               emptyDescription="No hay escuelas nuevas para mostrar en este momento."
             >
               <div className="space-y-3">
-                {recentSchools.map((school) => (
-                  <div
-                    key={school.id}
-                    className="rounded-2xl border border-gray-100 px-4 py-4 dark:border-gray-800"
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                          {school.nombre}
-                        </p>
-                        <p className="mt-1 text-xs text-[#86868b]">
-                          Plan {school.plan} · {school.alumnosTotal} alumnos · {school.sedesActivas}
-                          /{Math.max(school.sedesTotal, 0)} sedes activas
-                        </p>
+                {recentSchools.map((school) => {
+                  const planDescriptor = getSchoolPlanDescriptor(school.plan);
+
+                  return (
+                    <div
+                      key={school.id}
+                      className="rounded-2xl border border-gray-100 px-4 py-4 dark:border-gray-800"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                            {school.nombre}
+                          </p>
+                          <p className="mt-1 text-xs text-[#86868b]">
+                            {planDescriptor?.label ?? school.plan} · {school.alumnosTotal} alumnos ·{" "}
+                            {school.sedesActivas}/{Math.max(school.sedesTotal, 0)} sedes activas
+                          </p>
+                          {planDescriptor ? (
+                            <p className="mt-2 text-xs text-[#6e6e73] dark:text-[#c7c7cc]">
+                              {planDescriptor.dashboardDescription}
+                            </p>
+                          ) : null}
+                        </div>
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                            school.estado === "activa"
+                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                              : school.estado === "suspendida"
+                                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                          }`}
+                        >
+                          {school.estado}
+                        </span>
                       </div>
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                          school.estado === "activa"
-                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                            : school.estado === "suspendida"
-                              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                              : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                        }`}
-                      >
-                        {school.estado}
-                      </span>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-[#86868b] sm:grid-cols-4">
+                        <span>Admins activos: {school.adminsActivos}</span>
+                        <span>Sede principal: {school.hasPrincipalSede ? "Sí" : "No"}</span>
+                        <span>
+                          Capacidad:{" "}
+                          {school.max_alumnos > 0 ? `${school.capacidadPct}%` : "Sin límite"}
+                        </span>
+                        <span>Alta: {new Date(school.created_at).toLocaleDateString("es-CO")}</span>
+                      </div>
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-[#86868b] sm:grid-cols-4">
-                      <span>Admins activos: {school.adminsActivos}</span>
-                      <span>Sede principal: {school.hasPrincipalSede ? "Sí" : "No"}</span>
-                      <span>
-                        Capacidad:{" "}
-                        {school.max_alumnos > 0 ? `${school.capacidadPct}%` : "Sin límite"}
-                      </span>
-                      <span>Alta: {new Date(school.created_at).toLocaleDateString("es-CO")}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </ListState>
           </div>
 
           <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
             <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              Lectura rápida de capacidad
+              Escuelas cerca del límite
             </h3>
             <p className="mt-1 text-sm text-[#86868b]">
-              Escuelas más cercanas a su límite operativo para revisar antes de que el equipo se
-              quede corto.
+              Escuelas que pueden requerir revisión de cupo o plan antes de seguir creciendo.
             </p>
             <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {schoolOverviews
@@ -375,10 +455,10 @@ export default function SuperAdminDashboardHome() {
         <div className="space-y-6">
           <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
             <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              Alertas prioritarias
+              Alertas estructurales
             </h3>
             <p className="mt-1 text-sm text-[#86868b]">
-              Escuelas o estructuras que requieren una revisión rápida.
+              Estructuras globales que requieren revisión rápida desde plataforma.
             </p>
 
             <div className="mt-5 space-y-3">
@@ -414,7 +494,11 @@ export default function SuperAdminDashboardHome() {
                             {alert.detail}
                           </p>
                         </div>
-                        <ArrowRight size={16} className="mt-1 shrink-0 text-[#0071e3]" />
+                        {alert.tone === "danger" ? (
+                          <CircleAlert size={16} className="mt-1 shrink-0 text-red-500" />
+                        ) : (
+                          <ArrowRight size={16} className="mt-1 shrink-0 text-[#0071e3]" />
+                        )}
                       </div>
                     </Link>
                   ))}
@@ -450,16 +534,19 @@ export default function SuperAdminDashboardHome() {
                   return (
                     <div key={item.plan}>
                       <div className="mb-2 flex items-center justify-between text-sm">
-                        <span className="font-medium text-[#1d1d1f] capitalize dark:text-[#f5f5f7]">
-                          {item.plan}
+                        <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                          {item.descriptor?.label ?? item.plan}
                         </span>
                         <span className="text-[#86868b]">
                           {item.count} escuela{item.count === 1 ? "" : "s"} · {pct}%
                         </span>
                       </div>
+                      {item.descriptor ? (
+                        <p className="mb-2 text-xs text-[#86868b]">{item.descriptor.audience}</p>
+                      ) : null}
                       <div className="h-2.5 rounded-full bg-gray-100 dark:bg-gray-800">
                         <div
-                          className="h-2.5 rounded-full bg-[#0071e3]"
+                          className={`h-2.5 rounded-full ${item.descriptor?.progressClassName ?? "bg-[#0071e3]"}`}
                           style={{ width: `${pct}%` }}
                         />
                       </div>
