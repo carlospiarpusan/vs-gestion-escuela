@@ -3,14 +3,19 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight,
-  CircleAlert,
+  ArrowUpRight,
+  BookOpenCheck,
   Building2,
+  ChevronRight,
+  CircleAlert,
   Layers3,
   MapPin,
   ShieldX,
-  TriangleAlert,
+  Sparkles,
+  TrendingUp,
   UserCog,
+  Users,
+  Wallet,
 } from "lucide-react";
 import {
   type SuperAdminDashboardResponse,
@@ -19,17 +24,10 @@ import {
 } from "@/lib/dashboard-admin-summary";
 import { getSchoolPlanDescriptor } from "@/lib/school-plans";
 import { getDashboardSummaryCached, readDashboardSummaryCache } from "@/lib/dashboard-client-cache";
-import HomePriorityActions from "@/components/dashboard/HomePriorityActions";
-import ListState from "@/components/dashboard/ListState";
-import PageScaffold from "@/components/dashboard/PageScaffold";
-import SummaryRow from "@/components/dashboard/SummaryRow";
-import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
 import { useAuth } from "@/hooks/useAuth";
-import { DashboardLoadingState } from "@/components/dashboard/home/dashboard-home-shared";
 
 export default function SuperAdminDashboardHome() {
   const { perfil } = useAuth();
-  const isMobile = useIsMobileVariant();
   const [stats, setStats] = useState<PlatformStats>({
     escuelas: 0,
     escuelasActivas: 0,
@@ -73,25 +71,18 @@ export default function SuperAdminDashboardHome() {
               cache: "default",
             });
             const payload = await response.json();
-
-            if (!response.ok) {
-              throw new Error(payload?.error || "No se pudo cargar el resumen central.");
-            }
-
+            if (!response.ok) throw new Error(payload?.error || "Error cargando dashboard central");
             return payload as SuperAdminDashboardResponse;
           },
         });
 
         if (!isActive) return;
-
         setStats(snapshot.stats);
         setSchoolOverviews(snapshot.schoolOverviews);
       } catch (error) {
         console.error("Error al obtener el resumen de plataforma:", error);
       } finally {
-        if (isActive) {
-          setLoading(false);
-        }
+        if (isActive) setLoading(false);
       }
     };
 
@@ -102,457 +93,339 @@ export default function SuperAdminDashboardHome() {
     };
   }, [perfil]);
 
-  const recentSchools = useMemo(
-    () =>
-      [...schoolOverviews]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 6),
-    [schoolOverviews]
-  );
-
-  const planDistribution = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const school of schoolOverviews) {
-      counts.set(school.plan, (counts.get(school.plan) ?? 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .map(([plan, count]) => ({
-        plan,
-        count,
-        descriptor: getSchoolPlanDescriptor(plan),
-      }))
-      .sort((a, b) => b.count - a.count);
-  }, [schoolOverviews]);
-
-  const globalActionItems = useMemo(
-    () => [
-      {
-        id: "schools",
-        label: "Escuelas",
-        href: "/dashboard/escuelas",
-        description: "Administra planes, capacidad, estado y crecimiento de cada escuela.",
-        areaLabel: "Plataforma",
-        icon: "schools" as const,
-      },
-      {
-        id: "reports",
-        label: "Informes globales",
-        href: "/dashboard/informes",
-        description: "Consulta la lectura ejecutiva consolidada de la plataforma.",
-        areaLabel: "Finanzas",
-        icon: "reports" as const,
-      },
-      {
-        id: "exams",
-        label: "Evaluaciones y CALE",
-        href: "/dashboard/examenes?section=banco",
-        description: "Gestiona el banco maestro y edita, crea o elimina preguntas de evaluación.",
-        areaLabel: "Exámenes",
-        icon: "exams" as const,
-      },
-      {
-        id: "permissions",
-        label: "Permisos",
-        href: "/dashboard/permisos",
-        description: "Revisa el alcance real de cada rol antes de abrir nuevos accesos.",
-        areaLabel: "Configuración",
-        icon: "permissions" as const,
-      },
-    ],
-    []
-  );
-
   const platformAlerts = useMemo(() => {
-    const alerts: Array<{
-      title: string;
-      detail: string;
-      href: string;
-      tone: "warn" | "danger" | "info";
-    }> = [];
-
+    const alerts = [];
     for (const school of schoolOverviews) {
       if (school.estado === "suspendida") {
         alerts.push({
-          title: `${school.nombre} está suspendida`,
-          detail: "Revisa el estado comercial y operativo de la escuela.",
+          title: `${school.nombre} Suspendida`,
+          detail: "Operación de escuela bloqueada por facturación o políticas.",
           href: "/dashboard/escuelas",
           tone: "danger",
         });
       }
       if (school.adminsActivos === 0) {
         alerts.push({
-          title: `${school.nombre} no tiene administrador activo`,
-          detail: "La escuela necesita al menos un admin de escuela para operar con control.",
+          title: `Sin Administrador en ${school.nombre}`,
+          detail: "Esta escuela no puede operar hasta que se asigne un administrador.",
           href: "/dashboard/escuelas",
           tone: "warn",
-        });
-      }
-      if (school.sedesTotal === 0) {
-        alerts.push({
-          title: `${school.nombre} no tiene sedes registradas`,
-          detail: "Crea la sede principal para dejar operativa la estructura base.",
-          href: "/dashboard/sedes",
-          tone: "danger",
-        });
-      } else if (!school.hasPrincipalSede) {
-        alerts.push({
-          title: `${school.nombre} no tiene sede principal`,
-          detail: "Define una sede principal para evitar inconsistencias en nuevos registros.",
-          href: "/dashboard/sedes",
-          tone: "warn",
-        });
-      }
-      if (school.max_alumnos > 0 && school.capacidadPct >= 90) {
-        alerts.push({
-          title: `${school.nombre} está al ${school.capacidadPct}% de capacidad`,
-          detail: "Revisa el plan o el límite de alumnos antes de que el equipo se quede corto.",
-          href: "/dashboard/escuelas",
-          tone: "info",
         });
       }
     }
-
-    return alerts.slice(0, 6);
+    return alerts.slice(0, 5);
   }, [schoolOverviews]);
 
-  const platformState = useMemo(() => {
-    const suspendedSchools = schoolOverviews.filter(
-      (school) => school.estado === "suspendida"
-    ).length;
-    const schoolsWithoutAdmins = schoolOverviews.filter(
-      (school) => school.adminsActivos === 0
-    ).length;
-    const schoolsWithoutPrincipal = schoolOverviews.filter(
-      (school) => !school.hasPrincipalSede
-    ).length;
-    const schoolsWithoutCoverage = schoolOverviews.filter(
-      (school) => school.sedesActivas === 0
-    ).length;
-    const schoolsNearCapacity = schoolOverviews.filter(
-      (school) => school.max_alumnos > 0 && school.capacidadPct >= 90
-    ).length;
-
-    return {
-      suspendedSchools,
-      schoolsWithoutAdmins,
-      schoolsWithoutPrincipal,
-      schoolsWithoutCoverage,
-      schoolsNearCapacity,
-      activePlans: new Set(schoolOverviews.map((school) => school.plan)).size,
-    };
-  }, [schoolOverviews]);
-
-  const statCards = [
+  const globalActionItems = [
     {
-      label: "Escuelas activas",
-      value: `${stats.escuelasActivas}/${stats.escuelas}`,
-      helper: `${platformState.suspendedSchools} suspendidas requieren revisión`,
-      icon: <Building2 size={18} />,
+      id: "schools",
+      label: "Gestión de Escuelas",
+      href: "/dashboard/escuelas",
+      description: "Administra el estado, límites y altas en la plataforma multi-tenant.",
+      icon: <Building2 className="text-blue-400" size={24} />,
+      bg: "from-blue-500/10 to-transparent border-blue-500/20",
+      accent: "bg-blue-500",
     },
     {
-      label: "Sedes activas",
-      value: stats.sedesActivas.toString(),
-      helper: `${platformState.schoolsWithoutCoverage} escuelas sin cobertura activa`,
-      icon: <MapPin size={18} />,
+      id: "exams",
+      label: "Banco CALE (Evaluaciones)",
+      href: "/dashboard/examenes?section=banco",
+      description: "Crea, edita o elimina preguntas universales usadas por todas las escuelas.",
+      icon: <BookOpenCheck className="text-purple-400" size={24} />,
+      bg: "from-purple-500/10 to-transparent border-purple-500/20",
+      accent: "bg-purple-500",
     },
     {
-      label: "Admins vigentes",
-      value: stats.adminsEscuela.toString(),
-      helper: `${platformState.schoolsWithoutAdmins} escuelas sin admin activo`,
-      icon: <UserCog size={18} />,
+      id: "reports",
+      label: "Informes Financieros",
+      href: "/dashboard/informes",
+      description: "Analítica consolidada de la red global, facturación y crecimiento mensual.",
+      icon: <TrendingUp className="text-emerald-400" size={24} />,
+      bg: "from-emerald-500/10 to-transparent border-emerald-500/20",
+      accent: "bg-emerald-500",
     },
     {
-      label: "Planes activos",
-      value: platformState.activePlans.toString(),
-      helper: "Lectura comercial y de capacidad de la red",
-      icon: <Layers3 size={18} />,
-    },
-    {
-      label: "Sin sede principal",
-      value: platformState.schoolsWithoutPrincipal.toString(),
-      helper: "Escuelas que aún no tienen estructura base completa",
-      icon: <ShieldX size={18} />,
-    },
-    {
-      label: "Riesgo de capacidad",
-      value: platformState.schoolsNearCapacity.toString(),
-      helper: "Escuelas al 90% o más de su límite",
-      icon: <TriangleAlert size={18} />,
+      id: "permissions",
+      label: "Matriz de Permisos",
+      href: "/dashboard/permisos",
+      description: "Consulta rápida de las capacidades operativas de cada rol en el sistema.",
+      icon: <ShieldX className="text-rose-400" size={24} />,
+      bg: "from-rose-500/10 to-transparent border-rose-500/20",
+      accent: "bg-rose-500",
     },
   ];
 
-  if (loading && schoolOverviews.length === 0) {
-    return <DashboardLoadingState />;
-  }
-
   return (
-    <div>
-      <PageScaffold
-        eyebrow="Vista global"
-        title="Control central de la plataforma"
-        description="Gobierna la red completa de escuelas: estructura, planes, capacidad, evaluaciones maestras y focos de riesgo de la plataforma."
-        aside={
-          <div className="rounded-[22px] border border-[rgba(15,23,42,0.08)] bg-white/72 px-4 py-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
-            <p className="text-[11px] font-semibold tracking-[0.16em] text-[#66707a] uppercase">
-              Vigilancia activa
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-[#111214] dark:text-[#f5f5f7]">
-              {loading ? "..." : platformAlerts.length.toString()}
-            </p>
-            <p className="mt-2 text-sm leading-6 text-[#66707a] dark:text-[#aeb6bf]">
-              Focos globales abiertos entre estructura, capacidad y escuelas suspendidas.
-            </p>
-          </div>
-        }
-      >
-        <SummaryRow
-          columns={3}
-          items={statCards.map((stat) => ({
-            id: stat.label,
-            label: stat.label,
-            value: stat.value,
-            detail: stat.helper,
-            icon: stat.icon,
-            tone:
-              stat.label === "Riesgo de capacidad"
-                ? "danger"
-                : stat.label === "Planes activos"
-                  ? "success"
-                  : stat.label === "Admins vigentes"
-                    ? "warning"
-                    : "primary",
-          }))}
-        />
-      </PageScaffold>
+    <div className="min-h-[calc(100vh-4rem)] bg-zinc-50 pb-12 dark:bg-[#09090b]">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden bg-white px-6 py-12 lg:px-12 dark:bg-[#09090b]">
+        <div className="absolute inset-0 z-0">
+          <div className="absolute -top-[50%] -left-[10%] h-[150%] w-[120%] rotate-12 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-600/10 via-zinc-900/0 to-transparent dark:from-indigo-600/20" />
+          <div className="absolute top-[20%] -right-[20%] h-[100%] w-[100%] -rotate-12 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-500/5 via-zinc-900/0 to-transparent dark:from-purple-600/20" />
+        </div>
 
-      <div className="mt-6">
-        <HomePriorityActions
-          items={globalActionItems}
-          title="Funciones globales del super admin"
-          description="Este rol no opera el día a día de una escuela. Se concentra en estructura, evaluaciones maestras, control de accesos e informes globales."
-        />
+        <div className="relative z-10 mx-auto max-w-7xl">
+          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-3xl">
+              <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-200/50 bg-blue-50/50 px-3 py-1 text-xs font-medium text-blue-700 backdrop-blur-md dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                <Sparkles size={14} />
+                Plataforma Multi-tenant (Modo Super Admin)
+              </span>
+              <h1 className="text-4xl font-extrabold tracking-tight text-zinc-900 lg:text-5xl dark:text-white">
+                Command Center
+              </h1>
+              <p className="mt-4 text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
+                Bienvenido al panel central. Supervisa el crecimiento de la red, controla las altas
+                de escuelas y mantén el banco de evaluaciones global, todo desde un único punto.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="space-y-6">
-          <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
-            <div className="mb-5 flex items-center justify-between gap-4">
+      <div className="relative z-20 mx-auto mt-[-2rem] max-w-7xl px-4 lg:px-12">
+        {/* KPI Grid */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/10 dark:border-white/10 dark:bg-zinc-900/50">
+            <div className="absolute -top-4 -right-4 rounded-full bg-blue-500/10 p-6 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                Escuelas Activas
+              </p>
+              <div className="rounded-xl bg-blue-100 p-2 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
+                <Building2 size={20} />
+              </div>
+            </div>
+            <p className="mt-4 text-4xl font-black text-zinc-900 dark:text-white">
+              {loading ? "-" : `${stats.escuelasActivas}/${stats.escuelas}`}
+            </p>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+              Escuelas desplegadas en la plataforma
+            </p>
+          </div>
+
+          <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/10 dark:border-white/10 dark:bg-zinc-900/50">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Volumen de Red</p>
+              <div className="rounded-xl bg-emerald-100 p-2 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                <Users size={20} />
+              </div>
+            </div>
+            <p className="mt-4 text-4xl font-black text-zinc-900 dark:text-white">
+              {loading ? "-" : stats.alumnos.toLocaleString("es-CO")}
+            </p>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+              Alumnos en todas las escuelas
+            </p>
+          </div>
+
+          <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10 dark:border-white/10 dark:bg-zinc-900/50">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                Cobertura (Sedes)
+              </p>
+              <div className="rounded-xl bg-purple-100 p-2 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400">
+                <MapPin size={20} />
+              </div>
+            </div>
+            <p className="mt-4 text-4xl font-black text-zinc-900 dark:text-white">
+              {loading ? "-" : stats.sedesActivas}
+            </p>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+              Sedes físicas operativas
+            </p>
+          </div>
+
+          <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-500/10 dark:border-white/10 dark:bg-zinc-900/50">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Admins Locales</p>
+              <div className="rounded-xl bg-amber-100 p-2 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+                <UserCog size={20} />
+              </div>
+            </div>
+            <p className="mt-4 text-4xl font-black text-zinc-900 dark:text-white">
+              {loading ? "-" : stats.adminsEscuela}
+            </p>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+              Usuarios administrando escuelas
+            </p>
+          </div>
+        </div>
+
+        {/* Quick Actions Globales */}
+        <div className="mt-10 mb-6">
+          <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
+            Panel de Operaciones Globales
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Accede rápidamente a las funciones transversales de la plataforma AutoEscuela Pro.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {globalActionItems.map((action) => (
+            <Link
+              key={action.id}
+              href={action.href}
+              className={`group flex h-full flex-col overflow-hidden rounded-3xl border bg-gradient-to-br ${action.bg} p-6 shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:shadow-xl dark:bg-zinc-900/40`}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <div className="rounded-2xl bg-white p-3 shadow-sm dark:bg-zinc-900">
+                  {action.icon}
+                </div>
+                <ArrowUpRight
+                  className="text-zinc-400 transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1 group-hover:text-zinc-700 dark:text-zinc-600 dark:group-hover:text-white"
+                  size={20}
+                />
+              </div>
+              <h3 className="mt-auto text-lg font-bold text-zinc-900 dark:text-white">
+                {action.label}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {action.description}
+              </p>
+              <div
+                className={`mt-6 h-1 w-12 rounded-full ${action.accent} opacity-60 transition-all duration-300 group-hover:w-full`}
+              />
+            </Link>
+          ))}
+        </div>
+
+        <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* Alertas Platform-Level */}
+          <div className="col-span-1 flex flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#121214]">
+            <div className="border-b border-zinc-100 p-6 dark:border-white/5">
+              <h3 className="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-white">
+                <CircleAlert className="text-rose-500" size={20} />
+                Alertas Activas
+              </h3>
+              <p className="mt-1 text-xs text-zinc-500">Irregularidades detectadas en la red.</p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {loading ? (
+                <div className="space-y-4 p-4 text-sm text-zinc-500">Analizando...</div>
+              ) : platformAlerts.length === 0 ? (
+                <div className="flex h-40 flex-col items-center justify-center p-6 text-center">
+                  <div className="rounded-full bg-emerald-100 p-3 dark:bg-emerald-500/10">
+                    <Sparkles className="text-emerald-500" size={24} />
+                  </div>
+                  <p className="mt-4 text-sm font-medium text-zinc-900 dark:text-white">
+                    Red Saludable
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Ninguna irregularidad prioritaria en las escuelas.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {platformAlerts.map((alert, idx) => (
+                    <Link
+                      key={idx}
+                      href={alert.href}
+                      className="group flex items-start justify-between rounded-2xl p-4 transition-colors hover:bg-zinc-50 dark:hover:bg-white/5"
+                    >
+                      <div>
+                        <p
+                          className={`text-sm font-semibold ${alert.tone === "danger" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}
+                        >
+                          {alert.title}
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                          {alert.detail}
+                        </p>
+                      </div>
+                      <ChevronRight
+                        className="mt-0.5 text-zinc-400 transition-transform group-hover:translate-x-1"
+                        size={16}
+                      />
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Tenants / Escuelas List */}
+          <div className="col-span-1 overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm lg:col-span-2 dark:border-white/10 dark:bg-[#121214]">
+            <div className="flex items-center justify-between border-b border-zinc-100 p-6 dark:border-white/5">
               <div>
-                <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  Altas recientes
+                <h3 className="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-white">
+                  <Layers3 className="text-blue-500" size={20} />
+                  Rendimiento de Escuelas
                 </h3>
-                <p className="mt-1 text-sm text-[#86868b]">
-                  Nuevas escuelas y cómo quedaron configuradas dentro de la plataforma.
+                <p className="mt-1 text-xs text-zinc-500">
+                  Uso de capacidad comercial y estado del plan de las escuelas activas.
                 </p>
               </div>
               <Link
                 href="/dashboard/escuelas"
-                className="text-sm font-semibold text-[#0071e3] hover:underline"
+                className="text-sm font-semibold text-blue-600 hover:text-blue-500 dark:text-blue-400"
               >
                 Ver todas
               </Link>
             </div>
 
-            <ListState
-              loading={loading}
-              empty={recentSchools.length === 0}
-              emptyTitle="Sin escuelas registradas"
-              emptyDescription="No hay escuelas nuevas para mostrar en este momento."
-            >
-              <div className="space-y-3">
-                {recentSchools.map((school) => {
-                  const planDescriptor = getSchoolPlanDescriptor(school.plan);
-
-                  return (
-                    <div
-                      key={school.id}
-                      className="rounded-2xl border border-gray-100 px-4 py-4 dark:border-gray-800"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                            {school.nombre}
-                          </p>
-                          <p className="mt-1 text-xs text-[#86868b]">
-                            {planDescriptor?.label ?? school.plan} · {school.alumnosTotal} alumnos ·{" "}
-                            {school.sedesActivas}/{Math.max(school.sedesTotal, 0)} sedes activas
-                          </p>
-                          {planDescriptor ? (
-                            <p className="mt-2 text-xs text-[#6e6e73] dark:text-[#c7c7cc]">
-                              {planDescriptor.dashboardDescription}
-                            </p>
-                          ) : null}
-                        </div>
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                            school.estado === "activa"
-                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                              : school.estado === "suspendida"
-                                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                          }`}
-                        >
-                          {school.estado}
-                        </span>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-[#86868b] sm:grid-cols-4">
-                        <span>Admins activos: {school.adminsActivos}</span>
-                        <span>Sede principal: {school.hasPrincipalSede ? "Sí" : "No"}</span>
-                        <span>
-                          Capacidad:{" "}
-                          {school.max_alumnos > 0 ? `${school.capacidadPct}%` : "Sin límite"}
-                        </span>
-                        <span>Alta: {new Date(school.created_at).toLocaleDateString("es-CO")}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </ListState>
-          </div>
-
-          <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
-            <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              Escuelas cerca del límite
-            </h3>
-            <p className="mt-1 text-sm text-[#86868b]">
-              Escuelas que pueden requerir revisión de cupo o plan antes de seguir creciendo.
-            </p>
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {schoolOverviews
-                .filter((school) => school.max_alumnos > 0)
-                .sort((a, b) => b.capacidadPct - a.capacidadPct)
-                .slice(0, 4)
-                .map((school) => (
-                  <Link
-                    key={`capacity-${school.id}`}
-                    href="/dashboard/escuelas"
-                    className="rounded-2xl border border-gray-100 px-4 py-4 transition-colors hover:border-[#0071e3]/30 hover:bg-[#0071e3]/5 dark:border-gray-800 dark:hover:border-[#0071e3]/30 dark:hover:bg-[#0071e3]/10"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                          {school.nombre}
-                        </p>
-                        <p className="mt-1 text-xs text-[#86868b]">
-                          {school.capacidadPct}% de capacidad · {school.alumnosTotal} alumnos
-                        </p>
-                      </div>
-                      <MapPin size={16} className="text-[#0071e3]" />
-                    </div>
-                    <div className="mt-3 h-2 rounded-full bg-gray-100 dark:bg-[#111214]">
-                      <div
-                        className="h-2 rounded-full bg-[#0071e3]"
-                        style={{ width: `${Math.min(school.capacidadPct, 100)}%` }}
-                      />
-                    </div>
-                  </Link>
-                ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
-            <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              Alertas estructurales
-            </h3>
-            <p className="mt-1 text-sm text-[#86868b]">
-              Estructuras globales que requieren revisión rápida desde plataforma.
-            </p>
-
-            <div className="mt-5 space-y-3">
-              <ListState
-                loading={loading}
-                empty={platformAlerts.length === 0}
-                emptyTitle="Sin alertas críticas"
-                emptyDescription="No hay alertas prioritarias para revisar ahora."
-              >
-                <>
-                  {platformAlerts.map((alert, index) => (
-                    <Link
-                      key={`${alert.title}-${index}`}
-                      href={alert.href}
-                      className={`block rounded-2xl border px-4 py-4 transition-colors ${
-                        alert.tone === "danger"
-                          ? "border-red-200 bg-red-50 hover:bg-red-100/70 dark:border-red-900/40 dark:bg-red-900/20"
-                          : alert.tone === "warn"
-                            ? "border-amber-200 bg-amber-50 hover:bg-amber-100/70 dark:border-amber-900/40 dark:bg-amber-900/20"
-                            : "border-blue-200 bg-blue-50 hover:bg-blue-100/70 dark:border-blue-900/40 dark:bg-blue-900/20"
-                      }`}
-                    >
-                      <div
-                        className={`flex gap-3 ${
-                          isMobile ? "flex-col" : "items-start justify-between"
-                        }`}
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                            {alert.title}
-                          </p>
-                          <p className="mt-1 text-sm text-[#6e6e73] dark:text-[#c7c7cc]">
-                            {alert.detail}
-                          </p>
-                        </div>
-                        {alert.tone === "danger" ? (
-                          <CircleAlert size={16} className="mt-1 shrink-0 text-red-500" />
-                        ) : (
-                          <ArrowRight size={16} className="mt-1 shrink-0 text-[#0071e3]" />
-                        )}
-                      </div>
-                    </Link>
-                  ))}
-                </>
-              </ListState>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
-            <h3 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              Distribución por plan
-            </h3>
-            <p className="mt-1 text-sm text-[#86868b]">
-              Cómo está repartida hoy la base de escuelas.
-            </p>
-
-            <div className="mt-5 space-y-4">
+            <div className="p-0">
               {loading ? (
-                [1, 2, 3].map((item) => (
-                  <div
-                    key={item}
-                    className="h-12 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800"
-                  />
-                ))
-              ) : planDistribution.length === 0 ? (
-                <div className="rounded-2xl bg-gray-50 px-4 py-5 text-sm text-[#86868b] dark:bg-[#0a0a0a]">
-                  Aún no hay escuelas registradas.
+                <div className="p-6 text-sm text-zinc-500">Cargando portafolio de clientes...</div>
+              ) : schoolOverviews.length === 0 ? (
+                <div className="p-8 text-center text-sm text-zinc-500">
+                  No hay escuelas en la plataforma todavía.
                 </div>
               ) : (
-                planDistribution.map((item) => {
-                  const pct =
-                    stats.escuelas > 0 ? Math.round((item.count / stats.escuelas) * 100) : 0;
-                  return (
-                    <div key={item.plan}>
-                      <div className="mb-2 flex items-center justify-between text-sm">
-                        <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                          {item.descriptor?.label ?? item.plan}
-                        </span>
-                        <span className="text-[#86868b]">
-                          {item.count} escuela{item.count === 1 ? "" : "s"} · {pct}%
-                        </span>
-                      </div>
-                      {item.descriptor ? (
-                        <p className="mb-2 text-xs text-[#86868b]">{item.descriptor.audience}</p>
-                      ) : null}
-                      <div className="h-2.5 rounded-full bg-gray-100 dark:bg-gray-800">
-                        <div
-                          className={`h-2.5 rounded-full ${item.descriptor?.progressClassName ?? "bg-[#0071e3]"}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })
+                <div className="divide-y divide-zinc-100 dark:divide-white/5">
+                  {[...schoolOverviews]
+                    .filter((school) => school.max_alumnos > 0)
+                    .sort((a, b) => b.capacidadPct - a.capacidadPct)
+                    .slice(0, 5)
+                    .map((school) => {
+                      const desc = getSchoolPlanDescriptor(school.plan);
+                      const isHighCapacity = school.capacidadPct > 85;
+                      return (
+                        <Link
+                          href="/dashboard/escuelas"
+                          key={school.id}
+                          className="group flex flex-col gap-4 p-5 transition-colors hover:bg-zinc-50 sm:flex-row sm:items-center sm:justify-between dark:hover:bg-white/5"
+                        >
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-semibold text-zinc-900 transition-colors group-hover:text-blue-600 dark:text-zinc-200 dark:group-hover:text-blue-400">
+                              {school.nombre}
+                            </span>
+                            <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
+                              <span
+                                className={`inline-flex rounded-full px-2 py-0.5 font-medium ${school.estado === "activa" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" : "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400"} capitalize`}
+                              >
+                                {school.estado}
+                              </span>
+                              &bull; Plan {desc?.label || school.plan}
+                            </span>
+                          </div>
+
+                          <div className="flex w-full min-w-[150px] flex-col gap-2 text-right sm:w-1/3">
+                            <div className="flex items-center justify-between text-xs font-medium">
+                              <span className="text-zinc-500">Capacidad</span>
+                              <span
+                                className={
+                                  isHighCapacity
+                                    ? "text-amber-600 dark:text-amber-400"
+                                    : "text-zinc-900 dark:text-white"
+                                }
+                              >
+                                {school.alumnosTotal} / {school.max_alumnos} ({school.capacidadPct}
+                                %)
+                              </span>
+                            </div>
+                            <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-white/10">
+                              <div
+                                className={`h-full rounded-full ${isHighCapacity ? "bg-amber-500" : "bg-blue-500"} transition-all`}
+                                style={{ width: `${Math.min(school.capacidadPct, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                </div>
               )}
             </div>
           </div>
