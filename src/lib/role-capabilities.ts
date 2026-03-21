@@ -199,11 +199,11 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
       "Control global de escuelas, estructura general y gobierno general de la plataforma.",
     can: [
       "Administra escuelas, planes y los controles base en toda la plataforma.",
-      "Consulta informes globales y el estado general de la red de escuelas.",
+      "Supervisa el estado y capacidad de las escuelas afiliadas.",
       "Crea, edita y elimina preguntas del banco maestro de evaluaciones CALE.",
     ],
     cannot: [
-      "No queda limitado a una escuela o sede concreta.",
+      "No accede a datos financieros, alumnos individuales ni informes operativos de las escuelas.",
       "No opera el día a día de alumnos, clases, ingresos o personal interno como si fuera una escuela.",
     ],
   },
@@ -293,11 +293,7 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
     cash: NONE_CAPABILITY,
     expenses: NONE_CAPABILITY,
     automation: NONE_CAPABILITY,
-    reports: {
-      state: "readonly",
-      scope: "platform",
-      actions: ["view", "export"],
-    },
+    reports: NONE_CAPABILITY,
     permissions: {
       state: "readonly",
       scope: "platform",

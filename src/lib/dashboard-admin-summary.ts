@@ -35,9 +35,7 @@ export interface SuperAdminDashboardStats {
   escuelasActivas: number;
   sedesActivas: number;
   adminsEscuela: number;
-  alumnos: number;
-  alumnosMes: number;
-  ingresosMes: number;
+  capacidadPromedio: number;
 }
 
 export interface SuperAdminSchoolOverview {
@@ -50,7 +48,6 @@ export interface SuperAdminSchoolOverview {
   created_at: string;
   sedesTotal: number;
   sedesActivas: number;
-  alumnosTotal: number;
   adminsActivos: number;
   hasPrincipalSede: boolean;
   capacidadPct: number;
@@ -205,9 +202,7 @@ export function createEmptySuperAdminDashboardSummary(): SuperAdminDashboardResp
       escuelasActivas: 0,
       sedesActivas: 0,
       adminsEscuela: 0,
-      alumnos: 0,
-      alumnosMes: 0,
-      ingresosMes: 0,
+      capacidadPromedio: 0,
     },
     schoolOverviews: [],
   };

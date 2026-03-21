@@ -12,9 +12,7 @@ import {
   MapPin,
   ShieldX,
   Sparkles,
-  TrendingUp,
   UserCog,
-  Users,
   Wallet,
 } from "lucide-react";
 import {
@@ -33,9 +31,7 @@ export default function SuperAdminDashboardHome() {
     escuelasActivas: 0,
     sedesActivas: 0,
     adminsEscuela: 0,
-    alumnos: 0,
-    alumnosMes: 0,
-    ingresosMes: 0,
+    capacidadPromedio: 0,
   });
   const [schoolOverviews, setSchoolOverviews] = useState<SchoolOverview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,8 +172,8 @@ export default function SuperAdminDashboardHome() {
                 Command Center
               </h1>
               <p className="mt-4 text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Bienvenido al panel central. Supervisa el crecimiento de la red, controla las altas
-                de escuelas y mantén el banco de evaluaciones global, todo desde un único punto.
+                Administra las escuelas afiliadas, controla capacidad y mantén el banco de
+                evaluaciones global, todo desde un único punto.
               </p>
             </div>
           </div>
@@ -187,50 +183,44 @@ export default function SuperAdminDashboardHome() {
       <div className="relative z-20 mx-auto mt-[-2rem] max-w-7xl px-4 lg:px-12">
         {/* KPI Grid */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/10 dark:border-white/10 dark:bg-zinc-900/50">
-            <div className="absolute -top-4 -right-4 rounded-full bg-emerald-500/10 p-6 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+          <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/10 dark:border-white/10 dark:bg-zinc-900/50">
+            <div className="absolute -top-4 -right-4 rounded-full bg-blue-500/10 p-6 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                MRR (Facturación)
+                Escuelas Activas
               </p>
-              <div className="rounded-xl bg-emerald-100 p-2 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
-                <Wallet size={20} />
+              <div className="rounded-xl bg-blue-100 p-2 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
+                <Building2 size={20} />
               </div>
             </div>
             <p className="mt-4 text-4xl font-black text-zinc-900 dark:text-white">
-              {loading
-                ? "-"
-                : new Intl.NumberFormat("es-CO", {
-                    style: "currency",
-                    currency: "COP",
-                    maximumFractionDigits: 0,
-                  }).format(stats.ingresosMes || 0)}
+              {loading ? "-" : stats.escuelasActivas}
             </p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-              Ingresos recurrentes mensuales esperados
+              de {stats.escuelas} registradas en plataforma
             </p>
           </div>
 
           <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/10 dark:border-white/10 dark:bg-zinc-900/50">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Volumen de Red</p>
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                Capacidad Promedio
+              </p>
               <div className="rounded-xl bg-emerald-100 p-2 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
-                <Users size={20} />
+                <Layers3 size={20} />
               </div>
             </div>
             <p className="mt-4 text-4xl font-black text-zinc-900 dark:text-white">
-              {loading ? "-" : stats.alumnos.toLocaleString("es-CO")}
+              {loading ? "-" : `${stats.capacidadPromedio}%`}
             </p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-              Alumnos en todas las escuelas
+              Uso promedio de cupos en escuelas activas
             </p>
           </div>
 
           <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10 dark:border-white/10 dark:bg-zinc-900/50">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                Cobertura (Sedes)
-              </p>
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Sedes Activas</p>
               <div className="rounded-xl bg-purple-100 p-2 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400">
                 <MapPin size={20} />
               </div>
@@ -352,29 +342,29 @@ export default function SuperAdminDashboardHome() {
             </div>
           </div>
 
-          {/* Tenants / Escuelas List */}
+          {/* Estado de Escuelas */}
           <div className="col-span-1 overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm lg:col-span-2 dark:border-white/10 dark:bg-[#121214]">
             <div className="flex items-center justify-between border-b border-zinc-100 p-6 dark:border-white/5">
               <div>
                 <h3 className="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-white">
-                  <Wallet className="text-emerald-500" size={20} />
-                  Suscripciones de Escuelas
+                  <Building2 className="text-blue-500" size={20} />
+                  Estado de Escuelas
                 </h3>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Estado de cuenta y licenciamiento de clientes.
+                  Estado operativo y capacidad de las escuelas afiliadas.
                 </p>
               </div>
               <Link
-                href="/dashboard/suscripciones"
+                href="/dashboard/escuelas"
                 className="text-sm font-semibold text-blue-600 hover:text-blue-500 dark:text-blue-400"
               >
-                Gestionar cobros
+                Gestionar escuelas
               </Link>
             </div>
 
             <div className="p-0">
               {loading ? (
-                <div className="p-6 text-sm text-zinc-500">Cargando cuentas de clientes...</div>
+                <div className="p-6 text-sm text-zinc-500">Cargando escuelas...</div>
               ) : schoolOverviews.length === 0 ? (
                 <div className="p-8 text-center text-sm text-zinc-500">
                   No hay escuelas en la plataforma todavía.
@@ -383,8 +373,12 @@ export default function SuperAdminDashboardHome() {
                 <div className="divide-y divide-zinc-100 dark:divide-white/5">
                   {[...schoolOverviews].slice(0, 5).map((school) => {
                     const desc = getSchoolPlanDescriptor(school.plan);
-                    // Simulating pending payment if school is suspended or randomly for demo
-                    const isPending = school.estado === "suspendida";
+                    const estadoStyles =
+                      school.estado === "activa"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                        : school.estado === "suspendida"
+                          ? "bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400"
+                          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-500/10 dark:text-zinc-400";
                     return (
                       <div
                         key={school.id}
@@ -395,26 +389,34 @@ export default function SuperAdminDashboardHome() {
                             {school.nombre}
                           </span>
                           <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
-                            Plataforma {desc?.label || school.plan}
+                            Plan {desc?.label || school.plan} · {school.sedesActivas}/
+                            {school.sedesTotal} sedes
                           </span>
                         </div>
 
-                        <div className="flex w-full min-w-[150px] flex-col gap-2 text-right sm:w-1/3">
-                          <div className="flex items-center justify-end text-xs font-medium">
+                        <div className="flex w-full min-w-[200px] flex-col gap-2 sm:w-2/5">
+                          <div className="flex items-center justify-between">
                             <span
-                              className={`inline-flex rounded-full px-2.5 py-1 font-semibold ${
-                                isPending
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400"
-                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                              }`}
+                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${estadoStyles}`}
                             >
-                              {isPending ? "Pago Pendiente" : "Suscripción al día"}
+                              {school.estado}
+                            </span>
+                            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                              {school.capacidadPct}% capacidad
                             </span>
                           </div>
-                          <span className="text-[11px] text-zinc-400">
-                            Próximo corte: 1 de{" "}
-                            {new Date().toLocaleString("es-CO", { month: "long" })}
-                          </span>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                school.capacidadPct >= 90
+                                  ? "bg-rose-500"
+                                  : school.capacidadPct >= 70
+                                    ? "bg-amber-500"
+                                    : "bg-emerald-500"
+                              }`}
+                              style={{ width: `${Math.min(school.capacidadPct, 100)}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
                     );
