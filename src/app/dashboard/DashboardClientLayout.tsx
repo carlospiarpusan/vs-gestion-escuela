@@ -3,10 +3,19 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AlertCircle, Eye, EyeOff, KeyRound, MoreHorizontal, UserCheck, Wifi, WifiOff } from "lucide-react";
+import {
+  AlertCircle,
+  Eye,
+  EyeOff,
+  KeyRound,
+  MoreHorizontal,
+  UserCheck,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import Sidebar from "@/components/dashboard/Sidebar";
 import DashboardUserHub from "@/components/dashboard/DashboardUserHub";
-import DashboardSchoolSwitcher from "@/components/dashboard/DashboardSchoolSwitcher";
+
 import ErrorBoundary from "@/components/dashboard/ErrorBoundary";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
@@ -37,16 +46,7 @@ const visibilityToggleCls =
 
 export default function DashboardClientLayout({ children }: { children: React.ReactNode }) {
   const isMobile = useIsMobileVariant();
-  const {
-    user,
-    perfil,
-    schoolOptions,
-    activeEscuelaId,
-    setActiveEscuelaId,
-    loading,
-    error,
-    logout,
-  } = useAuth();
+  const { user, perfil, loading, error, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -255,7 +255,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
         <div className="apple-panel flex items-center gap-3 px-5 py-4">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--blue-apple)] border-t-transparent" />
           <div>
-            <p className="text-sm font-semibold text-foreground">Cargando panel</p>
+            <p className="text-foreground text-sm font-semibold">Cargando panel</p>
             <p className="apple-copy text-xs">Preparando tu espacio de trabajo.</p>
           </div>
         </div>
@@ -270,7 +270,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100/80 dark:bg-red-950/40">
             <AlertCircle size={26} className="text-red-500" />
           </div>
-          <h2 className="mb-2 text-lg font-semibold text-foreground">Error de autenticación</h2>
+          <h2 className="text-foreground mb-2 text-lg font-semibold">Error de autenticación</h2>
           <p className="apple-copy mb-5 text-sm">{error}</p>
           <button onClick={() => window.location.reload()} className="apple-button-primary text-sm">
             Reintentar
@@ -289,7 +289,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
   return (
     <div
       className={`apple-shell flex min-h-screen transition-colors duration-300 ${
-        isMobile ? "overflow-visible dashboard-mobile-shell" : "lg:h-dvh lg:overflow-hidden"
+        isMobile ? "dashboard-mobile-shell overflow-visible" : "lg:h-dvh lg:overflow-hidden"
       }`}
     >
       <Sidebar
@@ -298,20 +298,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
         onClose={() => setSidebarOpen(false)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        scopeControl={({ compact }) => (
-          <DashboardSchoolSwitcher
-            compact={compact}
-            activeEscuelaId={perfil?.rol === "super_admin" ? activeEscuelaId : null}
-            schoolOptions={perfil?.rol === "super_admin" ? schoolOptions : []}
-            onSchoolChange={
-              perfil?.rol === "super_admin"
-                ? async (schoolId: string) => {
-                    await setActiveEscuelaId(schoolId);
-                  }
-                : undefined
-            }
-          />
-        )}
+        scopeControl={undefined}
         footer={() => (
           <DashboardUserHub
             name={nombre}
@@ -324,7 +311,9 @@ export default function DashboardClientLayout({ children }: { children: React.Re
 
       <div
         className={`dashboard-scroll-shell relative flex min-w-0 flex-1 flex-col overflow-x-hidden ${
-          isMobile ? "min-h-[100dvh] h-[100dvh] overflow-y-auto" : "min-h-screen lg:h-dvh lg:overflow-y-auto"
+          isMobile
+            ? "h-[100dvh] min-h-[100dvh] overflow-y-auto"
+            : "min-h-screen lg:h-dvh lg:overflow-y-auto"
         } ${isMobile ? "pb-[calc(5.5rem+env(safe-area-inset-bottom))]" : ""}`}
       >
         <div className="pointer-events-none absolute inset-0">
@@ -409,7 +398,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--blue-apple)_10%,transparent)]">
                 <KeyRound size={22} className="text-[var(--blue-apple)]" />
               </div>
-              <h2 className="text-lg font-semibold text-foreground">Cambia tu contraseña</h2>
+              <h2 className="text-foreground text-lg font-semibold">Cambia tu contraseña</h2>
               <p className="apple-copy mt-1 text-sm">
                 Por seguridad debes establecer una nueva contraseña antes de continuar.
               </p>
@@ -473,7 +462,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
                 <UserCheck size={22} className="text-green-600 dark:text-green-400" />
               </div>
-              <h2 className="text-lg font-semibold text-foreground">Completa tu perfil</h2>
+              <h2 className="text-foreground text-lg font-semibold">Completa tu perfil</h2>
               <p className="apple-copy mt-1 text-sm">
                 Necesitamos algunos datos adicionales para continuar.
               </p>
