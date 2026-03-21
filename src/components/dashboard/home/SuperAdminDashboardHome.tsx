@@ -136,11 +136,12 @@ export default function SuperAdminDashboardHome() {
       accent: "bg-purple-500",
     },
     {
-      id: "reports",
-      label: "Informes Financieros",
-      href: "/dashboard/informes",
-      description: "Analítica consolidada de la red global, facturación y crecimiento mensual.",
-      icon: <TrendingUp className="text-emerald-400" size={24} />,
+      id: "billing",
+      label: "Pagos y Suscripciones",
+      href: "/dashboard/suscripciones",
+      description:
+        "Gestiona la facturación, los métodos de pago y el estado de cuenta de cada escuela afiliada.",
+      icon: <Wallet className="text-emerald-400" size={24} />,
       bg: "from-emerald-500/10 to-transparent border-emerald-500/20",
       accent: "bg-emerald-500",
     },
@@ -186,21 +187,27 @@ export default function SuperAdminDashboardHome() {
       <div className="relative z-20 mx-auto mt-[-2rem] max-w-7xl px-4 lg:px-12">
         {/* KPI Grid */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/10 dark:border-white/10 dark:bg-zinc-900/50">
-            <div className="absolute -top-4 -right-4 rounded-full bg-blue-500/10 p-6 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+          <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/10 dark:border-white/10 dark:bg-zinc-900/50">
+            <div className="absolute -top-4 -right-4 rounded-full bg-emerald-500/10 p-6 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                Escuelas Activas
+                MRR (Facturación)
               </p>
-              <div className="rounded-xl bg-blue-100 p-2 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
-                <Building2 size={20} />
+              <div className="rounded-xl bg-emerald-100 p-2 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                <Wallet size={20} />
               </div>
             </div>
             <p className="mt-4 text-4xl font-black text-zinc-900 dark:text-white">
-              {loading ? "-" : `${stats.escuelasActivas}/${stats.escuelas}`}
+              {loading
+                ? "-"
+                : new Intl.NumberFormat("es-CO", {
+                    style: "currency",
+                    currency: "COP",
+                    maximumFractionDigits: 0,
+                  }).format(stats.ingresosMes || 0)}
             </p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-              Escuelas desplegadas en la plataforma
+              Ingresos recurrentes mensuales esperados
             </p>
           </div>
 
@@ -350,81 +357,68 @@ export default function SuperAdminDashboardHome() {
             <div className="flex items-center justify-between border-b border-zinc-100 p-6 dark:border-white/5">
               <div>
                 <h3 className="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-white">
-                  <Layers3 className="text-blue-500" size={20} />
-                  Rendimiento de Escuelas
+                  <Wallet className="text-emerald-500" size={20} />
+                  Suscripciones de Escuelas
                 </h3>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Uso de capacidad comercial y estado del plan de las escuelas activas.
+                  Estado de cuenta y licenciamiento de clientes.
                 </p>
               </div>
               <Link
-                href="/dashboard/escuelas"
+                href="/dashboard/suscripciones"
                 className="text-sm font-semibold text-blue-600 hover:text-blue-500 dark:text-blue-400"
               >
-                Ver todas
+                Gestionar cobros
               </Link>
             </div>
 
             <div className="p-0">
               {loading ? (
-                <div className="p-6 text-sm text-zinc-500">Cargando portafolio de clientes...</div>
+                <div className="p-6 text-sm text-zinc-500">Cargando cuentas de clientes...</div>
               ) : schoolOverviews.length === 0 ? (
                 <div className="p-8 text-center text-sm text-zinc-500">
                   No hay escuelas en la plataforma todavía.
                 </div>
               ) : (
                 <div className="divide-y divide-zinc-100 dark:divide-white/5">
-                  {[...schoolOverviews]
-                    .filter((school) => school.max_alumnos > 0)
-                    .sort((a, b) => b.capacidadPct - a.capacidadPct)
-                    .slice(0, 5)
-                    .map((school) => {
-                      const desc = getSchoolPlanDescriptor(school.plan);
-                      const isHighCapacity = school.capacidadPct > 85;
-                      return (
-                        <Link
-                          href="/dashboard/escuelas"
-                          key={school.id}
-                          className="group flex flex-col gap-4 p-5 transition-colors hover:bg-zinc-50 sm:flex-row sm:items-center sm:justify-between dark:hover:bg-white/5"
-                        >
-                          <div className="flex flex-col gap-1">
-                            <span className="text-sm font-semibold text-zinc-900 transition-colors group-hover:text-blue-600 dark:text-zinc-200 dark:group-hover:text-blue-400">
-                              {school.nombre}
-                            </span>
-                            <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
-                              <span
-                                className={`inline-flex rounded-full px-2 py-0.5 font-medium ${school.estado === "activa" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" : "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400"} capitalize`}
-                              >
-                                {school.estado}
-                              </span>
-                              &bull; Plan {desc?.label || school.plan}
-                            </span>
-                          </div>
+                  {[...schoolOverviews].slice(0, 5).map((school) => {
+                    const desc = getSchoolPlanDescriptor(school.plan);
+                    // Simulating pending payment if school is suspended or randomly for demo
+                    const isPending = school.estado === "suspendida";
+                    return (
+                      <div
+                        key={school.id}
+                        className="group flex flex-col gap-4 p-5 transition-colors hover:bg-zinc-50 sm:flex-row sm:items-center sm:justify-between dark:hover:bg-white/5"
+                      >
+                        <div className="flex flex-col gap-1">
+                          <span className="text-sm font-semibold text-zinc-900 transition-colors group-hover:text-blue-600 dark:text-zinc-200 dark:group-hover:text-blue-400">
+                            {school.nombre}
+                          </span>
+                          <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
+                            Plataforma {desc?.label || school.plan}
+                          </span>
+                        </div>
 
-                          <div className="flex w-full min-w-[150px] flex-col gap-2 text-right sm:w-1/3">
-                            <div className="flex items-center justify-between text-xs font-medium">
-                              <span className="text-zinc-500">Capacidad</span>
-                              <span
-                                className={
-                                  isHighCapacity
-                                    ? "text-amber-600 dark:text-amber-400"
-                                    : "text-zinc-900 dark:text-white"
-                                }
-                              >
-                                {school.alumnosTotal} / {school.max_alumnos} ({school.capacidadPct}
-                                %)
-                              </span>
-                            </div>
-                            <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-white/10">
-                              <div
-                                className={`h-full rounded-full ${isHighCapacity ? "bg-amber-500" : "bg-blue-500"} transition-all`}
-                                style={{ width: `${Math.min(school.capacidadPct, 100)}%` }}
-                              />
-                            </div>
+                        <div className="flex w-full min-w-[150px] flex-col gap-2 text-right sm:w-1/3">
+                          <div className="flex items-center justify-end text-xs font-medium">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-1 font-semibold ${
+                                isPending
+                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                              }`}
+                            >
+                              {isPending ? "Pago Pendiente" : "Suscripción al día"}
+                            </span>
                           </div>
-                        </Link>
-                      );
-                    })}
+                          <span className="text-[11px] text-zinc-400">
+                            Próximo corte: 1 de{" "}
+                            {new Date().toLocaleString("es-CO", { month: "long" })}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
