@@ -1,157 +1,122 @@
-"use client";
-
 import Link from "next/link";
-import { Users, Calendar, Car, BarChart3 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { motion, useMotionTemplate, useMotionValue, useSpring } from "framer-motion";
-import { MouseEvent } from "react";
+import { BellRing, Calendar, Car, CreditCard } from "lucide-react";
+import SectionIntro from "@/components/public/SectionIntro";
+import { availableFeatures, upcomingFeatures } from "@/lib/public-site-content";
 
-type FeatureItem = {
-  icon: typeof Users;
-  title: string;
-  description: string;
-  benefit: string;
-  ctaLabel: string;
-  className: string;
-};
-
-const features: FeatureItem[] = [
-  {
-    icon: Users,
-    title: "Alumnos",
-    description: "Expedientes, matrículas, pagos, contratos y progreso práctico en un mismo lugar.",
-    benefit: "Reduce errores en expedientes y controla mejor los pagos atrasados.",
-    ctaLabel: "Ver gestión de alumnos",
-    className: "sm:col-span-2 md:col-span-2 md:row-span-2",
-  },
-  {
-    icon: Calendar,
-    title: "Agenda",
-    description: "Programa clases y exámenes por instructor, sede y vehículo sin perder visibilidad.",
-    benefit: "Evita cruces de horarios y aprovecha mejor tu flota.",
-    ctaLabel: "Ver agenda en acción",
-    className: "sm:col-span-1 md:col-span-1 md:row-span-1",
-  },
-  {
-    icon: Car,
-    title: "Flota",
-    description: "Controla mantenimientos, tecnomecánica, seguros y disponibilidad diaria.",
-    benefit: "Anticipa vencimientos y evita parar vehículos por falta de control.",
-    ctaLabel: "Ver control de flota",
-    className: "sm:col-span-1 md:col-span-1 md:row-span-1",
-  },
-  {
-    icon: BarChart3,
-    title: "Finanzas",
-    description: "Monitorea ingresos, gastos, caja, cartera y rendimiento por sede.",
-    benefit: "Detecta fugas de dinero y entiende mejor qué cursos dejan margen.",
-    ctaLabel: "Ver módulo de finanzas",
-    className: "sm:col-span-2 md:col-span-2 md:row-span-1",
-  },
-];
-
-function FeatureCard({ feature, index }: { feature: FeatureItem; index: number }) {
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
-
-  const mouseX = useSpring(x, { stiffness: 500, damping: 100 });
-  const mouseY = useSpring(y, { stiffness: 500, damping: 100 });
-
-  function onMouseMove({ currentTarget, clientX, clientY }: MouseEvent) {
-    const { left, top } = currentTarget.getBoundingClientRect();
-    x.set(clientX - left);
-    y.set(clientY - top);
-  }
-
-  const maskImage = useMotionTemplate`radial-gradient(240px at ${mouseX}px ${mouseY}px, white, transparent)`;
-  const style = { maskImage, WebkitMaskImage: maskImage };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.5, delay: index * 0.08 }}
-      onMouseMove={onMouseMove}
-      className={cn(
-        "group relative overflow-hidden rounded-[32px] border border-gray-100 bg-white/85 p-8 shadow-[0_20px_55px_rgba(15,23,42,0.06)] transition-shadow duration-500 hover:shadow-[0_28px_70px_rgba(15,23,42,0.12)] dark:border-gray-800 dark:bg-white/[0.03]",
-        feature.className
-      )}
-    >
-      <div className="pointer-events-none absolute inset-0 transition-colors duration-500 group-hover:bg-slate-50/50 dark:group-hover:bg-white/5" />
-
-      <motion.div
-        className="pointer-events-none absolute -inset-px opacity-0 transition duration-300 group-hover:opacity-100"
-        style={style}
-      >
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-sky-300/10" />
-      </motion.div>
-
-      <div className="relative z-10 flex h-full flex-col justify-between">
-        <div>
-          <feature.icon className="mb-5 h-10 w-10 text-blue-apple" />
-          <h3 className="text-left text-2xl font-semibold text-foreground">{feature.title}</h3>
-          <p className="mt-3 max-w-[36rem] text-left text-base leading-7 text-gray-600 dark:text-gray-300">
-            {feature.description}
-          </p>
-          <p className="mt-4 max-w-[36rem] text-left text-sm font-medium leading-6 text-foreground/82">
-            {feature.benefit}
-          </p>
-        </div>
-
-        <Link
-          href="/registro"
-          className="mt-8 inline-flex min-h-[44px] items-center text-left text-sm font-semibold text-blue-apple transition-transform group-hover:translate-x-1"
-        >
-          {feature.ctaLabel} &rarr;
-        </Link>
-      </div>
-    </motion.div>
-  );
-}
+const areaIcons = {
+  operacion: Calendar,
+  finanzas: CreditCard,
+  flota: Car,
+  automatizacion: BellRing,
+} as const;
 
 export default function Features() {
   return (
     <section
       id="features"
-      className="border-y border-gray-100 bg-gray-50 py-16 dark:border-gray-900 dark:bg-black sm:py-24 md:py-32"
+      className="border-y border-white/[0.05] bg-[#0a0f18] py-16 sm:py-24 md:py-32"
     >
-      <div className="mx-auto max-w-[1200px] px-6">
-        <div className="mb-12 max-w-3xl text-left sm:mb-16 md:mb-20">
-          <motion.span
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.45 }}
-            className="apple-badge"
-          >
-            Características clave
-          </motion.span>
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.55, delay: 0.05 }}
-            className="mt-4 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl"
-          >
-            Control operativo real para escuelas de conducción.
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.55, delay: 0.1 }}
-            className="mt-5 max-w-2xl text-base leading-7 text-gray-500 sm:text-lg"
-          >
-            Desde matrícula hasta cartera, agenda y flota: cada módulo está pensado para ahorrar
-            tiempo al equipo administrativo y darle visibilidad diaria a la dirección.
-          </motion.p>
+      <div className="mx-auto max-w-[1200px] px-5 sm:px-6">
+        <div className="mb-12 text-center md:text-left">
+          <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-400 backdrop-blur-sm">
+            Funciones del producto
+          </span>
+          <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">
+            Visibilidad real, sin promesas vacías
+          </h2>
+          <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg">
+            Todo lo que necesitas para operar hoy mismo, más nuestra visión de mejoras continuas
+            diseñadas inteligentemente.
+          </p>
         </div>
 
-        <div className="grid auto-rows-[minmax(220px,auto)] grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 sm:auto-rows-[minmax(240px,auto)] md:grid-cols-3">
-          {features.map((feature, index) => (
-            <FeatureCard key={feature.title} feature={feature} index={index} />
-          ))}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {availableFeatures.map((feature) => {
+            const Icon = areaIcons[feature.id as keyof typeof areaIcons] ?? Calendar;
+
+            return (
+              <article
+                key={feature.id}
+                className="group relative overflow-hidden rounded-[2rem] border border-white/[0.05] bg-slate-900/40 p-6 shadow-xl backdrop-blur-sm transition-all hover:border-white/[0.08] hover:bg-slate-800/50 sm:p-8"
+              >
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent" />
+                <div className="relative z-10">
+                  <div className="mb-6 flex items-center justify-between">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] transition-colors group-hover:bg-blue-500/20">
+                      <Icon className="h-6 w-6 text-blue-400" />
+                    </div>
+                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold tracking-wider text-emerald-400 uppercase">
+                      Disponible
+                    </span>
+                  </div>
+
+                  <p className="text-xs font-semibold tracking-wider text-blue-400 uppercase">
+                    {feature.eyebrow}
+                  </p>
+                  <h3 className="mt-2 text-xl font-bold text-white sm:text-2xl">{feature.title}</h3>
+                  <p className="mt-4 text-sm leading-relaxed text-slate-400 sm:text-[15px]">
+                    {feature.description}
+                  </p>
+                  <p className="mt-5 text-sm leading-6 font-semibold text-emerald-400">
+                    {feature.outcome}
+                  </p>
+
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    {feature.modules.map((module) => (
+                      <span
+                        key={module}
+                        className="rounded-lg border border-slate-700/50 bg-slate-800/50 px-3 py-1.5 text-xs font-medium text-slate-300"
+                      >
+                        {module}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="relative mt-12 overflow-hidden rounded-[2rem] border border-emerald-500/20 bg-emerald-900/10 p-6 shadow-2xl backdrop-blur-md sm:p-8">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(16,185,129,0.05),transparent_25rem)]" />
+          <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold tracking-wider text-amber-400 uppercase">
+                Próximamente
+              </span>
+              <h3 className="mt-5 text-2xl font-bold text-white sm:text-3xl">
+                Evolución estratégica sin fricciones
+              </h3>
+              <p className="mt-4 text-sm leading-relaxed text-slate-400 sm:text-base">
+                No vendemos promesas al aire. Estas extensiones en automatización y analítica ya
+                están en la hoja de ruta para multiplicar la eficiencia de los módulos que ya usas.
+              </p>
+            </div>
+            <Link
+              href="/registro"
+              className="inline-flex min-h-[48px] shrink-0 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-[#0a0f18] transition-all hover:bg-emerald-50"
+            >
+              Comienza tu transformación
+            </Link>
+          </div>
+
+          <div className="relative z-10 mt-8 grid gap-4 lg:grid-cols-3">
+            {upcomingFeatures.map((feature) => (
+              <article
+                key={feature.id}
+                className="rounded-[1.5rem] border border-dashed border-white/[0.1] bg-slate-900/30 p-5 transition-colors hover:border-white/[0.15] hover:bg-slate-900/50"
+              >
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+                  <p className="text-xs font-medium tracking-wider text-slate-500 uppercase">
+                    {feature.note}
+                  </p>
+                </div>
+                <h4 className="text-lg font-semibold text-slate-200">{feature.title}</h4>
+                <p className="mt-3 text-sm leading-relaxed text-slate-400">{feature.description}</p>
+              </article>
+            ))}
+          </div>
         </div>
       </div>
     </section>
