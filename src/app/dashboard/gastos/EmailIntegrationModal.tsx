@@ -39,6 +39,11 @@ export default function EmailIntegrationModal({
   onEmailAddressChange,
 }: EmailIntegrationModalProps) {
   const inputCls = "apple-input";
+  const requiresPasswordReset = Boolean(
+    emailIntegration?.last_error?.includes("La app password guardada fue cifrada con una llave anterior") ||
+    emailIntegration?.last_error?.includes("No se pudo descifrar la credencial de correo") ||
+      emailIntegration?.last_error?.includes("No se pudo leer la app password guardada")
+  );
 
   return (
     <Modal
@@ -138,7 +143,9 @@ export default function EmailIntegrationModal({
           <div>
             <label className="mb-1 block text-xs text-[#86868b]">
               {emailIntegration?.provider === MANUAL_IMAP_PROVIDER && emailIntegration?.has_password
-                ? "Nueva app password (opcional)"
+                ? requiresPasswordReset
+                  ? "Nueva app password *"
+                  : "Nueva app password (opcional)"
                 : "App password *"}
             </label>
             <input
@@ -152,10 +159,18 @@ export default function EmailIntegrationModal({
               placeholder={
                 emailIntegration?.provider === MANUAL_IMAP_PROVIDER &&
                 emailIntegration?.has_password
-                  ? "Deja en blanco para conservar la actual"
+                  ? requiresPasswordReset
+                    ? "Ingresa la app password para recuperar la conexion"
+                    : "Deja en blanco para conservar la actual"
                   : "Clave de aplicacion"
               }
             />
+            {requiresPasswordReset && (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                La app password guardada ya no se puede leer con la clave actual. Ingresala de
+                nuevo para volver a cifrarla.
+              </p>
+            )}
           </div>
         </div>
 

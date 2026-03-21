@@ -22,13 +22,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import {
+  DEVICE_VARIANT_OVERRIDE_COOKIE,
+  FORCE_DESKTOP_QUERY_PARAM,
+  FORCE_MOBILE_QUERY_PARAM,
+  type DeviceVariant,
+  isTruthyOverrideValue,
+} from "@/lib/device-variant";
+import { CONTENT_SECURITY_POLICY } from "@/lib/security-headers";
 import { createServerTiming } from "@/lib/server-timing";
 
 function applySecurityHeaders(response: NextResponse) {
-  response.headers.set(
-    "Content-Security-Policy",
-    "base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
-  );
+  response.headers.set("Accept-CH", "Sec-CH-UA-Mobile");
+  response.headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY);
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
@@ -37,8 +43,45 @@ function applySecurityHeaders(response: NextResponse) {
   return response;
 }
 
+function resolveRequestedVariant(searchParams: URLSearchParams): DeviceVariant | null {
+  const forceDesktop = searchParams.get(FORCE_DESKTOP_QUERY_PARAM);
+  if (forceDesktop !== null) {
+    return isTruthyOverrideValue(forceDesktop) ? "desktop" : null;
+  }
+
+  const forceMobile = searchParams.get(FORCE_MOBILE_QUERY_PARAM);
+  if (forceMobile !== null) {
+    return isTruthyOverrideValue(forceMobile) ? "mobile" : null;
+  }
+
+  return null;
+}
+
 export async function proxy(request: NextRequest) {
   const timing = createServerTiming();
+  const url = request.nextUrl.clone();
+  const hasForceMobile = url.searchParams.has(FORCE_MOBILE_QUERY_PARAM);
+  const hasForceDesktop = url.searchParams.has(FORCE_DESKTOP_QUERY_PARAM);
+
+  if (hasForceMobile || hasForceDesktop) {
+    const nextVariant = resolveRequestedVariant(url.searchParams);
+    url.searchParams.delete(FORCE_MOBILE_QUERY_PARAM);
+    url.searchParams.delete(FORCE_DESKTOP_QUERY_PARAM);
+
+    const response = NextResponse.redirect(url);
+
+    if (nextVariant) {
+      response.cookies.set(DEVICE_VARIANT_OVERRIDE_COOKIE, nextVariant, {
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30,
+        sameSite: "lax",
+      });
+    } else {
+      response.cookies.delete(DEVICE_VARIANT_OVERRIDE_COOKIE);
+    }
+
+    return timing.apply(applySecurityHeaders(response));
+  }
 
   // --- Crear respuesta mutable para manipular cookies ---
   let response = NextResponse.next({
@@ -106,5 +149,5 @@ export async function proxy(request: NextRequest) {
  * para no afectar el rendimiento de carga de assets.
  */
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/dashboard/:path*", "/login", "/registro"],
 };

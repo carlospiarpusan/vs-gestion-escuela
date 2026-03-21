@@ -66,6 +66,7 @@ interface AuthContextValue {
   schoolOptions: DashboardSchoolOption[];
   activeEscuelaId: string | null;
   setActiveEscuelaId: (escuelaId: string) => Promise<void>;
+  refreshProfile: () => Promise<void>;
   loading: boolean;
   error: string | null;
   logout: () => Promise<void>;
@@ -98,6 +99,16 @@ export function AuthProvider({
   );
   const [loading, setLoading] = useState(!hasInitialStateRef.current);
   const [error, setError] = useState<string | null>(null);
+
+  const resetAuthState = useCallback(() => {
+    setUser(null);
+    setPerfil(null);
+    setEscuelaNombre(null);
+    setSedeNombre(null);
+    setSchoolOptions([]);
+    setActiveEscuelaIdState(null);
+    setError(null);
+  }, []);
 
   const applySuperAdminSchoolScope = useCallback(
     async (
@@ -160,47 +171,23 @@ export function AuthProvider({
     []
   );
 
-  useEffect(() => {
-    document.title = escuelaNombre ?? APP_TITLE;
-  }, [escuelaNombre]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    let cancelled = false;
-
-    const resetAuthState = () => {
-      if (cancelled) return;
-      setUser(null);
-      setPerfil(null);
-      setEscuelaNombre(null);
-      setSedeNombre(null);
-      setSchoolOptions([]);
-      setActiveEscuelaIdState(null);
-      setError(null);
-    };
-
-    const hydrateAuth = async (
+  const hydrateAuth = useCallback(
+    async (
+      supabase: ReturnType<typeof createClient>,
       sessionOverride?: Session | null,
       options?: { redirectIfMissing?: boolean; showLoading?: boolean }
     ) => {
-      if (!cancelled && options?.showLoading !== false) {
+      if (options?.showLoading !== false) {
         setLoading(true);
       }
-      if (!cancelled) {
-        setError(null);
-      }
+      setError(null);
 
       try {
-        // getSession() lee el JWT de la cookie local — sin llamada de red.
-        // El middleware (proxy.ts) ya valida el token en el servidor,
-        // así que aquí no necesitamos repetir esa validación.
         const session = sessionOverride ?? (await supabase.auth.getSession()).data.session;
 
         if (!session?.user) {
           resetAuthState();
-          if (!cancelled) {
-            setLoading(false);
-          }
+          setLoading(false);
           if (options?.redirectIfMissing !== false) {
             router.push("/login");
           }
@@ -208,17 +195,13 @@ export function AuthProvider({
         }
 
         const currentUser = session.user;
-        if (cancelled) return;
         setUser(currentUser);
 
-        // Cargar perfil del usuario (rol, escuela_id, sede_id)
         const { data: perfilData, error: perfilError } = await supabase
           .from("perfiles")
           .select("*")
           .eq("id", currentUser.id)
           .single();
-
-        if (cancelled) return;
 
         if (perfilError || !perfilData) {
           setError("No se pudo cargar tu perfil. Contacta al administrador.");
@@ -230,28 +213,24 @@ export function AuthProvider({
 
         if (typedPerfil.rol === "super_admin") {
           await applySuperAdminSchoolScope(supabase, typedPerfil);
-          if (!cancelled) {
-            setLoading(false);
-          }
+          setLoading(false);
           return;
         }
 
         setPerfil(typedPerfil);
         setActiveEscuelaIdState(typedPerfil.escuela_id);
         setSchoolOptions([]);
+
         let nextEscuelaNombre: string | null = null;
         let nextSedeNombre: string | null = null;
 
-        // Cargar nombre de escuela y sede en paralelo
-        if (perfilData.escuela_id) {
+        if (typedPerfil.escuela_id) {
           const [escuelaRes, sedeRes] = await Promise.all([
-            supabase.from("escuelas").select("nombre").eq("id", perfilData.escuela_id).single(),
-            perfilData.sede_id
-              ? supabase.from("sedes").select("nombre").eq("id", perfilData.sede_id).single()
+            supabase.from("escuelas").select("nombre").eq("id", typedPerfil.escuela_id).single(),
+            typedPerfil.sede_id
+              ? supabase.from("sedes").select("nombre").eq("id", typedPerfil.sede_id).single()
               : Promise.resolve({ data: null }),
           ]);
-
-          if (cancelled) return;
 
           if (escuelaRes.data) {
             nextEscuelaNombre = escuelaRes.data.nombre;
@@ -265,15 +244,24 @@ export function AuthProvider({
         setSedeNombre(nextSedeNombre);
         setLoading(false);
       } catch (err) {
-        if (cancelled) return;
         console.error("[AuthContext] Error inesperado:", err);
         setError("Error de conexión. Verifica tu red e intenta de nuevo.");
         setLoading(false);
       }
-    };
+    },
+    [applySuperAdminSchoolScope, resetAuthState, router]
+  );
+
+  useEffect(() => {
+    document.title = escuelaNombre ?? APP_TITLE;
+  }, [escuelaNombre]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
 
     if (!hasInitialStateRef.current) {
-      void hydrateAuth(undefined, { redirectIfMissing: true, showLoading: true });
+      void hydrateAuth(supabase, undefined, { redirectIfMissing: true, showLoading: true });
     }
 
     const {
@@ -288,14 +276,14 @@ export function AuthProvider({
         return;
       }
 
-      void hydrateAuth(session, { redirectIfMissing: false, showLoading: false });
+      void hydrateAuth(supabase, session, { redirectIfMissing: false, showLoading: false });
     });
 
     return () => {
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, [applySuperAdminSchoolScope, router]);
+  }, [hydrateAuth, resetAuthState, router]);
 
   const setActiveEscuelaId = useCallback(
     async (escuelaId: string) => {
@@ -331,6 +319,11 @@ export function AuthProvider({
     }
   }, [router]);
 
+  const refreshProfile = useCallback(async () => {
+    const supabase = createClient();
+    await hydrateAuth(supabase, undefined, { redirectIfMissing: false, showLoading: false });
+  }, [hydrateAuth]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -341,6 +334,7 @@ export function AuthProvider({
         schoolOptions,
         activeEscuelaId,
         setActiveEscuelaId,
+        refreshProfile,
         loading,
         error,
         logout,

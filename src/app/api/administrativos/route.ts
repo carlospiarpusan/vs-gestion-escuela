@@ -8,6 +8,9 @@ import {
   parseJsonBody,
   resolveEscuelaIdForRequest,
 } from "@/lib/api-auth";
+import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import { getServerReadCached } from "@/lib/server-read-cache";
+import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 
@@ -43,6 +46,8 @@ type AdministrativoRow = {
 type CountRow = {
   total: number | string | null;
 };
+
+const DASHBOARD_LIST_CACHE_TTL_MS = 45 * 1000;
 
 function parseInteger(value: string | null, fallback: number, min: number, max: number) {
   const parsed = Number(value);
@@ -111,6 +116,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ totalCount: 0, rows: [] });
   }
 
+  const scope = {
+    escuelaId,
+    sedeId: perfil.sede_id,
+  };
+
   const values: Array<string | number> = [];
   const addValue = (value: string | number) => {
     values.push(value);
@@ -140,43 +150,57 @@ export async function GET(request: Request) {
   const limitRef = `$${values.length + 1}`;
   const offsetRef = `$${values.length + 2}`;
 
-  const [countRes, rowsRes] = await Promise.all([
-    pool.query<CountRow>(
-      `
-        select count(*)::int as total
-        from public.perfiles p
-        where ${whereSql}
-      `,
-      values
-    ),
-    pool.query<AdministrativoRow>(
-      `
-        select
-          p.id,
-          p.escuela_id,
-          p.sede_id,
-          p.nombre,
-          p.email,
-          p.rol,
-          p.telefono,
-          p.avatar_url,
-          p.activo,
-          p.ultimo_acceso,
-          p.created_at,
-          s.nombre as sede_nombre
-        from public.perfiles p
-        left join public.sedes s on s.id = p.sede_id
-        where ${whereSql}
-        order by p.created_at desc
-        limit ${limitRef} offset ${offsetRef}
-      `,
-      [...values, pageSize, offset]
-    ),
-  ]);
+  const payload = await getServerReadCached({
+    key: buildDashboardListServerCacheKey("administrativos", perfil.id, scope, url.searchParams),
+    ttlMs: DASHBOARD_LIST_CACHE_TTL_MS,
+    tags: buildDashboardListCacheTags("administrativos", scope),
+    bypass: isFreshDashboardDataRequested(url.searchParams),
+    loader: async () => {
+      const [countRes, rowsRes] = await Promise.all([
+        pool.query<CountRow>(
+          `
+            select count(*)::int as total
+            from public.perfiles p
+            where ${whereSql}
+          `,
+          values
+        ),
+        pool.query<AdministrativoRow>(
+          `
+            select
+              p.id,
+              p.escuela_id,
+              p.sede_id,
+              p.nombre,
+              p.email,
+              p.rol,
+              p.telefono,
+              p.avatar_url,
+              p.activo,
+              p.ultimo_acceso,
+              p.created_at,
+              s.nombre as sede_nombre
+            from public.perfiles p
+            left join public.sedes s on s.id = p.sede_id
+            where ${whereSql}
+            order by p.created_at desc
+            limit ${limitRef} offset ${offsetRef}
+          `,
+          [...values, pageSize, offset]
+        ),
+      ]);
 
-  return NextResponse.json({
-    totalCount: Number(countRes.rows[0]?.total || 0),
-    rows: rowsRes.rows,
+      return {
+        totalCount: Number(countRes.rows[0]?.total || 0),
+        rows: rowsRes.rows,
+      };
+    },
+  });
+
+  return NextResponse.json(payload, {
+    headers: {
+      "Cache-Control": "private, max-age=45, stale-while-revalidate=60",
+    },
   });
 }
 

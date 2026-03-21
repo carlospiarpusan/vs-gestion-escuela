@@ -5,134 +5,64 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
-import {
-  AccountingWorkspaceHeader,
-  AccountingStatCard,
-  AccountingChipTabs,
-  AccountingMiniList,
-} from "@/components/dashboard/accounting/AccountingWorkspace";
-import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
-import DataTable from "@/components/dashboard/DataTable";
+import { AccountingWorkspaceHeader } from "@/components/dashboard/accounting/AccountingWorkspace";
 import { runSupabaseMutationWithRetry } from "@/lib/retry";
 import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import {
-  type AccountingLedgerRow,
-  type AccountingReportResponse,
-  buildAccountingYears,
   downloadCsv,
-  fetchAccountingReport,
   formatAccountingMoney,
-  formatCompactDate,
-  getCurrentAccountingYear,
   getMonthDateRange,
   MONTH_OPTIONS,
 } from "@/lib/accounting-dashboard";
+import ExportFormatActions from "@/components/dashboard/ExportFormatActions";
+import {
+  getDashboardCatalogCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
+import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
+import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import { fetchIncomeDashboard } from "@/lib/finance/income-service";
+import type { IncomeDashboardResponse, IncomeLedgerRow } from "@/lib/finance/types";
 import { type IncomeView, INCOME_VIEW_ITEMS } from "@/lib/income-view";
-import type {
-  Alumno,
-  CategoriaIngreso,
-  EstadoIngreso,
-  MatriculaAlumno,
-  MetodoPago,
-} from "@/types/database";
-import { ArrowDownCircle, ArrowUpCircle, Download, Layers, Plus, Scale, X } from "lucide-react";
+import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
+import { downloadSpreadsheetWorkbook } from "@/lib/spreadsheet-export";
+import type { CategoriaIngreso, EstadoIngreso, MetodoPago } from "@/types/database";
+import { Plus } from "lucide-react";
+import IngresoModal from "./IngresoModal";
+import {
+  AlumnoOption,
+  currentMonth,
+  currentYear,
+  emptyForm,
+  formatIncomeText,
+  MatriculaOption,
+  PAGE_SIZE,
+  years,
+} from "./constants";
+import {
+  IncomeBreakdownSection,
+  IncomeFiltersSection,
+  IncomeLedgerSection,
+  IncomeOverviewSection,
+  IncomeViewSection,
+} from "./IncomeSections";
 
-const Modal = dynamic(() => import("@/components/dashboard/Modal"), {
-  loading: () => null,
-});
 const DeleteConfirm = dynamic(() => import("@/components/dashboard/DeleteConfirm"), {
   loading: () => null,
 });
-
-// ─── Types ───────────────────────────────────────────────────────────
-
-type AlumnoOption = Pick<Alumno, "id" | "nombre" | "apellidos">;
-type MatriculaOption = Pick<
-  MatriculaAlumno,
-  "id" | "alumno_id" | "numero_contrato" | "categorias" | "valor_total" | "fecha_inscripcion"
->;
-
-type IngresoFormData = {
-  alumno_id: string;
-  matricula_id: string;
-  categoria: CategoriaIngreso;
-  concepto: string;
-  monto: string;
-  metodo_pago: MetodoPago;
-  medio_especifico: string;
-  numero_factura: string;
-  fecha: string;
-  fecha_vencimiento: string;
-  estado: EstadoIngreso;
-  notas: string;
-};
-
-type TipoFiltro = "" | "ingreso" | "gasto";
-
-// ─── Constants ───────────────────────────────────────────────────────
-
-const categorias: CategoriaIngreso[] = [
-  "matricula",
-  "mensualidad",
-  "clase_suelta",
-  "examen_teorico",
-  "examen_practico",
-  "examen_aptitud",
-  "material",
-  "tasas_dgt",
-  "otros",
-];
-
-const metodos: { value: MetodoPago; label: string }[] = [
-  { value: "efectivo", label: "Efectivo" },
-  { value: "datafono", label: "Datáfono" },
-  { value: "nequi", label: "Nequi" },
-  { value: "sistecredito", label: "Sistecrédito" },
-  { value: "otro", label: "Otro" },
-];
-
-const estadosIngreso: EstadoIngreso[] = ["cobrado", "pendiente", "anulado"];
-
-const inputCls = "apple-input";
-const labelCls = "apple-label";
-const PAGE_SIZE = 15;
-
-const currentYear = getCurrentAccountingYear();
-const currentMonth = new Date().getMonth() + 1;
-const years = buildAccountingYears();
-
-const emptyForm: IngresoFormData = {
-  alumno_id: "",
-  matricula_id: "",
-  categoria: "mensualidad",
-  concepto: "",
-  monto: "",
-  metodo_pago: "efectivo",
-  medio_especifico: "",
-  numero_factura: "",
-  fecha: new Date().toISOString().split("T")[0],
-  fecha_vencimiento: new Date().toISOString().split("T")[0],
-  estado: "cobrado",
-  notas: "",
-};
-
-function formatMatriculaLabel(matricula: MatriculaOption) {
-  if (matricula.numero_contrato) return `Contrato ${matricula.numero_contrato}`;
-  if ((matricula.categorias ?? []).length > 0) return (matricula.categorias ?? []).join(", ");
-  return "Sin contrato";
-}
 
 // ─── Component ───────────────────────────────────────────────────────
 
 export default function IngresosPage() {
   const { perfil } = useAuth();
+  const isMobile = useIsMobileVariant();
   const fmt = (v: number) => formatAccountingMoney(Number(v || 0));
+  const defaultMonth = String(currentMonth).padStart(2, "0");
 
   // ─── Filters ──────────────────────────────────────────────────────
 
   const [filtroYear, setFiltroYear] = useState(String(currentYear));
-  const [filtroMes, setFiltroMes] = useState("");
-  const [filtroTipo, setFiltroTipo] = useState<TipoFiltro>("");
+  const [filtroMes, setFiltroMes] = useState(defaultMonth);
   const [filtroAlumno, setFiltroAlumno] = useState("");
   const [filtroMetodo, setFiltroMetodo] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
@@ -140,26 +70,34 @@ export default function IngresosPage() {
   const [filtroView, setFiltroView] = useState<IncomeView>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(0);
+  const [showAdvancedFiltersMobile, setShowAdvancedFiltersMobile] = useState(false);
 
   const mesesDelAno =
     Number(filtroYear) === currentYear
       ? MONTH_OPTIONS.filter((m) => !m.value || Number(m.value) <= currentMonth)
       : MONTH_OPTIONS;
 
-  const hayFiltros =
-    filtroTipo ||
+  const hasAdvancedFilters = Boolean(filtroMetodo || filtroCategoria || filtroEstado);
+  const hayFiltros = Boolean(
     filtroAlumno ||
-    filtroMetodo ||
-    filtroCategoria ||
-    filtroEstado ||
-    filtroView !== "all" ||
-    filtroYear !== String(currentYear) ||
-    filtroMes;
+      filtroMetodo ||
+      filtroCategoria ||
+      filtroEstado ||
+      filtroView !== "all" ||
+      filtroYear !== String(currentYear) ||
+      filtroMes !== defaultMonth ||
+      searchTerm
+  );
+
+  useEffect(() => {
+    if (isMobile && hasAdvancedFilters) {
+      setShowAdvancedFiltersMobile(true);
+    }
+  }, [isMobile, hasAdvancedFilters]);
 
   const limpiarFiltros = () => {
     setFiltroYear(String(currentYear));
-    setFiltroMes("");
-    setFiltroTipo("");
+    setFiltroMes(defaultMonth);
     setFiltroAlumno("");
     setFiltroMetodo("");
     setFiltroCategoria("");
@@ -179,46 +117,65 @@ export default function IngresosPage() {
     if (!perfil?.escuela_id) return;
     const escuelaId = perfil.escuela_id;
     const fetchId = ++catalogFetchIdRef.current;
-    const supabase = createClient();
 
     const load = async () => {
       try {
-        const [a, m] = await Promise.all([
-          fetchAllSupabaseRows<AlumnoOption>((from, to) =>
-            supabase
-              .from("alumnos")
-              .select("id, nombre, apellidos")
-              .eq("escuela_id", escuelaId)
-              .order("nombre", { ascending: true })
-              .order("apellidos", { ascending: true })
-              .range(from, to)
-              .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
-          ),
-          fetchAllSupabaseRows<MatriculaOption>((from, to) =>
-            supabase
-              .from("matriculas_alumno")
-              .select("id, alumno_id, numero_contrato, categorias, valor_total, fecha_inscripcion")
-              .eq("escuela_id", escuelaId)
-              .order("fecha_inscripcion", { ascending: false })
-              .order("created_at", { ascending: false })
-              .range(from, to)
-              .then(({ data, error }) => ({ data: (data as MatriculaOption[]) ?? [], error }))
-          ),
-        ]);
+        const catalogs = await getDashboardCatalogCached<{
+          alumnos: AlumnoOption[];
+          matriculas: MatriculaOption[];
+        }>({
+          name: "ingresos-form",
+          scope: {
+            id: perfil.id,
+            rol: perfil.rol,
+            escuelaId,
+            sedeId: perfil.sede_id,
+          },
+          loader: async () => {
+            const supabase = createClient();
+            const [a, m] = await Promise.all([
+              fetchAllSupabaseRows<AlumnoOption>((from, to) =>
+                supabase
+                  .from("alumnos")
+                  .select("id, nombre, apellidos")
+                  .eq("escuela_id", escuelaId)
+                  .order("nombre", { ascending: true })
+                  .order("apellidos", { ascending: true })
+                  .range(from, to)
+                  .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
+              ),
+              fetchAllSupabaseRows<MatriculaOption>((from, to) =>
+                supabase
+                  .from("matriculas_alumno")
+                  .select("id, alumno_id, numero_contrato, categorias, valor_total, fecha_inscripcion")
+                  .eq("escuela_id", escuelaId)
+                  .order("fecha_inscripcion", { ascending: false })
+                  .order("created_at", { ascending: false })
+                  .range(from, to)
+                  .then(({ data, error }) => ({ data: (data as MatriculaOption[]) ?? [], error }))
+              ),
+            ]);
+
+            return {
+              alumnos: a,
+              matriculas: m,
+            };
+          },
+        });
         if (fetchId !== catalogFetchIdRef.current) return;
-        setAlumnos(a);
-        setMatriculas(m);
+        setAlumnos(catalogs.alumnos);
+        setMatriculas(catalogs.matriculas);
       } catch (err) {
         console.error("[IngresosPage] Error cargando catálogos:", err);
       }
     };
 
     void load();
-  }, [perfil?.escuela_id]);
+  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
   // ─── Ledger data ──────────────────────────────────────────────────
 
-  const [report, setReport] = useState<AccountingReportResponse | null>(null);
+  const [report, setReport] = useState<IncomeDashboardResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
@@ -236,27 +193,25 @@ export default function IngresosPage() {
       const params = new URLSearchParams({
         from,
         to,
-        include: "summary,ledger,breakdown",
         page: String(currentPage),
         pageSize: String(PAGE_SIZE),
       });
 
       if (searchTerm) params.set("q", searchTerm);
       if (filtroAlumno) params.set("alumno_id", filtroAlumno);
-      if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
-      if (filtroCategoria) params.set("ingreso_categoria", filtroCategoria);
-      if (filtroEstado) params.set("ingreso_estado", filtroEstado);
-      if (filtroView !== "all") params.set("ingreso_view", filtroView);
-      if (filtroTipo) params.set("ledger_tipo", filtroTipo);
+      if (filtroMetodo) params.set("metodo", filtroMetodo);
+      if (filtroCategoria) params.set("categoria", filtroCategoria);
+      if (filtroEstado) params.set("estado", filtroEstado);
+      if (filtroView !== "all") params.set("view", filtroView);
 
       try {
-        const payload = await fetchAccountingReport(params);
+        const payload = await fetchIncomeDashboard(params);
         if (fetchId !== fetchIdRef.current) return;
         setReport(payload);
       } catch (err: unknown) {
         if (fetchId !== fetchIdRef.current) return;
         setReport(null);
-        setFetchError(err instanceof Error ? err.message : "No se pudo cargar el libro contable.");
+        setFetchError(err instanceof Error ? err.message : "No se pudo cargar el libro de ingresos.");
       } finally {
         if (fetchId === fetchIdRef.current) setLoading(false);
       }
@@ -271,7 +226,6 @@ export default function IngresosPage() {
     filtroMetodo,
     filtroCategoria,
     filtroEstado,
-    filtroTipo,
     filtroView,
     searchTerm,
     currentPage,
@@ -284,13 +238,46 @@ export default function IngresosPage() {
   const ledger = report?.ledger;
   const breakdown = report?.breakdown;
   const totalCount = ledger?.totalCount || 0;
+  const selectedViewMeta = INCOME_VIEW_ITEMS.find((item) => item.id === filtroView) || INCOME_VIEW_ITEMS[0];
+  const generatedAtLabel = report?.generatedAt
+    ? new Intl.DateTimeFormat("es-CO", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(report.generatedAt))
+    : "Actualizando datos";
+  const leadingCategory = breakdown?.ingresosPorCategoria?.[0];
+  const leadingMethod = breakdown?.ingresosPorMetodo?.[0];
+  const leadingLine = breakdown?.ingresosPorLinea?.[0];
+  const leadingConcept = breakdown?.topConceptosIngreso?.[0];
+  const insightItems = [
+    {
+      label: "Línea líder",
+      value: leadingLine?.nombre || "Sin datos suficientes",
+      meta: leadingLine ? `${fmt(leadingLine.total)} en ${leadingLine.cantidad} movimientos` : "Aún no hay suficientes movimientos en el rango.",
+    },
+    {
+      label: "Método dominante",
+      value: formatIncomeText(leadingMethod?.metodo_pago),
+      meta: leadingMethod ? `${fmt(leadingMethod.total)} procesados por este medio` : "Sin datos de medios de pago en el rango.",
+    },
+    {
+      label: "Categoría principal",
+      value: formatIncomeText(leadingCategory?.categoria),
+      meta: leadingCategory ? `${fmt(leadingCategory.total)} generados en esta categoría` : "Sin datos de categorías en el rango.",
+    },
+    {
+      label: "Concepto que más recauda",
+      value: leadingConcept?.concepto || "Sin datos suficientes",
+      meta: leadingConcept ? `${fmt(leadingConcept.total)} en ${leadingConcept.cantidad} movimientos` : "No hay conceptos dominantes para mostrar.",
+    },
+  ];
 
   // ─── CRUD state ───────────────────────────────────────────────────
 
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [editing, setEditing] = useState<AccountingLedgerRow | null>(null);
-  const [deleting, setDeleting] = useState<AccountingLedgerRow | null>(null);
+  const [editing, setEditing] = useState<IncomeLedgerRow | null>(null);
+  const [deleting, setDeleting] = useState<IncomeLedgerRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -310,71 +297,89 @@ export default function IngresosPage() {
 
   // ─── Export CSV ───────────────────────────────────────────────────
 
-  const [exporting, setExporting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "xls" | null>(null);
 
-  const handleExportCsv = useCallback(async () => {
+  const handleExport = useCallback(async (format: "csv" | "xls") => {
     if (!perfil?.escuela_id) return;
-    setExporting(true);
+    setExportingFormat(format);
 
     const { from, to } = getMonthDateRange(Number(filtroYear), filtroMes);
     const params = new URLSearchParams({
       from,
       to,
-      include: "ledger",
       page: "0",
       pageSize: "10000",
     });
     if (searchTerm) params.set("q", searchTerm);
     if (filtroAlumno) params.set("alumno_id", filtroAlumno);
-    if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
-    if (filtroCategoria) params.set("ingreso_categoria", filtroCategoria);
-    if (filtroEstado) params.set("ingreso_estado", filtroEstado);
-    if (filtroView !== "all") params.set("ingreso_view", filtroView);
-    if (filtroTipo) params.set("ledger_tipo", filtroTipo);
+    if (filtroMetodo) params.set("metodo", filtroMetodo);
+    if (filtroCategoria) params.set("categoria", filtroCategoria);
+    if (filtroEstado) params.set("estado", filtroEstado);
+    if (filtroView !== "all") params.set("view", filtroView);
 
     try {
-      const payload = await fetchAccountingReport(params);
+      const payload = await fetchIncomeDashboard(params, { useCache: false });
       const rows = payload.ledger?.rows || [];
       if (rows.length === 0) return;
+      const filenameBase = `libro-ingresos-${filtroYear}${filtroMes ? `-${filtroMes}` : ""}`;
+      const ledgerHeaders = [
+        "Fecha",
+        "Categoría",
+        "Concepto",
+        "Monto",
+        "Estado",
+        "Método",
+        "Factura",
+        "Contraparte",
+        "Documento",
+      ];
+      const ledgerRows = rows.map((r) => [
+        r.fecha,
+        r.categoria.replace(/_/g, " "),
+        r.concepto,
+        r.monto,
+        r.estado,
+        r.metodo_pago || "",
+        r.numero_factura || "",
+        r.contraparte || "",
+        r.documento || "",
+      ]);
 
-      downloadCsv(
-        `libro-contable-${filtroYear}${filtroMes ? `-${filtroMes}` : ""}.csv`,
-        [
-          "Fecha",
-          "Tipo",
-          "Categoría",
-          "Concepto",
-          "Monto",
-          "Estado",
-          "Método",
-          "Factura",
-          "Contraparte",
-          "Documento",
-        ],
-        rows.map((r) => [
-          r.fecha,
-          r.tipo === "ingreso" ? "Ingreso" : "Gasto",
-          r.categoria.replace(/_/g, " "),
-          r.concepto,
-          r.monto,
-          r.estado,
-          r.metodo_pago || "",
-          r.numero_factura || "",
-          r.contraparte || "",
-          r.documento || "",
-        ])
-      );
+      if (format === "csv") {
+        downloadCsv(`${filenameBase}.csv`, ledgerHeaders, ledgerRows);
+        return;
+      }
+
+      await downloadSpreadsheetWorkbook(`${filenameBase}.xls`, [
+        {
+          name: "Resumen",
+          headers: ["Indicador", "Valor"],
+          rows: [
+            ["Ingresos cobrados", payload.summary?.ingresosCobrados || 0],
+            ["Pendiente por cobrar", payload.summary?.ingresosPendientes || 0],
+            ["Ingresos anulados", payload.summary?.ingresosAnulados || 0],
+            ["Ticket promedio", payload.summary?.ticketPromedio || 0],
+            ["Cobranza efectiva (%)", Number((payload.summary?.cobranzaPorcentaje || 0).toFixed(2))],
+            ["Movimientos cobrados", payload.summary?.movimientosCobrados || 0],
+            ["Registros con saldo pendiente", payload.summary?.movimientosPendientes || 0],
+          ],
+        },
+        {
+          name: "Libro de ingresos",
+          headers: ledgerHeaders,
+          rows: ledgerRows,
+        },
+      ]);
     } catch {
       // silent
     } finally {
-      setExporting(false);
+      setExportingFormat(null);
     }
   }, [
     perfil?.escuela_id,
     filtroYear,
     filtroMes,
     searchTerm,
-    filtroTipo,
     filtroAlumno,
     filtroMetodo,
     filtroCategoria,
@@ -391,8 +396,7 @@ export default function IngresosPage() {
     setModalOpen(true);
   };
 
-  const openEdit = (row: AccountingLedgerRow) => {
-    if (row.tipo !== "ingreso") return;
+  const openEdit = (row: IncomeLedgerRow) => {
     setEditing(row);
     setForm({
       alumno_id: "",
@@ -412,8 +416,7 @@ export default function IngresosPage() {
     setModalOpen(true);
   };
 
-  const openDelete = (row: AccountingLedgerRow) => {
-    if (row.tipo !== "ingreso") return;
+  const openDelete = (row: IncomeLedgerRow) => {
     setDeleting(row);
     setDeleteOpen(true);
   };
@@ -503,6 +506,21 @@ export default function IngresosPage() {
       clearDraft(emptyForm);
       setSaving(false);
       setModalOpen(false);
+      invalidateDashboardClientCaches([
+        "dashboard-summary:",
+        "dashboard-catalog:ingresos-form:",
+        "finance-income:",
+        "finance-portfolio:",
+        "finance-cash:",
+        "finance-reports:",
+      ]);
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: true,
+          includeDashboard: true,
+        })
+      );
       setReloadKey((v) => v + 1);
     } catch (networkErr: unknown) {
       setError(networkErr instanceof Error ? networkErr.message : "Error de red al guardar.");
@@ -526,115 +544,26 @@ export default function IngresosPage() {
       setSaving(false);
       setDeleteOpen(false);
       setDeleting(null);
+      invalidateDashboardClientCaches([
+        "dashboard-summary:",
+        "finance-income:",
+        "finance-portfolio:",
+        "finance-cash:",
+        "finance-reports:",
+      ]);
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: true,
+          includeDashboard: true,
+        })
+      );
       setReloadKey((v) => v + 1);
     } catch (networkErr: unknown) {
       setError(networkErr instanceof Error ? networkErr.message : "Error de red al eliminar.");
       setSaving(false);
     }
   };
-
-  // ─── Table columns ────────────────────────────────────────────────
-
-  const columns = useMemo(
-    () => [
-      {
-        key: "fecha" as keyof AccountingLedgerRow,
-        label: "Fecha",
-        render: (row: AccountingLedgerRow) => (
-          <span className="font-medium">{formatCompactDate(row.fecha)}</span>
-        ),
-      },
-      {
-        key: "tipo" as keyof AccountingLedgerRow,
-        label: "Tipo",
-        render: (row: AccountingLedgerRow) => (
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
-              row.tipo === "ingreso"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {row.tipo === "ingreso" ? <ArrowDownCircle size={12} /> : <ArrowUpCircle size={12} />}
-            {row.tipo === "ingreso" ? "Ingreso" : "Gasto"}
-          </span>
-        ),
-      },
-      {
-        key: "categoria" as keyof AccountingLedgerRow,
-        label: "Categoría",
-        render: (row: AccountingLedgerRow) => (
-          <span className="text-sm capitalize">{row.categoria.replace(/_/g, " ")}</span>
-        ),
-      },
-      {
-        key: "concepto" as keyof AccountingLedgerRow,
-        label: "Concepto",
-        render: (row: AccountingLedgerRow) => (
-          <div className="max-w-[200px]">
-            <p className="truncate font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {row.concepto}
-            </p>
-            {row.contraparte && (
-              <p className="truncate text-xs text-[#86868b]">{row.contraparte}</p>
-            )}
-          </div>
-        ),
-      },
-      {
-        key: "monto" as keyof AccountingLedgerRow,
-        label: "Monto",
-        render: (row: AccountingLedgerRow) => (
-          <span
-            className={`font-semibold ${
-              row.tipo === "ingreso"
-                ? "text-green-600 dark:text-green-400"
-                : "text-red-600 dark:text-red-400"
-            }`}
-          >
-            {row.tipo === "gasto" ? "- " : ""}
-            {formatAccountingMoney(row.monto)}
-          </span>
-        ),
-      },
-      {
-        key: "estado" as keyof AccountingLedgerRow,
-        label: "Estado",
-        render: (row: AccountingLedgerRow) => {
-          const colors: Record<string, string> = {
-            cobrado: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-            pagado: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-            pendiente: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-            anulado: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-          };
-          return (
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${colors[row.estado] || "bg-gray-100 text-gray-600"}`}
-            >
-              {row.estado}
-            </span>
-          );
-        },
-      },
-      {
-        key: "metodo_pago" as keyof AccountingLedgerRow,
-        label: "Método",
-        render: (row: AccountingLedgerRow) => (
-          <span className="text-sm text-[#86868b] capitalize">
-            {(row.metodo_pago || "—").replace(/_/g, " ")}
-          </span>
-        ),
-      },
-      {
-        key: "numero_factura" as keyof AccountingLedgerRow,
-        label: "Factura",
-        render: (row: AccountingLedgerRow) => (
-          <span className="text-sm text-[#86868b]">{row.numero_factura || "—"}</span>
-        ),
-      },
-    ],
-    []
-  );
 
   // ─── Render ───────────────────────────────────────────────────────
 
@@ -643,9 +572,9 @@ export default function IngresosPage() {
   return (
     <div>
       <AccountingWorkspaceHeader
-        badge="Contabilidad"
-        title="Libro contable"
-        description="Registro unificado de ingresos y gastos."
+        badge="Finanzas · Recaudo"
+        title="Ingresos"
+        description="Supervisa el recaudo del periodo, entiende de dónde entra el dinero y baja al libro operativo solo cuando necesites editar o exportar movimientos."
         actions={
           <>
             <button
@@ -654,170 +583,74 @@ export default function IngresosPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
             >
               <Plus size={16} />
-              Nuevo ingreso
+              Registrar ingreso
             </button>
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              disabled={exporting}
-              className="inline-flex items-center gap-2 rounded-2xl border border-[#0071e3]/20 bg-[#0071e3]/5 px-4 py-2.5 text-sm font-semibold text-[#0071e3] transition-colors hover:bg-[#0071e3]/10 disabled:opacity-50 dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]"
-            >
-              <Download size={16} />
-              {exporting ? "Exportando..." : "Exportar CSV"}
-            </button>
+            <ExportFormatActions
+              exportingFormat={exportingFormat}
+              disabled={loading || totalCount === 0}
+              onExportCsv={() => void handleExport("csv")}
+              onExportXls={() => void handleExport("xls")}
+            />
           </>
         }
       />
 
-      {/* View chips */}
-      <AccountingChipTabs
+      <IncomeOverviewSection
+        loading={loading}
+        summary={summary}
+        formatMoney={fmt}
+      />
+
+      <IncomeViewSection
         value={filtroView}
         items={INCOME_VIEW_ITEMS}
-        onChange={(v) => {
-          setFiltroView(v);
+        onChange={(value) => {
+          setFiltroView(value);
           setCurrentPage(0);
         }}
       />
 
-      {/* Filters */}
-      <div className="mb-4 space-y-3 rounded-2xl border border-gray-100 bg-white p-4 sm:p-6 dark:border-gray-800 dark:bg-[#1d1d1f]">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
-          <div>
-            <label className={labelCls}>Año</label>
-            <select
-              value={filtroYear}
-              onChange={(e) => {
-                setFiltroYear(e.target.value);
-                setFiltroMes("");
-                setCurrentPage(0);
-              }}
-              className={inputCls}
-            >
-              {years.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Mes</label>
-            <select
-              value={filtroMes}
-              onChange={(e) => {
-                setFiltroMes(e.target.value);
-                setCurrentPage(0);
-              }}
-              className={inputCls}
-            >
-              {mesesDelAno.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Tipo</label>
-            <select
-              value={filtroTipo}
-              onChange={(e) => {
-                setFiltroTipo(e.target.value as TipoFiltro);
-                setCurrentPage(0);
-              }}
-              className={inputCls}
-            >
-              <option value="">Todos</option>
-              <option value="ingreso">Solo ingresos</option>
-              <option value="gasto">Solo gastos</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Alumno</label>
-            <select
-              value={filtroAlumno}
-              onChange={(e) => {
-                setFiltroAlumno(e.target.value);
-                setCurrentPage(0);
-              }}
-              className={inputCls}
-            >
-              <option value="">Todos</option>
-              {alumnos.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.nombre} {a.apellidos}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Método de pago</label>
-            <select
-              value={filtroMetodo}
-              onChange={(e) => {
-                setFiltroMetodo(e.target.value);
-                setCurrentPage(0);
-              }}
-              className={inputCls}
-            >
-              <option value="">Todos</option>
-              {metodos.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Categoría</label>
-            <select
-              value={filtroCategoria}
-              onChange={(e) => {
-                setFiltroCategoria(e.target.value);
-                setCurrentPage(0);
-              }}
-              className={inputCls}
-            >
-              <option value="">Todas</option>
-              {categorias.map((c) => (
-                <option key={c} value={c}>
-                  {c.replace(/_/g, " ")}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Estado</label>
-            <select
-              value={filtroEstado}
-              onChange={(e) => {
-                setFiltroEstado(e.target.value);
-                setCurrentPage(0);
-              }}
-              className={inputCls}
-            >
-              <option value="">Todos</option>
-              {estadosIngreso.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {hayFiltros && (
-          <div className="flex">
-            <button
-              onClick={limpiarFiltros}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs text-[#86868b] transition-colors hover:bg-red-50 hover:text-red-500 dark:border-gray-700 dark:hover:bg-red-900/20"
-            >
-              <X size={12} />
-              Limpiar filtros
-            </button>
-          </div>
-        )}
-      </div>
+      <IncomeFiltersSection
+        filtroYear={filtroYear}
+        years={years}
+        filtroMes={filtroMes}
+        mesesDelAno={mesesDelAno}
+        filtroAlumno={filtroAlumno}
+        alumnos={alumnos}
+        filtroMetodo={filtroMetodo}
+        filtroCategoria={filtroCategoria}
+        filtroEstado={filtroEstado}
+        isMobile={isMobile}
+        showAdvancedFiltersMobile={showAdvancedFiltersMobile}
+        hayFiltros={hayFiltros}
+        onYearChange={(value) => {
+          setFiltroYear(value);
+          setFiltroMes("");
+          setCurrentPage(0);
+        }}
+        onMesChange={(value) => {
+          setFiltroMes(value);
+          setCurrentPage(0);
+        }}
+        onAlumnoChange={(value) => {
+          setFiltroAlumno(value);
+          setCurrentPage(0);
+        }}
+        onMetodoChange={(value) => {
+          setFiltroMetodo(value);
+          setCurrentPage(0);
+        }}
+        onCategoriaChange={(value) => {
+          setFiltroCategoria(value);
+          setCurrentPage(0);
+        }}
+        onEstadoChange={(value) => {
+          setFiltroEstado(value);
+          setCurrentPage(0);
+        }}
+        onToggleAdvancedFilters={() => setShowAdvancedFiltersMobile((current) => !current)}
+        onClearFilters={limpiarFiltros}
+      />
 
       {fetchError && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
@@ -825,322 +658,45 @@ export default function IngresosPage() {
         </div>
       )}
 
-      {/* Stat cards */}
-      <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <AccountingStatCard
-          eyebrow="Periodo"
-          label="Ingresos cobrados"
-          value={loading ? "..." : fmt(summary?.ingresosCobrados || 0)}
-          detail={`${summary?.totalIngresos || 0} movimiento${(summary?.totalIngresos || 0) === 1 ? "" : "s"} de ingreso.`}
-          tone="success"
-          icon={<ArrowDownCircle size={18} />}
-        />
-        <AccountingStatCard
-          eyebrow="Periodo"
-          label="Gastos"
-          value={loading ? "..." : fmt(summary?.gastosTotales || 0)}
-          detail={`${summary?.totalGastos || 0} movimiento${(summary?.totalGastos || 0) === 1 ? "" : "s"} de gasto.`}
-          tone="danger"
-          icon={<ArrowUpCircle size={18} />}
-        />
-        <AccountingStatCard
-          eyebrow="Periodo"
-          label="Balance neto"
-          value={loading ? "..." : fmt(summary?.balanceNeto || 0)}
-          detail={`Margen ${(summary?.margenPorcentaje || 0).toFixed(1)}%.`}
-          tone={(summary?.balanceNeto || 0) >= 0 ? "primary" : "danger"}
-          icon={<Scale size={18} />}
-        />
-        <AccountingStatCard
-          eyebrow="Periodo"
-          label="Movimientos"
-          value={loading ? "..." : String(summary?.totalMovimientos || 0)}
-          detail={`Pendiente: ${fmt(summary?.ingresosPendientes || 0)}`}
-          tone="default"
-          icon={<Layers size={18} />}
-        />
-      </div>
+      <IncomeBreakdownSection
+        loading={loading}
+        breakdown={breakdown}
+        insightItems={insightItems}
+        formatMoney={fmt}
+      />
 
-      {/* Breakdown panels */}
-      {breakdown && !loading && (
-        <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          <AccountingBreakdownCard
-            title="Ingresos por categoría"
-            subtitle="Distribución de ingresos por tipo de servicio."
-            rows={breakdown.ingresosPorCategoria}
-            labelKey="categoria"
-            emptyLabel="Sin datos de categorías."
-          />
-          <AccountingBreakdownCard
-            title="Ingresos por método"
-            subtitle="Forma de pago utilizada por los alumnos."
-            rows={breakdown.ingresosPorMetodo}
-            labelKey="metodo_pago"
-            emptyLabel="Sin datos de métodos."
-          />
-          <AccountingMiniList
-            title="Top conceptos de ingreso"
-            description="Los conceptos que más ingresos generan."
-            emptyLabel="Sin datos de conceptos."
-            items={(breakdown.topConceptosIngreso || []).slice(0, 5).map((r) => ({
-              label: r.concepto || "Sin concepto",
-              value: fmt(r.total),
-              meta: `${r.cantidad} movimiento${r.cantidad !== 1 ? "s" : ""}`,
-            }))}
-          />
-          <AccountingBreakdownCard
-            title="Gastos por categoría"
-            subtitle="Distribución de gastos por tipo."
-            rows={breakdown.gastosPorCategoria}
-            labelKey="categoria"
-            emptyLabel="Sin datos de gastos."
-          />
-          <AccountingBreakdownCard
-            title="Gastos por método"
-            subtitle="Forma de pago de los gastos."
-            rows={breakdown.gastosPorMetodo}
-            labelKey="metodo_pago"
-            emptyLabel="Sin datos de métodos."
-          />
-          <AccountingMiniList
-            title="Top conceptos de gasto"
-            description="Los conceptos que más gastos generan."
-            emptyLabel="Sin datos de conceptos."
-            items={(breakdown.topConceptosGasto || []).slice(0, 5).map((r) => ({
-              label: r.concepto || "Sin concepto",
-              value: fmt(r.total),
-              meta: `${r.cantidad} movimiento${r.cantidad !== 1 ? "s" : ""}`,
-            }))}
-          />
-        </div>
-      )}
+      <IncomeLedgerSection
+        loading={loading}
+        rows={ledger?.rows || []}
+        totalCount={totalCount}
+        currentPage={currentPage}
+        searchTerm={searchTerm}
+        selectedViewMeta={selectedViewMeta}
+        generatedAtLabel={generatedAtLabel}
+        pageSize={PAGE_SIZE}
+        formatMoney={fmt}
+        onPageChange={setCurrentPage}
+        onSearchChange={(term) => {
+          setSearchTerm(term);
+          setCurrentPage(0);
+        }}
+        onEdit={openEdit}
+        onDelete={openDelete}
+      />
 
-      {/* Ledger table */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
-        <DataTable
-          key="libro-contable"
-          columns={columns}
-          data={ledger?.rows || []}
-          loading={loading}
-          searchPlaceholder="Buscar por concepto, contraparte, factura..."
-          searchTerm={searchTerm}
-          serverSide
-          totalCount={totalCount}
-          currentPage={currentPage}
-          onPageChange={setCurrentPage}
-          onSearchChange={(term) => {
-            setSearchTerm(term);
-            setCurrentPage(0);
-          }}
-          pageSize={PAGE_SIZE}
-          onEdit={(row) => row.tipo === "ingreso" && openEdit(row)}
-          onDelete={(row) => row.tipo === "ingreso" && openDelete(row)}
-        />
-      </div>
-
-      {/* Create/Edit Modal */}
-      <Modal
+      <IngresoModal
         open={modalOpen}
+        editing={editing}
+        error={error}
+        form={form}
+        alumnos={alumnos}
+        matriculasDisponibles={matriculasDisponibles}
+        saving={saving}
+        setForm={setForm}
+        onAlumnoChange={handleAlumnoChange}
         onClose={() => setModalOpen(false)}
-        title={editing ? "Editar Ingreso" : "Nuevo Ingreso"}
-        maxWidth="max-w-xl"
-      >
-        <div className="space-y-4">
-          {error && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
-              {error}
-            </p>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={labelCls}>Categoría</label>
-              <select
-                value={form.categoria}
-                onChange={(e) =>
-                  setForm({ ...form, categoria: e.target.value as CategoriaIngreso })
-                }
-                className={inputCls}
-              >
-                {categorias.map((c) => (
-                  <option key={c} value={c}>
-                    {c.replace(/_/g, " ")}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Alumno</label>
-              <select
-                value={form.alumno_id}
-                onChange={(e) => handleAlumnoChange(e.target.value)}
-                className={inputCls}
-              >
-                <option value="">Sin alumno</option>
-                {alumnos.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.nombre} {a.apellidos}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className={labelCls}>Matrícula</label>
-            <select
-              value={form.matricula_id}
-              onChange={(e) => setForm({ ...form, matricula_id: e.target.value })}
-              className={inputCls}
-              disabled={!form.alumno_id || matriculasDisponibles.length === 0}
-            >
-              <option value="">
-                {!form.alumno_id
-                  ? "Selecciona primero un alumno"
-                  : matriculasDisponibles.length === 0
-                    ? "El alumno no tiene matrículas"
-                    : "Selecciona una matrícula"}
-              </option>
-              {matriculasDisponibles.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {formatMatriculaLabel(m)}
-                </option>
-              ))}
-            </select>
-            {form.alumno_id && matriculasDisponibles.length > 1 && (
-              <p className="mt-1 text-[11px] text-[#86868b]">
-                El alumno tiene varios cursos; registra el ingreso en la matrícula correcta.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className={labelCls}>Concepto *</label>
-            <input
-              type="text"
-              value={form.concepto}
-              onChange={(e) => setForm({ ...form, concepto: e.target.value })}
-              className={inputCls}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div>
-              <label className={labelCls}>Monto *</label>
-              <input
-                type="number"
-                step="0.01"
-                value={form.monto}
-                onChange={(e) => setForm({ ...form, monto: e.target.value })}
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>Método de pago</label>
-              <select
-                value={form.metodo_pago}
-                onChange={(e) => setForm({ ...form, metodo_pago: e.target.value as MetodoPago })}
-                className={inputCls}
-              >
-                {metodos.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Fecha</label>
-              <input
-                type="date"
-                value={form.fecha}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    fecha: e.target.value,
-                    fecha_vencimiento:
-                      !prev.fecha_vencimiento || prev.fecha_vencimiento === prev.fecha
-                        ? e.target.value
-                        : prev.fecha_vencimiento,
-                  }))
-                }
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>Vencimiento</label>
-              <input
-                type="date"
-                value={form.fecha_vencimiento}
-                onChange={(e) => setForm({ ...form, fecha_vencimiento: e.target.value })}
-                className={inputCls}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <label className={labelCls}>Estado</label>
-              <select
-                value={form.estado}
-                onChange={(e) => setForm({ ...form, estado: e.target.value as EstadoIngreso })}
-                className={inputCls}
-              >
-                {estadosIngreso.map((e) => (
-                  <option key={e} value={e}>
-                    {e}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Medio específico</label>
-              <input
-                type="text"
-                value={form.medio_especifico}
-                onChange={(e) => setForm({ ...form, medio_especifico: e.target.value })}
-                className={inputCls}
-                placeholder="Ej: Nequi 300..."
-              />
-            </div>
-            <div>
-              <label className={labelCls}>N° Factura</label>
-              <input
-                type="text"
-                value={form.numero_factura}
-                onChange={(e) => setForm({ ...form, numero_factura: e.target.value })}
-                className={inputCls}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className={labelCls}>Notas</label>
-            <textarea
-              value={form.notas}
-              onChange={(e) => setForm({ ...form, notas: e.target.value })}
-              rows={2}
-              className={`${inputCls} resize-none`}
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              onClick={() => setModalOpen(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
-            >
-              {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Ingreso"}
-            </button>
-          </div>
-        </div>
-      </Modal>
+        onSave={handleSave}
+      />
 
       <DeleteConfirm
         open={deleteOpen}

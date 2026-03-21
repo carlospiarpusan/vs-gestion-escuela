@@ -20,6 +20,7 @@ import type { ExpenseSearchCriteria } from "@/lib/expense-search";
 
 export const PAGE_SIZE = 10;
 export const currentYear = getCurrentAccountingYear();
+export const currentMonth = new Date().getMonth() + 1;
 
 /** All available expense categories. */
 export const categorias: CategoriaGasto[] = [
@@ -120,7 +121,7 @@ export type SedeOption = {
   es_principal?: boolean | null;
 };
 
-export type ExpenseSection = "libro" | "cuentas" | "tramitadores" | "automatizacion";
+export type ExpenseSection = "libro" | "cuentas" | "tramitadores" | "facturas";
 export type ExpenseView =
   | "all"
   | "vehicular"
@@ -185,6 +186,11 @@ export const EXPENSE_SECTION_ITEMS: Array<{
     description: "Registro, filtros, factura electrónica y exportación.",
   },
   {
+    id: "facturas",
+    label: "Facturas",
+    description: "Carga manual, correo automático e historial de soportes.",
+  },
+  {
     id: "cuentas",
     label: "Cuentas por pagar",
     description: "Pendientes, vencimientos y control por proveedor.",
@@ -193,11 +199,6 @@ export const EXPENSE_SECTION_ITEMS: Array<{
     id: "tramitadores",
     label: "Tramitadores",
     description: "Cartera, concentración y seguimiento operativo por tercero.",
-  },
-  {
-    id: "automatizacion",
-    label: "Automatización",
-    description: "Importación de factura y correo automático de soportes.",
   },
 ];
 export const EXPENSE_VIEW_ITEMS: Array<{ id: ExpenseView; label: string; description: string }> = [
@@ -230,7 +231,7 @@ export function parseExpenseSection(value: string | null): ExpenseSection {
   if (value === "panel" || value === "libro") return "libro";
   if (value === "proveedores" || value === "cuentas") return "cuentas";
   if (value === "tramitadores") return "tramitadores";
-  if (value === "automatizacion") return "automatizacion";
+  if (value === "facturas" || value === "automatizacion") return "facturas";
   return "libro";
 }
 

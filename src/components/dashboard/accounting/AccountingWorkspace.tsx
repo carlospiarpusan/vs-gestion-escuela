@@ -39,25 +39,29 @@ type MiniListProps = {
 };
 
 const statToneMap = {
-  default: "bg-[#f5f5f7] text-[#1d1d1f] dark:bg-[#111214] dark:text-[#f5f5f7]",
-  primary: "bg-[#0071e3]/10 text-[#0071e3] dark:bg-[#0071e3]/15 dark:text-[#69a9ff]",
-  success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-  warning: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-  danger: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  default: "apple-tone-default",
+  primary: "apple-tone-primary",
+  success: "apple-tone-success",
+  warning: "apple-tone-warning",
+  danger: "apple-tone-danger",
 } as const;
 
 export function AccountingWorkspaceHeader({ title, description, badge, actions }: WorkspaceHeaderProps) {
   return (
-    <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-      <div>
-        {badge ? (
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">{badge}</p>
-        ) : null}
-        <h2 className="mt-1 text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{title}</h2>
-        <p className="mt-1 max-w-3xl text-sm text-[#86868b]">{description}</p>
+    <section className="apple-panel mb-6 px-5 py-5 sm:px-7 sm:py-6">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <div className="min-w-0">
+          {badge ? (
+            <p className="apple-kicker">{badge}</p>
+          ) : null}
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-[2rem]">
+            {title}
+          </h2>
+          <p className="apple-copy mt-3 max-w-3xl text-sm leading-7">{description}</p>
+        </div>
+        {actions ? <div className="flex flex-wrap gap-2 xl:justify-end">{actions}</div> : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
-    </div>
+    </section>
   );
 }
 
@@ -71,14 +75,16 @@ export function AccountingSectionTabs<T extends string>({ value, items, onChange
             key={item.id}
             type="button"
             onClick={() => onChange(item.id)}
-            className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
+            className={`rounded-[22px] border px-4 py-3 text-left transition-colors ${
               active
-                ? "border-[#0071e3]/30 bg-[#0071e3]/8 text-[#0b63c7] dark:border-[#0071e3]/40 dark:bg-[#0071e3]/12 dark:text-[#69a9ff]"
-                : "border-gray-100 bg-white text-[#1d1d1f] hover:border-gray-200 dark:border-gray-800 dark:bg-[#1d1d1f] dark:text-[#f5f5f7] dark:hover:border-gray-700"
+                ? "border-[color:color-mix(in_srgb,var(--blue-apple)_28%,transparent)] bg-[color:color-mix(in_srgb,var(--blue-apple)_8%,var(--surface-strong))] text-[var(--brand-600)] shadow-[0_16px_30px_rgba(37,99,235,0.08)]"
+                : "border-[var(--surface-border)] bg-[var(--surface-strong)] text-foreground hover:border-[var(--surface-border-strong)]"
             }`}
           >
             <p className="text-sm font-semibold">{item.label}</p>
-            {item.description ? <p className="mt-1 text-xs text-[#86868b]">{item.description}</p> : null}
+            {item.description ? (
+              <p className="apple-copy mt-1 text-xs leading-5">{item.description}</p>
+            ) : null}
           </button>
         );
       })}
@@ -102,8 +108,8 @@ export function AccountingChipTabs<T extends string>({
             onClick={() => onChange(item.id)}
             className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
               active
-                ? "bg-[#0071e3] text-white"
-                : "border border-gray-200 bg-white text-[#4a4a4f] hover:border-gray-300 dark:border-gray-700 dark:bg-[#1d1d1f] dark:text-[#c7c7cc] dark:hover:border-gray-600"
+                ? "bg-[linear-gradient(135deg,var(--brand-600),var(--brand-500))] text-white shadow-[0_12px_24px_rgba(37,99,235,0.2)]"
+                : "border border-[var(--surface-border)] bg-[var(--surface-strong)] text-[var(--gray-600)] hover:border-[var(--surface-border-strong)]"
             }`}
             title={item.description}
           >
@@ -124,13 +130,13 @@ export function AccountingStatCard({
   icon,
 }: StatCardProps) {
   return (
-    <div className="rounded-3xl border border-gray-100 bg-white p-5 dark:border-gray-800 dark:bg-[#1d1d1f]">
+    <div className="apple-panel-muted rounded-[24px] p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           {eyebrow ? (
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">{eyebrow}</p>
+            <p className="apple-kicker">{eyebrow}</p>
           ) : null}
-          <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{label}</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{label}</p>
         </div>
         {icon ? (
           <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${statToneMap[tone]}`}>
@@ -138,19 +144,21 @@ export function AccountingStatCard({
           </div>
         ) : null}
       </div>
-      <p className="mt-5 text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{value}</p>
-      {detail ? <p className="mt-2 text-sm text-[#86868b]">{detail}</p> : null}
+      <p className="mt-5 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
+      {detail ? <p className="apple-copy mt-2 text-sm leading-6">{detail}</p> : null}
     </div>
   );
 }
 
 export function AccountingPanel({ title, description, actions, children }: PanelProps) {
   return (
-    <section className="rounded-3xl border border-gray-100 bg-white p-5 dark:border-gray-800 dark:bg-[#1d1d1f]">
+    <section className="apple-panel rounded-[24px] p-5">
       <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{title}</h3>
-          {description ? <p className="mt-1 text-sm text-[#86868b]">{description}</p> : null}
+          <h3 className="text-base font-semibold text-foreground">{title}</h3>
+          {description ? (
+            <p className="apple-copy mt-1 text-sm leading-6">{description}</p>
+          ) : null}
         </div>
         {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
       </div>
@@ -163,20 +171,20 @@ export function AccountingMiniList({ title, description, emptyLabel, items }: Mi
   return (
     <AccountingPanel title={title} description={description}>
       {items.length === 0 ? (
-        <p className="text-sm text-[#86868b]">{emptyLabel}</p>
+        <p className="text-sm text-[var(--gray-500)]">{emptyLabel}</p>
       ) : (
         <div className="space-y-3">
           {items.map((item) => (
             <div
               key={`${title}-${item.label}-${item.value}`}
-              className="rounded-2xl bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]"
+              className="rounded-2xl bg-[var(--surface-muted)] px-4 py-3"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{item.label}</p>
-                  {item.meta ? <p className="mt-1 text-xs text-[#86868b]">{item.meta}</p> : null}
+                  <p className="truncate text-sm font-semibold text-foreground">{item.label}</p>
+                  {item.meta ? <p className="mt-1 text-xs text-[var(--gray-500)]">{item.meta}</p> : null}
                 </div>
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{item.value}</p>
+                <p className="text-sm font-semibold text-foreground">{item.value}</p>
               </div>
             </div>
           ))}

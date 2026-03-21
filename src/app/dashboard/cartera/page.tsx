@@ -11,25 +11,26 @@ import {
 } from "@/components/dashboard/accounting/AccountingWorkspace";
 import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
 import DataTable from "@/components/dashboard/DataTable";
+import ExportFormatActions from "@/components/dashboard/ExportFormatActions";
 import {
   type AccountingBreakdownRow,
-  type AccountingContractPendingRow,
-  type AccountingReportResponse,
   buildAccountingYears,
   downloadCsv,
-  fetchAccountingReport,
   formatAccountingMoney,
   formatCompactDate,
   getCurrentAccountingYear,
   getMonthDateRange,
   MONTH_OPTIONS,
 } from "@/lib/accounting-dashboard";
+import { fetchPortfolioDashboard } from "@/lib/finance/portfolio-service";
+import type { PortfolioDashboardResponse, PortfolioPendingRow } from "@/lib/finance/types";
+import { downloadSpreadsheetWorkbook } from "@/lib/spreadsheet-export";
 import type { MetodoPago } from "@/types/database";
-import { AlertTriangle, BookOpen, Clock3, Download, Wallet, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Clock3, Wallet, X } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
-type CarteraTableRow = AccountingContractPendingRow & { id: string };
+type CarteraTableRow = PortfolioPendingRow & { id: string };
 type CarteraView = "all" | "matriculas" | "practicas" | "aptitud";
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -79,27 +80,33 @@ function getShare(value: number, total: number) {
 export default function CarteraPage() {
   const { perfil } = useAuth();
   const fmt = (v: number) => formatAccountingMoney(Number(v || 0));
+  const defaultMonth = String(currentMonth).padStart(2, "0");
 
   // ─── Filters ──────────────────────────────────────────────────────
 
   const [activeView, setActiveView] = useState<CarteraView>("all");
-  const [filtroYear, setFiltroYear] = useState("");
-  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroYear, setFiltroYear] = useState(String(currentYear));
+  const [filtroMes, setFiltroMes] = useState(defaultMonth);
   const [filtroMetodo, setFiltroMetodo] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(0);
 
   const mesesDelAno =
-    filtroYear && Number(filtroYear) === currentYear
+    Number(filtroYear) === currentYear
       ? MONTH_OPTIONS.filter((m) => !m.value || Number(m.value) <= currentMonth)
       : MONTH_OPTIONS;
 
-  const hayFiltros = activeView !== "all" || filtroMetodo || filtroYear || filtroMes;
+  const hayFiltros =
+    activeView !== "all" ||
+    Boolean(filtroMetodo) ||
+    filtroYear !== String(currentYear) ||
+    filtroMes !== defaultMonth ||
+    Boolean(searchTerm);
 
   const limpiarFiltros = () => {
     setActiveView("all");
-    setFiltroYear("");
-    setFiltroMes("");
+    setFiltroYear(String(currentYear));
+    setFiltroMes(defaultMonth);
     setFiltroMetodo("");
     setSearchTerm("");
     setCurrentPage(0);
@@ -107,7 +114,7 @@ export default function CarteraPage() {
 
   // ─── Data ─────────────────────────────────────────────────────────
 
-  const [report, setReport] = useState<AccountingReportResponse | null>(null);
+  const [report, setReport] = useState<PortfolioDashboardResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const fetchIdRef = useRef(0);
@@ -128,16 +135,14 @@ export default function CarteraPage() {
         to,
         page: String(currentPage),
         pageSize: String(PAGE_SIZE),
-        include: "contracts",
       });
 
-      if (activeView === "aptitud") params.set("ingreso_categoria", "examen_aptitud");
-      else if (activeView !== "all") params.set("ingreso_view", activeView);
-      if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
+      if (activeView !== "all") params.set("view", activeView);
+      if (filtroMetodo) params.set("metodo", filtroMetodo);
       if (searchTerm) params.set("q", searchTerm);
 
       try {
-        const payload = await fetchAccountingReport(params);
+        const payload = await fetchPortfolioDashboard(params);
         if (fetchId !== fetchIdRef.current) return;
         setReport(payload);
       } catch (err: unknown) {
@@ -162,31 +167,30 @@ export default function CarteraPage() {
 
   // ─── Derived data ─────────────────────────────────────────────────
 
-  const contracts = report?.contracts;
   const rows = useMemo<CarteraTableRow[]>(
-    () => (contracts?.pendingRows || []).map((r) => ({ ...r, id: r.obligationId })),
-    [contracts?.pendingRows]
+    () => (report?.pendingRows || []).map((row) => ({ ...row, id: row.obligationId })),
+    [report?.pendingRows]
   );
-  const totalCount = contracts?.pendingCount || 0;
+  const totalCount = report?.pendingCount || 0;
   const pageTotal = useMemo(
     () => rows.reduce((sum, r) => sum + Number(r.saldoPendiente || 0), 0),
     [rows]
   );
-  const monthly = contracts?.monthly || [];
-  const oldPending = contracts?.oldestPending || [];
+  const monthly = report?.monthly || [];
+  const oldPending = report?.oldestPending || [];
   const veryOldTotal = oldPending
     .filter((r) => r.diasPendiente >= 60)
     .reduce((s, r) => s + Number(r.saldoPendiente || 0), 0);
-  const buckets = contracts?.buckets || [];
-  const topDeudores = contracts?.topDeudores || [];
+  const buckets = report?.buckets || [];
+  const topDeudores = report?.topDeudores || [];
 
-  // ─── Export CSV ───────────────────────────────────────────────────
+  // ─── Export ───────────────────────────────────────────────────────
 
-  const [exporting, setExporting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "xls" | null>(null);
 
-  const handleExportCsv = useCallback(async () => {
+  const handleExport = useCallback(async (format: "csv" | "xls") => {
     if (!perfil?.escuela_id) return;
-    setExporting(true);
+    setExportingFormat(format);
 
     try {
       const { from, to } = filtroYear
@@ -197,46 +201,63 @@ export default function CarteraPage() {
         to,
         page: "0",
         pageSize: "10000",
-        include: "contracts",
       });
-      if (activeView === "aptitud") params.set("ingreso_categoria", "examen_aptitud");
-      else if (activeView !== "all") params.set("ingreso_view", activeView);
-      if (filtroMetodo) params.set("ingreso_metodo", filtroMetodo);
+      if (activeView !== "all") params.set("view", activeView);
+      if (filtroMetodo) params.set("metodo", filtroMetodo);
       if (searchTerm) params.set("q", searchTerm);
 
-      const payload = await fetchAccountingReport(params);
-      const allRows = payload.contracts?.pendingRows || [];
+      const payload = await fetchPortfolioDashboard(params, { useCache: false });
+      const allRows = payload.pendingRows || [];
       if (allRows.length === 0) return;
+      const headers = [
+        "Registro",
+        "Alumno",
+        "Documento",
+        "Referencia",
+        "Tipo",
+        "Esperado",
+        "Cobrado",
+        "Saldo",
+        "Días pendiente",
+      ];
+      const rows = allRows.map((r) => [
+        r.fechaRegistro,
+        r.nombre,
+        r.documento,
+        r.referencia,
+        r.tipoRegistro,
+        Number(r.valorEsperado),
+        Number(r.valorCobrado),
+        Number(r.saldoPendiente),
+        r.diasPendiente,
+      ]);
 
-      downloadCsv(
-        "cartera-pendiente.csv",
-        [
-          "Registro",
-          "Alumno",
-          "Documento",
-          "Referencia",
-          "Tipo",
-          "Esperado",
-          "Cobrado",
-          "Saldo",
-          "Días pendiente",
-        ],
-        allRows.map((r) => [
-          r.fechaRegistro,
-          r.nombre,
-          r.documento,
-          r.referencia,
-          r.tipoRegistro,
-          Number(r.valorEsperado),
-          Number(r.valorCobrado),
-          Number(r.saldoPendiente),
-          r.diasPendiente,
-        ])
-      );
+      if (format === "csv") {
+        downloadCsv("cartera-pendiente.csv", headers, rows);
+        return;
+      }
+
+      await downloadSpreadsheetWorkbook("cartera-pendiente.xls", [
+        {
+          name: "Resumen cartera",
+          headers: ["Indicador", "Valor"],
+          rows: [
+            ["Registros pendientes", payload.summary?.registros || 0],
+            ["Total esperado", payload.summary?.totalEsperado || 0],
+            ["Total cobrado", payload.summary?.totalCobrado || 0],
+            ["Total pendiente", payload.summary?.totalPendiente || 0],
+          ],
+        },
+        {
+          name: "Pendientes",
+          headers,
+          rows,
+        },
+      ]);
     } catch {
       // silent
     } finally {
-      setExporting(false);
+      setExportingFormat(null);
     }
   }, [perfil?.escuela_id, activeView, filtroYear, filtroMes, filtroMetodo, searchTerm]);
 
@@ -331,20 +352,17 @@ export default function CarteraPage() {
         title="Cartera"
         description="Seguimiento de deuda pendiente, antigüedad y deudores."
         actions={
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            disabled={exporting || rows.length === 0}
-            className="inline-flex items-center gap-2 rounded-2xl border border-[#0071e3]/20 bg-[#0071e3]/5 px-4 py-2.5 text-sm font-semibold text-[#0071e3] transition-colors hover:bg-[#0071e3]/10 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]"
-          >
-            <Download size={16} />
-            {exporting ? "Exportando..." : "Exportar CSV"}
-          </button>
+          <ExportFormatActions
+            exportingFormat={exportingFormat}
+            disabled={rows.length === 0}
+            onExportCsv={() => void handleExport("csv")}
+            onExportXls={() => void handleExport("xls")}
+          />
         }
       />
 
       {/* View chips + filters */}
-      <div className="mb-4 space-y-3 rounded-2xl border border-gray-100 bg-white p-4 sm:p-6 dark:border-gray-800 dark:bg-[#1d1d1f]">
+      <div className="apple-panel-muted mb-4 space-y-3 p-4 sm:p-6">
         <AccountingChipTabs
           value={activeView}
           items={VIEW_ITEMS}
@@ -445,24 +463,24 @@ export default function CarteraPage() {
         <AccountingStatCard
           eyebrow="Registros"
           label="Debería ingresar"
-          value={loading ? "..." : fmt(contracts?.totalEsperado || 0)}
-          detail={`${contracts?.registros || 0} registro${(contracts?.registros || 0) === 1 ? "" : "s"} analizado${(contracts?.registros || 0) === 1 ? "" : "s"}.`}
+          value={loading ? "..." : fmt(report?.summary.totalEsperado || 0)}
+          detail={`${report?.summary.registros || 0} registro${(report?.summary.registros || 0) === 1 ? "" : "s"} analizado${(report?.summary.registros || 0) === 1 ? "" : "s"}.`}
           tone="primary"
           icon={<BookOpen size={18} />}
         />
         <AccountingStatCard
           eyebrow="Registros"
           label="Cobrado"
-          value={loading ? "..." : fmt(contracts?.totalCobrado || 0)}
-          detail={`${getShare(Number(contracts?.totalCobrado || 0), Number(contracts?.totalEsperado || 0))} del esperado.`}
+          value={loading ? "..." : fmt(report?.summary.totalCobrado || 0)}
+          detail={`${getShare(Number(report?.summary.totalCobrado || 0), Number(report?.summary.totalEsperado || 0))} del esperado.`}
           tone="success"
           icon={<Wallet size={18} />}
         />
         <AccountingStatCard
           eyebrow="Registros"
-          label="Falta por pagar"
-          value={loading ? "..." : fmt(contracts?.totalPendiente || 0)}
-          detail={`${getShare(Number(contracts?.totalPendiente || 0), Number(contracts?.totalEsperado || 0))} del esperado.`}
+          label="Pendiente por cobrar"
+          value={loading ? "..." : fmt(report?.summary.totalPendiente || 0)}
+          detail={`${getShare(Number(report?.summary.totalPendiente || 0), Number(report?.summary.totalEsperado || 0))} del esperado.`}
           tone="warning"
           icon={<Clock3 size={18} />}
         />
@@ -575,7 +593,7 @@ export default function CarteraPage() {
       )}
 
       {/* DataTable */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
+      <div className="apple-panel rounded-[24px] p-4 sm:p-6">
         {rows.length > 0 && (
           <div className="mb-3 flex justify-end">
             <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">

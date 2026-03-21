@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import { getServerReadCached } from "@/lib/server-read-cache";
+import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
 import type { EstadoClase, Rol, TipoClase } from "@/types/database";
 
@@ -25,6 +28,8 @@ type CountRow = {
   total: number | string | null;
 };
 
+const DASHBOARD_LIST_CACHE_TTL_MS = 45 * 1000;
+
 function parseInteger(value: string | null, fallback: number, min: number, max: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -45,6 +50,11 @@ export async function GET(request: Request) {
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
   }
+
+  const scope = {
+    escuelaId,
+    sedeId: perfil.sede_id,
+  };
 
   const values: Array<string | number> = [];
   const addValue = (value: string | number) => {
@@ -79,50 +89,64 @@ export async function GET(request: Request) {
   const limitRef = `$${values.length + 1}`;
   const offsetRef = `$${values.length + 2}`;
 
-  const [countRes, rowsRes] = await Promise.all([
-    pool.query<CountRow>(
-      `
-        select count(*)::int as total
-        from public.clases c
-        left join public.alumnos a on a.id = c.alumno_id
-        left join public.instructores i on i.id = c.instructor_id
-        where ${whereSql}
-      `,
-      values
-    ),
-    pool.query<ClaseRow>(
-      `
-        select
-          c.id,
-          c.alumno_id,
-          c.instructor_id,
-          c.vehiculo_id,
-          c.tipo,
-          c.fecha,
-          c.hora_inicio,
-          c.hora_fin,
-          c.estado,
-          c.notas,
-          c.created_at,
-          trim(concat_ws(' ', a.nombre, a.apellidos)) as alumno_nombre,
-          trim(concat_ws(' ', i.nombre, i.apellidos)) as instructor_nombre
-        from public.clases c
-        left join public.alumnos a on a.id = c.alumno_id
-        left join public.instructores i on i.id = c.instructor_id
-        where ${whereSql}
-        order by c.fecha desc, c.created_at desc
-        limit ${limitRef} offset ${offsetRef}
-      `,
-      [...values, pageSize, offset]
-    ),
-  ]);
+  const payload = await getServerReadCached({
+    key: buildDashboardListServerCacheKey("clases", perfil.id, scope, url.searchParams),
+    ttlMs: DASHBOARD_LIST_CACHE_TTL_MS,
+    tags: buildDashboardListCacheTags("clases", scope),
+    bypass: isFreshDashboardDataRequested(url.searchParams),
+    loader: async () => {
+      const [countRes, rowsRes] = await Promise.all([
+        pool.query<CountRow>(
+          `
+            select count(*)::int as total
+            from public.clases c
+            left join public.alumnos a on a.id = c.alumno_id
+            left join public.instructores i on i.id = c.instructor_id
+            where ${whereSql}
+          `,
+          values
+        ),
+        pool.query<ClaseRow>(
+          `
+            select
+              c.id,
+              c.alumno_id,
+              c.instructor_id,
+              c.vehiculo_id,
+              c.tipo,
+              c.fecha,
+              c.hora_inicio,
+              c.hora_fin,
+              c.estado,
+              c.notas,
+              c.created_at,
+              trim(concat_ws(' ', a.nombre, a.apellidos)) as alumno_nombre,
+              trim(concat_ws(' ', i.nombre, i.apellidos)) as instructor_nombre
+            from public.clases c
+            left join public.alumnos a on a.id = c.alumno_id
+            left join public.instructores i on i.id = c.instructor_id
+            where ${whereSql}
+            order by c.fecha desc, c.created_at desc
+            limit ${limitRef} offset ${offsetRef}
+          `,
+          [...values, pageSize, offset]
+        ),
+      ]);
 
-  return NextResponse.json({
-    totalCount: Number(countRes.rows[0]?.total || 0),
-    rows: rowsRes.rows.map((row) => ({
-      ...row,
-      alumno_nombre: row.alumno_nombre || "—",
-      instructor_nombre: row.instructor_nombre || "—",
-    })),
+      return {
+        totalCount: Number(countRes.rows[0]?.total || 0),
+        rows: rowsRes.rows.map((row) => ({
+          ...row,
+          alumno_nombre: row.alumno_nombre || "—",
+          instructor_nombre: row.instructor_nombre || "—",
+        })),
+      };
+    },
+  });
+
+  return NextResponse.json(payload, {
+    headers: {
+      "Cache-Control": "private, max-age=45, stale-while-revalidate=60",
+    },
   });
 }

@@ -1,87 +1,43 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { createClient } from "@/lib/supabase";
 import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import {
-  AccountingStatCard,
-  AccountingWorkspaceHeader,
-} from "@/components/dashboard/accounting/AccountingWorkspace";
-import DataTable from "@/components/dashboard/DataTable";
-import {
-  buildAccountingYears,
+  downloadCsv,
   formatAccountingMoney,
-  formatCompactDate,
-  getCurrentAccountingYear,
   MONTH_OPTIONS,
 } from "@/lib/accounting-dashboard";
+import { fetchDailyCashDashboard } from "@/lib/finance/daily-cash-service";
+import { AccountingWorkspaceHeader } from "@/components/dashboard/accounting/AccountingWorkspace";
+import ExportFormatActions from "@/components/dashboard/ExportFormatActions";
+import type { DailyCashRow, DailyCashStats } from "@/lib/finance/types";
+import { downloadSpreadsheetWorkbook } from "@/lib/spreadsheet-export";
 import {
-  fetchIngresosDiariosCalculados,
-  type IngresoDiarioRow,
-  type IngresoDiarioStats,
-} from "@/lib/ingresos-diarios";
-import type { Alumno, CategoriaIngreso, EstadoIngreso, MetodoPago } from "@/types/database";
-import { Banknote, Calendar, Star, TrendingUp, X } from "lucide-react";
-
-// ─── Types ───────────────────────────────────────────────────────────
-
-type AlumnoOption = Pick<Alumno, "id" | "nombre" | "apellidos">;
-
-// ─── Constants ───────────────────────────────────────────────────────
-
-const inputCls = "apple-input";
-const labelCls = "apple-label";
-
-const currentYear = getCurrentAccountingYear();
-const currentMonth = new Date().getMonth() + 1;
-const years = buildAccountingYears();
-
-const categorias: CategoriaIngreso[] = [
-  "matricula",
-  "mensualidad",
-  "clase_suelta",
-  "examen_teorico",
-  "examen_practico",
-  "examen_aptitud",
-  "material",
-  "tasas_dgt",
-  "otros",
-];
-
-const metodos: { value: MetodoPago; label: string }[] = [
-  { value: "efectivo", label: "Efectivo" },
-  { value: "datafono", label: "Datáfono" },
-  { value: "nequi", label: "Nequi" },
-  { value: "sistecredito", label: "Sistecrédito" },
-  { value: "otro", label: "Otro" },
-];
-
-const estadosIngreso: EstadoIngreso[] = ["cobrado", "pendiente", "anulado"];
-
-const emptyStats: IngresoDiarioStats = {
-  totalEfectivo: 0,
-  totalDatafono: 0,
-  totalNequi: 0,
-  totalSistecredito: 0,
-  totalOtro: 0,
-  totalRegistrado: 0,
-  diasConMovimientos: 0,
-  promedioPorDia: 0,
-  mejorDiaFecha: null,
-  mejorDiaMonto: 0,
-};
+  AlumnoOption,
+  currentMonth,
+  currentYear,
+  emptyStats,
+  years,
+} from "./constants";
+import {
+  CajaDiariaFiltersSection,
+  CajaDiariaLedgerSection,
+  CajaDiariaOverviewSection,
+} from "./CajaDiariaSections";
 
 // ─── Component ───────────────────────────────────────────────────────
 
 export default function CajaDiariaPage() {
   const { perfil } = useAuth();
   const fmt = (v: number) => formatAccountingMoney(Number(v || 0));
+  const defaultMonth = String(currentMonth).padStart(2, "0");
 
   // ─── Filters ──────────────────────────────────────────────────────
 
   const [filtroAlumno, setFiltroAlumno] = useState("");
-  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroMes, setFiltroMes] = useState(defaultMonth);
   const [filtroMetodo, setFiltroMetodo] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
@@ -94,7 +50,7 @@ export default function CajaDiariaPage() {
 
   const hayFiltros =
     filtroAlumno ||
-    filtroMes ||
+    filtroMes !== defaultMonth ||
     filtroMetodo ||
     filtroCategoria ||
     filtroEstado ||
@@ -102,7 +58,7 @@ export default function CajaDiariaPage() {
 
   const limpiarFiltros = () => {
     setFiltroAlumno("");
-    setFiltroMes("");
+    setFiltroMes(defaultMonth);
     setFiltroMetodo("");
     setFiltroCategoria("");
     setFiltroEstado("");
@@ -144,10 +100,11 @@ export default function CajaDiariaPage() {
 
   // ─── Data ─────────────────────────────────────────────────────────
 
-  const [rows, setRows] = useState<IngresoDiarioRow[]>([]);
-  const [stats, setStats] = useState<IngresoDiarioStats>(emptyStats);
+  const [rows, setRows] = useState<DailyCashRow[]>([]);
+  const [stats, setStats] = useState<DailyCashStats>(emptyStats);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "xls" | null>(null);
   const fetchIdRef = useRef(0);
 
   useEffect(() => {
@@ -158,17 +115,16 @@ export default function CajaDiariaPage() {
       setLoading(true);
       setError("");
       try {
-        const supabase = createClient();
-        const result = await fetchIngresosDiariosCalculados(supabase, {
-          escuelaId: perfil.escuela_id!,
-          alumnoId: filtroAlumno || undefined,
-          metodoPago: filtroMetodo || undefined,
-          categoria: filtroCategoria || undefined,
-          estado: (filtroEstado || undefined) as EstadoIngreso | undefined,
-          mes: filtroMes || undefined,
-          year: Number(filtroYear),
-          search: undefined,
+        const params = new URLSearchParams({
+          year: String(Number(filtroYear)),
         });
+        if (filtroMes) params.set("month", filtroMes);
+        if (filtroAlumno) params.set("alumno_id", filtroAlumno);
+        if (filtroMetodo) params.set("metodo", filtroMetodo);
+        if (filtroCategoria) params.set("categoria", filtroCategoria);
+        if (filtroEstado) params.set("estado", filtroEstado);
+
+        const result = await fetchDailyCashDashboard(params);
         if (fetchId !== fetchIdRef.current) return;
         setRows(result.rows);
         setStats(result.stats);
@@ -193,234 +149,115 @@ export default function CajaDiariaPage() {
     filtroYear,
   ]);
 
-  // ─── Table columns ────────────────────────────────────────────────
-
-  const columns = useMemo(
-    () => [
-      {
-        key: "fecha" as keyof IngresoDiarioRow,
-        label: "Fecha",
-        render: (row: IngresoDiarioRow) => (
-          <span className="font-medium">{formatCompactDate(row.fecha)}</span>
-        ),
-      },
-      {
-        key: "movimientos" as keyof IngresoDiarioRow,
-        label: "Mov.",
-        render: (row: IngresoDiarioRow) => <span>{row.movimientos}</span>,
-      },
-      {
-        key: "total_efectivo" as keyof IngresoDiarioRow,
-        label: "Efectivo",
-        render: (row: IngresoDiarioRow) => (
-          <span className="font-semibold text-green-600 dark:text-green-400">
-            {fmt(row.total_efectivo)}
-          </span>
-        ),
-      },
-      {
-        key: "total_datafono" as keyof IngresoDiarioRow,
-        label: "Datáfono",
-        render: (row: IngresoDiarioRow) => (
-          <span className="font-semibold text-blue-600 dark:text-blue-400">
-            {fmt(row.total_datafono)}
-          </span>
-        ),
-      },
-      {
-        key: "total_nequi" as keyof IngresoDiarioRow,
-        label: "Nequi",
-        render: (row: IngresoDiarioRow) => (
-          <span className="font-semibold text-purple-600 dark:text-purple-400">
-            {fmt(row.total_nequi)}
-          </span>
-        ),
-      },
-      {
-        key: "total_sistecredito" as keyof IngresoDiarioRow,
-        label: "Sistecrédito",
-        render: (row: IngresoDiarioRow) => (
-          <span className="font-semibold text-amber-600 dark:text-amber-400">
-            {fmt(row.total_sistecredito)}
-          </span>
-        ),
-      },
-      {
-        key: "total_otro" as keyof IngresoDiarioRow,
-        label: "Otro",
-        render: (row: IngresoDiarioRow) => (
-          <span className="font-semibold text-gray-500 dark:text-gray-400">
-            {fmt(row.total_otro)}
-          </span>
-        ),
-      },
-      {
-        key: "total_registrado" as keyof IngresoDiarioRow,
-        label: "Total del día",
-        render: (row: IngresoDiarioRow) => (
-          <span className="font-semibold">{fmt(row.total_registrado)}</span>
-        ),
-      },
-    ],
-    []
-  );
-
   // ─── Render ───────────────────────────────────────────────────────
 
   if (!perfil?.escuela_id) return null;
+
+  const selectedMonthLabel =
+    MONTH_OPTIONS.find((item) => item.value === filtroMes)?.label || "Mes actual";
+
+  const handleExport = async (format: "csv" | "xls") => {
+    if (rows.length === 0) return;
+    setExportingFormat(format);
+
+    const filenameBase = `caja-diaria-${filtroYear}-${filtroMes || "mes"}`;
+    const headers = [
+      "Fecha",
+      "Movimientos",
+      "Efectivo",
+      "Datafono",
+      "Nequi",
+      "Sistecredito",
+      "Otro",
+      "Total registrado",
+    ];
+    const exportRows = rows.map((row) => [
+      row.fecha,
+      row.movimientos,
+      row.total_efectivo,
+      row.total_datafono,
+      row.total_nequi,
+      row.total_sistecredito,
+      row.total_otro,
+      row.total_registrado,
+    ]);
+
+    try {
+      if (format === "csv") {
+        downloadCsv(`${filenameBase}.csv`, headers, exportRows);
+        return;
+      }
+
+      await downloadSpreadsheetWorkbook(`${filenameBase}.xls`, [
+        {
+          name: "Resumen caja",
+          headers: ["Indicador", "Valor"],
+          rows: [
+            ["Total efectivo", stats.totalEfectivo],
+            ["Total datafono", stats.totalDatafono],
+            ["Total Nequi", stats.totalNequi],
+            ["Total Sistecredito", stats.totalSistecredito],
+            ["Total otro", stats.totalOtro],
+            ["Total registrado", stats.totalRegistrado],
+            ["Dias con movimientos", stats.diasConMovimientos],
+            ["Promedio por dia", stats.promedioPorDia],
+          ],
+        },
+        {
+          name: "Detalle diario",
+          headers,
+          rows: exportRows,
+        },
+      ]);
+    } finally {
+      setExportingFormat(null);
+    }
+  };
 
   return (
     <div>
       <AccountingWorkspaceHeader
         badge="Control de caja"
         title="Caja diaria"
-        description="Consolidado diario de ingresos cobrados, desglosado por método de pago."
+        description={`Consolidado diario de ingresos cobrados para ${selectedMonthLabel.toLowerCase()}, desglosado por método de pago.`}
+        actions={
+          <ExportFormatActions
+            exportingFormat={exportingFormat}
+            disabled={rows.length === 0}
+            onExportCsv={() => void handleExport("csv")}
+            onExportXls={() => void handleExport("xls")}
+          />
+        }
       />
 
-      {/* Filters */}
-      <div className="mb-4 space-y-3 rounded-2xl border border-gray-100 bg-white p-4 sm:p-6 dark:border-gray-800 dark:bg-[#1d1d1f]">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <div>
-            <label className={labelCls}>Alumno</label>
-            <select
-              value={filtroAlumno}
-              onChange={(e) => setFiltroAlumno(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">Todos</option>
-              {alumnos.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.nombre} {a.apellidos}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Método de pago</label>
-            <select
-              value={filtroMetodo}
-              onChange={(e) => setFiltroMetodo(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">Todos</option>
-              {metodos.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Categoría</label>
-            <select
-              value={filtroCategoria}
-              onChange={(e) => setFiltroCategoria(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">Todas</option>
-              {categorias.map((c) => (
-                <option key={c} value={c}>
-                  {c.replace(/_/g, " ")}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Estado</label>
-            <select
-              value={filtroEstado}
-              onChange={(e) => setFiltroEstado(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">Todos</option>
-              {estadosIngreso.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Año</label>
-            <select
-              value={filtroYear}
-              onChange={(e) => {
-                setFiltroYear(e.target.value);
-                setFiltroMes("");
-              }}
-              className={inputCls}
-            >
-              {years.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Mes de {filtroYear}</label>
-            <select
-              value={filtroMes}
-              onChange={(e) => setFiltroMes(e.target.value)}
-              className={inputCls}
-            >
-              {mesesDelAno.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+      <CajaDiariaFiltersSection
+        filtroAlumno={filtroAlumno}
+        filtroMetodo={filtroMetodo}
+        filtroCategoria={filtroCategoria}
+        filtroEstado={filtroEstado}
+        filtroYear={filtroYear}
+        filtroMes={filtroMes}
+        alumnos={alumnos}
+        mesesDelAno={mesesDelAno}
+        years={years}
+        hayFiltros={Boolean(hayFiltros)}
+        onAlumnoChange={setFiltroAlumno}
+        onMetodoChange={setFiltroMetodo}
+        onCategoriaChange={setFiltroCategoria}
+        onEstadoChange={setFiltroEstado}
+        onYearChange={(value) => {
+          setFiltroYear(value);
+        }}
+        onMesChange={setFiltroMes}
+        onClearFilters={limpiarFiltros}
+      />
 
-        {hayFiltros && (
-          <div className="flex">
-            <button
-              onClick={limpiarFiltros}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs text-[#86868b] transition-colors hover:bg-red-50 hover:text-red-500 dark:border-gray-700 dark:hover:bg-red-900/20"
-            >
-              <X size={12} />
-              Limpiar filtros
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Stats */}
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <AccountingStatCard
-          eyebrow="Periodo"
-          label="Total cobrado"
-          value={loading ? "..." : fmt(stats.totalRegistrado)}
-          detail={`Efectivo: ${fmt(stats.totalEfectivo)} · Nequi: ${fmt(stats.totalNequi)}`}
-          tone="success"
-          icon={<Banknote size={18} />}
-        />
-        <AccountingStatCard
-          eyebrow="Periodo"
-          label="Promedio diario"
-          value={loading ? "..." : fmt(stats.promedioPorDia)}
-          detail={`${stats.diasConMovimientos} día${stats.diasConMovimientos === 1 ? "" : "s"} con movimiento.`}
-          tone="primary"
-          icon={<TrendingUp size={18} />}
-        />
-        <AccountingStatCard
-          eyebrow="Periodo"
-          label="Mejor día"
-          value={loading ? "..." : stats.mejorDiaFecha ? fmt(stats.mejorDiaMonto) : "—"}
-          detail={stats.mejorDiaFecha ? formatCompactDate(stats.mejorDiaFecha) : "Sin movimientos"}
-          tone="default"
-          icon={<Star size={18} />}
-        />
-        <AccountingStatCard
-          eyebrow="Periodo"
-          label="Días con movimiento"
-          value={loading ? "..." : String(stats.diasConMovimientos)}
-          detail={`Datáfono: ${fmt(stats.totalDatafono)} · Sistecrédito: ${fmt(stats.totalSistecredito)}`}
-          tone="default"
-          icon={<Calendar size={18} />}
-        />
-      </div>
+      <CajaDiariaOverviewSection
+        loading={loading}
+        stats={stats}
+        formatMoney={fmt}
+        periodLabel={selectedMonthLabel}
+      />
 
       {error && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
@@ -428,17 +265,7 @@ export default function CajaDiariaPage() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
-        <DataTable
-          columns={columns}
-          data={rows}
-          loading={loading}
-          searchPlaceholder="Buscar fecha..."
-          searchKeys={["fecha"]}
-          pageSize={12}
-        />
-      </div>
+      <CajaDiariaLedgerSection rows={rows} loading={loading} formatMoney={fmt} />
     </div>
   );
 }

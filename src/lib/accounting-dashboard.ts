@@ -1,3 +1,5 @@
+export { downloadCsv } from "@/lib/spreadsheet-export";
+
 export type AccountingSummary = {
   ingresosCobrados: number;
   ingresosPendientes: number;
@@ -187,6 +189,7 @@ export type AccountingReportResponse = {
   options: {
     escuelas: AccountingOptionSchool[];
     sedes: AccountingOptionSede[];
+    availableYears: number[];
   };
   summary: AccountingSummary;
   breakdown: {
@@ -273,39 +276,4 @@ export function buildAccountingYears(startYear = HISTORICAL_START_YEAR) {
   return Array.from({ length: currentYear - startYear + 1 }, (_, index) =>
     String(currentYear - index)
   );
-}
-
-export async function fetchAccountingReport(params: URLSearchParams) {
-  const response = await fetch(`/api/reportes/contables?${params.toString()}`, {
-    cache: "no-store",
-  });
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload?.error || "No se pudo cargar el resumen contable.");
-  }
-
-  return payload as AccountingReportResponse;
-}
-
-export function downloadCsv(
-  filename: string,
-  headers: string[],
-  rows: Array<Array<string | number | null>>
-) {
-  const CSV_DELIMITER = ";";
-  const escapeCell = (value: string | number | null) =>
-    `"${String(value ?? "").replace(/"/g, '""')}"`;
-  const csv = [
-    headers.map(escapeCell).join(CSV_DELIMITER),
-    ...rows.map((row) => row.map(escapeCell).join(CSV_DELIMITER)),
-  ].join("\n");
-
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
 }

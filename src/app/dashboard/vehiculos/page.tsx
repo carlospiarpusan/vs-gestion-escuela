@@ -9,7 +9,11 @@ import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
-import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
+import {
+  getDashboardCatalogCached,
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
 import type {
   Vehiculo,
   TipoVehiculo,
@@ -97,7 +101,6 @@ const tipoMantLabels: Record<TipoMantenimiento, string> = {
   otros: "Otros",
 };
 
-type InstructorRow = { id: string; nombre: string; apellidos: string };
 type MantenimientoRow = MantenimientoVehiculo & {
   vehiculo_nombre?: string;
   instructor_nombre?: string;
@@ -199,38 +202,33 @@ export default function VehiculosPage() {
   const loadCatalogs = useCallback(async () => {
     if (!perfil?.escuela_id) return;
 
-    const supabase = createClient();
-    const [vehiculosRows, instructoresRows, currentInstructor] = await Promise.all([
-      fetchAllSupabaseRows<Vehiculo>((from, to) =>
-        supabase
-          .from("vehiculos")
-          .select("*")
-          .eq("escuela_id", perfil.escuela_id)
-          .order("created_at", { ascending: false })
-          .range(from, to)
-          .then(({ data, error }) => ({ data: (data as Vehiculo[]) ?? [], error }))
-      ),
-      fetchAllSupabaseRows<InstructorRow>((from, to) =>
-        supabase
-          .from("instructores")
-          .select("id, nombre, apellidos")
-          .eq("escuela_id", perfil.escuela_id)
-          .order("nombre", { ascending: true })
-          .order("apellidos", { ascending: true })
-          .range(from, to)
-          .then(({ data, error }) => ({ data: (data as InstructorRow[]) ?? [], error }))
-      ),
-      isInstructor
-        ? supabase.from("instructores").select("id").eq("user_id", perfil.id).maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
-    ]);
+    const catalogs = await getDashboardCatalogCached<{
+      vehiculos: Vehiculo[];
+      instructores: Instructor[];
+      currentInstructorId: string | null;
+    }>({
+      name: "vehiculos-base",
+      scope: {
+        id: perfil.id,
+        rol: perfil.rol,
+        escuelaId: perfil.escuela_id,
+        sedeId: perfil.sede_id,
+      },
+      loader: async () => {
+        return fetchJsonWithRetry<{
+          vehiculos: Vehiculo[];
+          instructores: Instructor[];
+          currentInstructorId: string | null;
+        }>("/api/vehiculos/catalogos");
+      },
+    });
 
-    setVehiculos(vehiculosRows);
-    setInstructores(instructoresRows as Instructor[]);
+    setVehiculos(catalogs.vehiculos);
+    setInstructores(catalogs.instructores);
     if (isInstructor) {
-      setCurrentInstructorId(currentInstructor.data?.id ?? null);
+      setCurrentInstructorId(catalogs.currentInstructorId);
     }
-  }, [isInstructor, perfil?.escuela_id, perfil?.id]);
+  }, [isInstructor, perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
   const fetchVehiculosTable = useCallback(
     async (page = 0, search = "") => {
@@ -246,12 +244,17 @@ export default function VehiculosPage() {
         });
         if (search.trim()) params.set("q", search.trim());
 
-        const payload = await fetchJsonWithRetry<VehiculosListResponse>(
-          `/api/vehiculos?${params.toString()}`,
-          {
-            cache: "no-store",
-          }
-        );
+        const payload = await getDashboardListCached<VehiculosListResponse>({
+          name: "vehiculos-table",
+          scope: {
+            id: perfil?.id,
+            rol: perfil?.rol,
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          params,
+          loader: () => fetchJsonWithRetry<VehiculosListResponse>(`/api/vehiculos?${params.toString()}`),
+        });
 
         if (fetchId !== vehiculosFetchIdRef.current) return;
 
@@ -266,7 +269,7 @@ export default function VehiculosPage() {
         }
       }
     },
-    [perfil?.escuela_id]
+    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
   );
 
   const fetchBitacoraTable = useCallback(
@@ -283,12 +286,18 @@ export default function VehiculosPage() {
         });
         if (search.trim()) params.set("q", search.trim());
 
-        const payload = await fetchJsonWithRetry<MantenimientoListResponse>(
-          `/api/mantenimiento?${params.toString()}`,
-          {
-            cache: "no-store",
-          }
-        );
+        const payload = await getDashboardListCached<MantenimientoListResponse>({
+          name: "vehiculos-bitacora",
+          scope: {
+            id: perfil?.id,
+            rol: perfil?.rol,
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          params,
+          loader: () =>
+            fetchJsonWithRetry<MantenimientoListResponse>(`/api/mantenimiento?${params.toString()}`),
+        });
 
         if (fetchId !== mantenimientoFetchIdRef.current) return;
 
@@ -303,7 +312,7 @@ export default function VehiculosPage() {
         }
       }
     },
-    [perfil?.escuela_id]
+    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
   );
 
   const fetchHistorialVehiculo = useCallback(async (vehiculoId: string) => {
@@ -313,18 +322,24 @@ export default function VehiculosPage() {
         page: "0",
         pageSize: "200",
       });
-      const payload = await fetchJsonWithRetry<MantenimientoListResponse>(
-        `/api/mantenimiento?${params.toString()}`,
-        {
-          cache: "no-store",
-        }
-      );
+      const payload = await getDashboardListCached<MantenimientoListResponse>({
+        name: "vehiculos-historial",
+        scope: {
+          id: perfil?.id,
+          rol: perfil?.rol,
+          escuelaId: perfil?.escuela_id,
+          sedeId: perfil?.sede_id,
+        },
+        params,
+        loader: () =>
+          fetchJsonWithRetry<MantenimientoListResponse>(`/api/mantenimiento?${params.toString()}`),
+      });
       setHistorialRegistros(payload.rows || []);
     } catch {
       setHistorialRegistros([]);
       toast.error("No se pudo cargar el historial del vehículo.");
     }
-  }, []);
+  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
   useEffect(() => {
     if (!perfil?.escuela_id) return;
@@ -423,6 +438,11 @@ export default function VehiculosPage() {
       setSavingV(false);
       setModalVOpen(false);
       toast.success(editingV ? "Vehículo actualizado" : "Vehículo creado");
+      invalidateDashboardClientCaches([
+        "dashboard-catalog:vehiculos-base:",
+        "dashboard-list:vehiculos-table:",
+        "dashboard-list:vehiculos-historial:",
+      ]);
       await loadCatalogs();
       void fetchVehiculosTable(0, "");
     } catch (e: unknown) {
@@ -445,6 +465,11 @@ export default function VehiculosPage() {
       setDeleteVOpen(false);
       setDeletingV(null);
       toast.success("Vehículo eliminado");
+      invalidateDashboardClientCaches([
+        "dashboard-catalog:vehiculos-base:",
+        "dashboard-list:vehiculos-table:",
+        "dashboard-list:vehiculos-historial:",
+      ]);
       await loadCatalogs();
       void fetchVehiculosTable(0, "");
     } catch (e: unknown) {
@@ -575,6 +600,14 @@ export default function VehiculosPage() {
       setSavingM(false);
       setModalMOpen(false);
       toast.success(editingM ? "Registro actualizado" : "Registro creado");
+      invalidateDashboardClientCaches([
+        "dashboard-catalog:vehiculos-base:",
+        "dashboard-list:vehiculos-table:",
+        "dashboard-list:vehiculos-bitacora:",
+        "dashboard-list:vehiculos-historial:",
+        "dashboard-list:gastos-ledger:",
+        "accounting-report:",
+      ]);
       await loadCatalogs();
       void fetchVehiculosTable(0, "");
       void fetchBitacoraTable(0, "");
@@ -604,6 +637,14 @@ export default function VehiculosPage() {
       setDeleteMOpen(false);
       setDeletingM(null);
       toast.success("Registro eliminado");
+      invalidateDashboardClientCaches([
+        "dashboard-catalog:vehiculos-base:",
+        "dashboard-list:vehiculos-table:",
+        "dashboard-list:vehiculos-bitacora:",
+        "dashboard-list:vehiculos-historial:",
+        "dashboard-list:gastos-ledger:",
+        "accounting-report:",
+      ]);
       await loadCatalogs();
       void fetchVehiculosTable(0, "");
       void fetchBitacoraTable(0, "");

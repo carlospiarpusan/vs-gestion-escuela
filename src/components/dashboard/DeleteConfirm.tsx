@@ -59,7 +59,7 @@ export default function DeleteConfirm({
       )}
 
       {/* Mensaje de advertencia */}
-      <div className="text-sm text-[#86868b] mb-6">
+      <div className="apple-copy mb-6 text-sm">
         {description ?? <p>{message}</p>}
       </div>
 

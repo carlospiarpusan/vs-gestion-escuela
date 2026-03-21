@@ -18,14 +18,14 @@ export default function AccountingBreakdownCard({
   const maxValue = Math.max(...rows.map((row) => row.total), 0);
 
   return (
-    <div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1d1d1f] p-5">
+    <div className="apple-panel rounded-2xl p-5">
       <div className="mb-4">
-        <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{title}</h3>
-        <p className="text-sm text-[#86868b]">{subtitle}</p>
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+        <p className="text-sm text-[var(--gray-500)]">{subtitle}</p>
       </div>
       <div className="space-y-3">
         {rows.length === 0 ? (
-          <p className="text-sm text-[#86868b]">{emptyLabel}</p>
+          <p className="text-sm text-[var(--gray-500)]">{emptyLabel}</p>
         ) : (
           rows.map((row) => {
             const label = String(row[labelKey] || "Sin clasificar");
@@ -35,18 +35,18 @@ export default function AccountingBreakdownCard({
               <div key={`${labelKey}:${label}`} className="space-y-1.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{label}</p>
-                    <p className="text-xs text-[#86868b]">
+                    <p className="text-sm font-medium text-foreground">{label}</p>
+                    <p className="text-xs text-[var(--gray-500)]">
                       {row.cantidad} movimiento{row.cantidad !== 1 ? "s" : ""}
                     </p>
                   </div>
-                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  <p className="text-sm font-semibold text-foreground">
                     {formatAccountingMoney(row.total)}
                   </p>
                 </div>
-                <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                <div className="h-2 overflow-hidden rounded-full bg-[var(--surface-muted)]">
                   <div
-                    className="h-full rounded-full bg-[#0071e3]"
+                    className="h-full rounded-full bg-[var(--blue-apple)]"
                     style={{ width: `${Math.max(8, pct)}%` }}
                   />
                 </div>

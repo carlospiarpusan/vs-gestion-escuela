@@ -6,10 +6,19 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
 import DataTable from "@/components/dashboard/DataTable";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
+import FilterPanel from "@/components/dashboard/FilterPanel";
+import PageScaffold from "@/components/dashboard/PageScaffold";
+import SummaryRow from "@/components/dashboard/SummaryRow";
 import { fetchJsonWithRetry } from "@/lib/retry";
-import { fetchSchoolCategories } from "@/lib/school-categories";
+import {
+  getDashboardCatalogCached,
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
+import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
+import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import type { Ingreso, MetodoPago, TipoRegistroAlumno } from "@/types/database";
-import { BookOpen, DollarSign, Plus, X, Printer } from "lucide-react";
+import { BookOpen, DollarSign, Plus, Printer, UserRound, WalletCards, CalendarDays, AlertCircle, X } from "lucide-react";
 import { toast } from "sonner";
 import AlumnoModal from "./AlumnoModal";
 import MatriculaModal from "./MatriculaModal";
@@ -31,6 +40,12 @@ import {
   type MatriculaResumen,
 } from "./constants";
 
+type AlumnosCatalogosResponse = {
+  categoriasEscuela: string[];
+  tramitadorOptions: string[];
+  defaultSedeId: string | null;
+};
+
 export default function AlumnosPage() {
   const { perfil } = useAuth();
 
@@ -42,6 +57,7 @@ export default function AlumnosPage() {
   const [loading, setLoading] = useState(true);
   const [categoriasEscuela, setCategoriasEscuela] = useState<string[]>([]);
   const [tramitadorOptions, setTramitadorOptions] = useState<string[]>([]);
+  const [defaultSedeId, setDefaultSedeId] = useState<string | null>(null);
   const [filtrosTipo, setFiltrosTipo] = useState<TipoRegistroAlumno[]>([]);
   const [filtrosCat, setFiltrosCat] = useState<string[]>([]);
   const [filtroMes, setFiltroMes] = useState<string>("");
@@ -94,7 +110,8 @@ export default function AlumnosPage() {
       search = "",
       catFilters: string[] = [],
       typeFilters: TipoRegistroAlumno[] = [],
-      mesFilter: string = ""
+      mesFilter: string = "",
+      forceFresh = false
     ) => {
       if (!perfil?.escuela_id) return;
 
@@ -111,9 +128,19 @@ export default function AlumnosPage() {
       if (mesFilter) params.set("mes", mesFilter);
 
       try {
-        const payload = await fetchJsonWithRetry<AlumnosListResponse>(
-          `/api/alumnos?${params.toString()}`
-        );
+        const payload = await getDashboardListCached<AlumnosListResponse>({
+          name: "alumnos-table",
+          scope: {
+            id: perfil?.id,
+            rol: perfil?.rol,
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          params,
+          forceFresh,
+          loader: () =>
+            fetchJsonWithRetry<AlumnosListResponse>(`/api/alumnos?${params.toString()}`),
+        });
         if (fetchId !== fetchIdRef.current) return;
 
         setAlumnos(payload.rows || []);
@@ -129,7 +156,7 @@ export default function AlumnosPage() {
         }
       }
     },
-    [perfil?.escuela_id]
+    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
   );
 
   useEffect(() => {
@@ -138,75 +165,40 @@ export default function AlumnosPage() {
   }, [fetchAlumnos, perfil, currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes]);
 
   useEffect(() => {
-    if (!perfil?.escuela_id) return;
+    if (!perfil?.escuela_id || !perfil?.id) return;
 
     let cancelled = false;
 
-    const loadCategorias = async () => {
+    const loadCatalogos = async () => {
       try {
-        const categorias = await fetchSchoolCategories(perfil.escuela_id!);
-        if (!cancelled) {
-          setCategoriasEscuela(categorias);
-        }
+        const payload = await getDashboardCatalogCached<AlumnosCatalogosResponse>({
+          name: "alumnos-catalogos",
+          scope: {
+            id: perfil.id,
+            rol: perfil.rol,
+            escuelaId: perfil.escuela_id,
+            sedeId: perfil.sede_id,
+          },
+          loader: () => fetchJsonWithRetry<AlumnosCatalogosResponse>("/api/alumnos/catalogos"),
+        });
+        if (cancelled) return;
+        setCategoriasEscuela(payload.categoriasEscuela || []);
+        setTramitadorOptions(payload.tramitadorOptions || []);
+        setDefaultSedeId(payload.defaultSedeId || null);
       } catch {
-        if (!cancelled) {
-          setCategoriasEscuela([]);
-        }
+        if (cancelled) return;
+        setCategoriasEscuela([]);
+        setTramitadorOptions([]);
+        setDefaultSedeId(null);
       }
     };
 
-    void loadCategorias();
+    void loadCatalogos();
 
     return () => {
       cancelled = true;
     };
-  }, [perfil?.escuela_id]);
-
-  useEffect(() => {
-    if (!perfil?.escuela_id) return;
-
-    let cancelled = false;
-
-    const loadTramitadores = async () => {
-      try {
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from("gastos")
-          .select("proveedor")
-          .eq("escuela_id", perfil.escuela_id)
-          .eq("categoria", "tramitador")
-          .not("proveedor", "is", null)
-          .order("proveedor", { ascending: true })
-          .limit(200);
-
-        if (error) {
-          throw error;
-        }
-
-        if (!cancelled) {
-          setTramitadorOptions(
-            Array.from(
-              new Set(
-                ((data as Array<{ proveedor: string | null }> | null) || [])
-                  .map((row) => row.proveedor?.trim())
-                  .filter((value): value is string => Boolean(value))
-              )
-            )
-          );
-        }
-      } catch {
-        if (!cancelled) {
-          setTramitadorOptions([]);
-        }
-      }
-    };
-
-    void loadTramitadores();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [perfil?.escuela_id]);
+  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
   // ─── Callbacks ───────────────────────────────────────────────────────
 
@@ -321,7 +313,10 @@ export default function AlumnosPage() {
       dni: alumno.dni,
       email: alumno.email || "",
       telefono: alumno.telefono,
+      fecha_nacimiento: alumno.fecha_nacimiento || "",
       direccion: alumno.direccion || "",
+      ciudad: alumno.ciudad || "",
+      departamento: alumno.departamento || "",
       tipo_permiso: alumno.tipo_permiso,
       categorias: matricula?.categorias || alumno.categorias_resumen,
       estado: alumno.estado,
@@ -443,7 +438,8 @@ export default function AlumnosPage() {
 
     setSaving(true);
     try {
-      const sedeId = await resolveSedeId(perfil.escuela_id, perfil.sede_id);
+      const sedeId =
+        defaultSedeId || (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
       if (!sedeId) {
         toast.error("No se encontró una sede para esta escuela. Crea una sede primero.");
         setSaving(false);
@@ -462,7 +458,10 @@ export default function AlumnosPage() {
           dni: form.dni.trim(),
           email: form.email.trim() || null,
           telefono: form.telefono.trim(),
+          fecha_nacimiento: form.fecha_nacimiento || null,
           direccion: form.direccion.trim() || null,
+          ciudad: form.ciudad.trim() || null,
+          departamento: form.departamento.trim() || null,
           categorias: form.categorias,
           estado: form.estado,
           empresa_convenio: form.empresa_convenio.trim() || null,
@@ -485,7 +484,15 @@ export default function AlumnosPage() {
       clearAlumnoDraft(emptyForm);
       setModalOpen(false);
       toast.success(editing ? "Alumno actualizado" : "Alumno registrado");
-      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo);
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: true,
+          includeDashboard: true,
+        })
+      );
+      invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, true);
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -529,7 +536,9 @@ export default function AlumnosPage() {
     setMatriculaSaving(true);
     try {
       const sedeId =
-        matriculaAlumno.sede_id || (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
+        matriculaAlumno.sede_id ||
+        defaultSedeId ||
+        (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
       if (!sedeId) {
         toast.error("No se encontró una sede para esta escuela.");
         setMatriculaSaving(false);
@@ -560,7 +569,15 @@ export default function AlumnosPage() {
       setMatriculaAlumno(null);
       clearMatriculaDraft(emptyMatriculaForm);
       toast.success("Matrícula creada correctamente");
-      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo);
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: true,
+          includeDashboard: true,
+        })
+      );
+      invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, true);
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -621,7 +638,15 @@ export default function AlumnosPage() {
       setAbonoConcepto("");
       setAbonoFecha(new Date().toISOString().split("T")[0]);
       toast.success("Abono registrado con éxito");
-      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo);
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: true,
+          includeDashboard: true,
+        })
+      );
+      invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, true);
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -645,7 +670,15 @@ export default function AlumnosPage() {
       setDeleteOpen(false);
       setDeleting(null);
       toast.success("Alumno eliminado");
-      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo);
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: true,
+          includeDashboard: true,
+        })
+      );
+      invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, true);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar");
     } finally {
@@ -823,156 +856,183 @@ export default function AlumnosPage() {
     .filter((ingreso) => ingreso.estado === "cobrado")
     .reduce((sum, ingreso) => sum + Number(ingreso.monto), 0);
   const saldoPendienteAbono = valorTotalAbono - totalPagadoAbono;
+  const summaryItems = useMemo(
+    () => {
+      const regulares = alumnos.filter((row) => row.tipo_registro === "regular").length;
+      const servicios = alumnos.filter((row) => row.tipo_registro !== "regular").length;
+      const pendientes = alumnos.filter((row) => row.saldo_pendiente > 0).length;
+      const saldoVisible = alumnos.reduce((sum, row) => sum + Number(row.saldo_pendiente || 0), 0);
+
+      return [
+        {
+          id: "total",
+          label: "Registros filtrados",
+          value: String(totalCount || alumnos.length),
+          detail: `${alumnos.length} en esta página · ${regulares} regulares y ${servicios} especiales.`,
+          icon: <UserRound size={18} />,
+          tone: "primary" as const,
+        },
+        {
+          id: "saldo",
+          label: "Saldo visible",
+          value: `$${saldoVisible.toLocaleString("es-CO")}`,
+          detail: "Suma del pendiente mostrado en la tabla actual.",
+          icon: <WalletCards size={18} />,
+          tone: "warning" as const,
+        },
+        {
+          id: "pendientes",
+          label: "Pendientes en página",
+          value: String(pendientes),
+          detail: "Registros con saldo abierto para seguimiento.",
+          icon: <AlertCircle size={18} />,
+          tone: "danger" as const,
+        },
+        {
+          id: "periodo",
+          label: "Periodo activo",
+          value: filtroMes || "Todos",
+          detail: "Usa filtros para separar cohortes, cursos y servicios.",
+          icon: <CalendarDays size={18} />,
+          tone: "default" as const,
+        },
+      ];
+    },
+    [alumnos, filtroMes, totalCount]
+  );
 
   // ─── Render ─────────────────────────────────────────────────────────
 
   return (
-    <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Alumnos</h2>
-          <p className="mt-0.5 text-sm text-[#86868b]">
-            Gestiona alumnos regulares, procesos de aptitud y práctica adicional desde un solo lugar
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
-        >
+    <PageScaffold
+      eyebrow="Operación"
+      title="Alumnos"
+      description="Gestiona expedientes, matrículas, procesos de aptitud y prácticas adicionales desde una sola vista operativa."
+      actions={
+        <button onClick={openCreate} className="apple-button-primary text-sm">
           <Plus size={16} />
-          Nuevo Alumno
+          Nuevo alumno
         </button>
-      </div>
+      }
+    >
+      <SummaryRow items={summaryItems} columns={4} />
 
       {/* ========== Filters ========== */}
       {(() => {
         const hayFiltrosActivos =
           filtrosTipo.length > 0 || filtrosCat.length > 0 || filtroMes !== "";
         return (
-          <div className="mb-4 rounded-2xl border border-gray-100 bg-white px-4 py-4 dark:border-gray-800 dark:bg-[#1d1d1f]">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-xs font-semibold tracking-[0.18em] text-[#86868b] uppercase">
-                    Filtros de alumnos
-                  </p>
-                  <p className="mt-1 text-sm text-[#86868b]">
-                    Combina tipo de registro, mes y categorías para separar cursos, aptitudes y
-                    prácticas adicionales.
-                  </p>
-                </div>
-                {hayFiltrosActivos && (
-                  <button
-                    onClick={() => {
-                      setFiltrosTipo([]);
-                      setFiltrosCat([]);
-                      setFiltroMes("");
-                      setCurrentPage(0);
-                    }}
-                    className="inline-flex items-center gap-1 self-start rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#86868b] transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
-                  >
-                    <X size={11} />
-                    Limpiar filtros
-                  </button>
-                )}
+          <FilterPanel
+            title="Filtros de alumnos"
+            description="Combina periodo, tipo de registro y categorías para separar cursos, aptitudes y prácticas adicionales."
+            actions={
+              hayFiltrosActivos ? (
+                <button
+                  onClick={() => {
+                    setFiltrosTipo([]);
+                    setFiltrosCat([]);
+                    setFiltroMes("");
+                    setCurrentPage(0);
+                  }}
+                  className="apple-button-ghost text-xs"
+                >
+                  <X size={12} />
+                  Limpiar filtros
+                </button>
+              ) : null
+            }
+          >
+            <div className="md:col-span-2 xl:col-span-2">
+              <span className="mb-2 block text-xs font-medium text-[#86868b]">Periodo</span>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <select
+                  value={filtroMes.split("-")[0] || ""}
+                  onChange={(e) => {
+                    const newYear = e.target.value;
+                    const currentMonth = filtroMes.split("-")[1] || "";
+                    setFiltroMes(newYear ? (currentMonth ? `${newYear}-${currentMonth}` : newYear) : "");
+                    setCurrentPage(0);
+                  }}
+                  className="apple-select"
+                >
+                  <option value="">Todos los años</option>
+                  {YEAR_OPTIONS.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={filtroMes.split("-")[1] || ""}
+                  onChange={(e) => {
+                    const newMonth = e.target.value;
+                    const currentYear = filtroMes.split("-")[0] || String(new Date().getFullYear());
+                    setFiltroMes(newMonth ? `${currentYear}-${newMonth}` : currentYear);
+                    setCurrentPage(0);
+                  }}
+                  disabled={!(filtroMes.split("-")[0] || "")}
+                  className="apple-select"
+                >
+                  {MONTH_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
               </div>
+            </div>
 
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-medium text-[#86868b]">Periodo</span>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={filtroMes.split("-")[0] || ""}
-                    onChange={(e) => {
-                      const newYear = e.target.value;
-                      const currentMonth = filtroMes.split("-")[1] || "";
-                      setFiltroMes(
-                        newYear ? (currentMonth ? `${newYear}-${currentMonth}` : newYear) : ""
-                      );
-                      setCurrentPage(0);
-                    }}
-                    className="apple-input rounded-lg border border-gray-200 bg-gray-100 px-3 py-1.5 text-xs font-semibold text-[#86868b] hover:border-gray-300 focus:ring-2 focus:ring-[#0071e3]/20 focus:outline-none dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    <option value="">Todos los años</option>
-                    {YEAR_OPTIONS.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={filtroMes.split("-")[1] || ""}
-                    onChange={(e) => {
-                      const newMonth = e.target.value;
-                      const currentYear =
-                        filtroMes.split("-")[0] || String(new Date().getFullYear());
-                      setFiltroMes(newMonth ? `${currentYear}-${newMonth}` : currentYear);
-                      setCurrentPage(0);
-                    }}
-                    disabled={!(filtroMes.split("-")[0] || "")}
-                    className="apple-input rounded-lg border border-gray-200 bg-gray-100 px-3 py-1.5 text-xs font-semibold text-[#86868b] hover:border-gray-300 focus:ring-2 focus:ring-[#0071e3]/20 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    {MONTH_OPTIONS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <div className="md:col-span-2 xl:col-span-2">
+              <span className="mb-2 block text-xs font-medium text-[#86868b]">Tipo de registro</span>
+              <div className="flex flex-wrap items-center gap-2">
+                {tiposRegistroAlumno.map((tipo) => {
+                  const activo = filtrosTipo.includes(tipo.value);
+                  return (
+                    <button
+                      key={tipo.value}
+                      onClick={() => toggleFiltroTipo(tipo.value)}
+                      className={`rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
+                        activo
+                          ? "bg-[#0071e3] text-white"
+                          : "border border-[var(--surface-border)] bg-[var(--surface-strong)] text-[#66707a] hover:text-[#111214] dark:text-[#aeb6bf] dark:hover:text-[#f5f5f7]"
+                      }`}
+                    >
+                      {tipo.label}
+                    </button>
+                  );
+                })}
               </div>
+            </div>
 
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-medium text-[#86868b]">Tipo de registro</span>
+            <div className="md:col-span-2 xl:col-span-4">
+              <span className="mb-2 block text-xs font-medium text-[#86868b]">Categorías</span>
+              {categoriasFiltroDisponibles.length > 0 ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  {tiposRegistroAlumno.map((tipo) => {
-                    const activo = filtrosTipo.includes(tipo.value);
+                  {categoriasFiltroDisponibles.map((cat) => {
+                    const activo = filtrosCat.includes(cat);
                     return (
                       <button
-                        key={tipo.value}
-                        onClick={() => toggleFiltroTipo(tipo.value)}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        key={cat}
+                        onClick={() => toggleFiltroCat(cat)}
+                        className={`rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
                           activo
                             ? "bg-[#0071e3] text-white"
-                            : "bg-gray-100 text-[#86868b] hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700"
+                            : "border border-[var(--surface-border)] bg-[var(--surface-strong)] text-[#66707a] hover:text-[#111214] dark:text-[#aeb6bf] dark:hover:text-[#f5f5f7]"
                         }`}
                       >
-                        {tipo.label}
+                        {cat}
                       </button>
                     );
                   })}
                 </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-medium text-[#86868b]">Categorías</span>
-                {categoriasFiltroDisponibles.length > 0 ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {categoriasFiltroDisponibles.map((cat) => {
-                      const activo = filtrosCat.includes(cat);
-                      return (
-                        <button
-                          key={cat}
-                          onClick={() => toggleFiltroCat(cat)}
-                          className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
-                            activo
-                              ? "bg-[#0071e3] text-white"
-                              : "bg-gray-100 text-[#86868b] hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700"
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-xl bg-gray-50 px-3 py-2 text-xs text-[#86868b] dark:bg-[#141414]">
-                    El tipo seleccionado no trabaja con categorías. Usa este filtro para cursos
-                    regulares o aptitud.
-                  </div>
-                )}
-              </div>
+              ) : (
+                <div className="rounded-[18px] border border-[var(--surface-border)] bg-[var(--surface-strong)] px-3 py-3 text-xs text-[#66707a] dark:text-[#aeb6bf]">
+                  El tipo seleccionado no trabaja con categorías. Usa este filtro para cursos regulares o aptitud.
+                </div>
+              )}
             </div>
-          </div>
+          </FilterPanel>
         );
       })()}
 
@@ -992,6 +1052,50 @@ export default function AlumnosPage() {
           onPageChange={handlePageChange}
           onSearchChange={handleSearchChange}
           pageSize={PAGE_SIZE}
+          mobileCardRender={(row) => (
+            <div className="apple-panel-muted rounded-[24px] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#111214] dark:text-[#f5f5f7]">
+                    {row.nombre} {row.apellidos}
+                  </p>
+                  <p className="mt-1 text-xs text-[#66707a] dark:text-[#aeb6bf]">
+                    {row.dni} · {formatTipoRegistroLabel(row.tipo_registro)}
+                  </p>
+                </div>
+                <span className="rounded-full bg-[#0071e3]/10 px-2.5 py-1 text-[11px] font-semibold text-[#0071e3] dark:bg-[#0071e3]/15 dark:text-[#69a9ff]">
+                  {row.categorias_resumen.join(", ") || "Sin categoría"}
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7b8591]">
+                    Teléfono
+                  </p>
+                  <p className="mt-1 text-[#111214] dark:text-[#f5f5f7]">{row.telefono}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7b8591]">
+                    Valor total
+                  </p>
+                  <p className="mt-1 text-[#111214] dark:text-[#f5f5f7]">
+                    ${row.valor_total_resumen.toLocaleString("es-CO")}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7b8591]">
+                    Saldo pendiente
+                  </p>
+                  <p className="mt-1 font-semibold text-amber-600 dark:text-amber-400">
+                    {row.saldo_pendiente > 0
+                      ? `$${row.saldo_pendiente.toLocaleString("es-CO")}`
+                      : "Al día"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           extraActions={(row) => (
             <>
               {row.tipo_registro === "regular" && (
@@ -1095,6 +1199,6 @@ export default function AlumnosPage() {
         onConfirm={handleDelete}
         loading={saving}
       />
-    </div>
+    </PageScaffold>
   );
 }

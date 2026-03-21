@@ -230,6 +230,15 @@ export function buildQueryParts({
     );
   }
 
+  const buildStandaloneIncomeExists = (predicate: string) =>
+    `EXISTS (
+      SELECT 1
+      FROM ingresos i2
+      WHERE i2.alumno_id = a.id
+        AND i2.matricula_id IS NULL
+        AND ${predicate}
+    )`;
+
   switch (filters.ingresoView) {
     case "matriculas":
       ingresosWhere.push(
@@ -242,14 +251,22 @@ export function buildQueryParts({
         `i.categoria IN (${buildSqlInClause(PRACTICA_INCOME_CATEGORIES, addValue)})`
       );
       matriculasWhere.push("1 = 0");
-      standaloneWhere.push("a.tipo_registro = 'practica_adicional'");
+      standaloneWhere.push(
+        `(a.tipo_registro = 'practica_adicional' OR ${buildStandaloneIncomeExists(
+          `i2.categoria IN (${buildSqlInClause(PRACTICA_INCOME_CATEGORIES, addValue)})`
+        )})`
+      );
       break;
     case "examenes":
       ingresosWhere.push(
         `i.categoria IN (${buildSqlInClause(EXAMEN_INCOME_CATEGORIES, addValue)})`
       );
       matriculasWhere.push("1 = 0");
-      standaloneWhere.push("a.tipo_registro = 'aptitud_conductor'");
+      standaloneWhere.push(
+        `(a.tipo_registro = 'aptitud_conductor' OR ${buildStandaloneIncomeExists(
+          `i2.categoria IN (${buildSqlInClause(EXAMEN_INCOME_CATEGORIES, addValue)})`
+        )})`
+      );
       break;
     case "cobrado":
       ingresosWhere.push(`i.estado = ${addValue("cobrado")}`);
@@ -282,15 +299,25 @@ export function buildQueryParts({
         filters.ingresoCategoria as (typeof PRACTICA_INCOME_CATEGORIES)[number]
       )
     ) {
+      const ref = addValue(filters.ingresoCategoria);
       matriculasWhere.push("1 = 0");
-      standaloneWhere.push("a.tipo_registro = 'practica_adicional'");
+      standaloneWhere.push(
+        `(a.tipo_registro = 'practica_adicional' OR ${buildStandaloneIncomeExists(
+          `i2.categoria = ${ref}`
+        )})`
+      );
     } else if (
       EXAMEN_INCOME_CATEGORIES.includes(
         filters.ingresoCategoria as (typeof EXAMEN_INCOME_CATEGORIES)[number]
       )
     ) {
+      const ref = addValue(filters.ingresoCategoria);
       matriculasWhere.push("1 = 0");
-      standaloneWhere.push("a.tipo_registro = 'aptitud_conductor'");
+      standaloneWhere.push(
+        `(a.tipo_registro = 'aptitud_conductor' OR ${buildStandaloneIncomeExists(
+          `i2.categoria = ${ref}`
+        )})`
+      );
     }
   }
 
@@ -470,6 +497,8 @@ export function buildQueryParts({
     filtered_ingresos AS (
         SELECT
           i.id,
+          i.alumno_id,
+          i.matricula_id,
           i.fecha,
           coalesce(i.fecha_vencimiento, i.fecha) as fecha_vencimiento,
           i.categoria,
@@ -561,6 +590,41 @@ export function buildQueryParts({
         ) pagos ON true
         WHERE a.tipo_registro IN ('aptitud_conductor', 'practica_adicional')
           AND ${standaloneWhere.join(" AND ")}
+
+        UNION ALL
+
+        SELECT
+          ('ingreso:' || fi.id::text) AS obligation_id,
+          NULL::uuid AS alumno_id,
+          CASE
+            WHEN fi.categoria IN (${buildSqlInClause(PRACTICA_INCOME_CATEGORIES, addValue)}) THEN 'practica_adicional'
+            WHEN fi.categoria IN (${buildSqlInClause(EXAMEN_INCOME_CATEGORIES, addValue)}) THEN 'aptitud_conductor'
+            ELSE 'regular'
+          END AS tipo_registro,
+          fi.fecha::date AS fecha_registro,
+          COALESCE(NULLIF(TRIM(fi.numero_factura), ''), NULLIF(TRIM(fi.concepto), ''), 'Ingreso directo') AS referencia,
+          COALESCE(NULLIF(TRIM(fi.concepto), ''), 'Ingreso directo') AS nombre,
+          fi.documento,
+          CASE
+            WHEN fi.estado = 'anulado' THEN 0::numeric
+            ELSE COALESCE(fi.monto, 0)::numeric
+          END AS valor_esperado,
+          CASE
+            WHEN fi.estado = 'cobrado' THEN COALESCE(fi.monto, 0)::numeric
+            ELSE 0::numeric
+          END AS valor_cobrado,
+          CASE
+            WHEN fi.estado = 'pendiente' THEN COALESCE(fi.monto, 0)::numeric
+            ELSE 0::numeric
+          END AS saldo_pendiente,
+          COALESCE(fi.fecha_vencimiento, fi.fecha)::date AS fecha_referencia,
+          '{}'::text[] AS categorias
+        FROM filtered_ingresos fi
+        WHERE fi.alumno_id IS NULL
+          AND fi.matricula_id IS NULL
+          AND fi.categoria IN (
+            ${buildSqlInClause([...PRACTICA_INCOME_CATEGORIES, ...EXAMEN_INCOME_CATEGORIES], addValue)}
+          )
       )
     `,
   };
@@ -609,7 +673,7 @@ export async function buildCsvResponse({
   to: string;
   ledgerTipo: "ingreso" | "gasto" | null;
 }) {
-  const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}`;
+  const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`;
   const ledgerRes = await pool.query<LedgerRow & { created_at: string }>(
     `
       ${cte}

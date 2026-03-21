@@ -20,6 +20,12 @@ import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
+import {
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
+import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
+import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import { fetchSchoolCategories } from "@/lib/school-categories";
 import type { Instructor, EstadoInstructor } from "@/types/database";
 import { Plus } from "lucide-react";
@@ -94,10 +100,17 @@ export default function InstructoresPage() {
 
         if (search.trim()) params.set("q", search.trim());
 
-        const payload = await fetchJsonWithRetry<InstructoresListResponse>(
-          `/api/instructores?${params.toString()}`,
-          { cache: "no-store" }
-        );
+        const payload = await getDashboardListCached<InstructoresListResponse>({
+          name: "instructores-table",
+          scope: {
+            id: perfil.id,
+            rol: perfil.rol,
+            escuelaId: perfil.escuela_id,
+            sedeId: perfil.sede_id,
+          },
+          params,
+          loader: () => fetchJsonWithRetry<InstructoresListResponse>(`/api/instructores?${params.toString()}`),
+        });
 
         if (fetchId !== fetchIdRef.current) return;
 
@@ -308,7 +321,18 @@ export default function InstructoresPage() {
       setSaving(false);
       setModalOpen(false);
       toast.success(editing ? "Instructor actualizado" : "Instructor creado");
-      fetchData(currentPage, searchTerm);
+      invalidateDashboardClientCaches();
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: {
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
+      void fetchData(currentPage, searchTerm);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al guardar.";
       toast.error(message);
@@ -336,7 +360,18 @@ export default function InstructoresPage() {
       setDeleteOpen(false);
       setDeleting(null);
       toast.success("Instructor eliminado");
-      fetchData(currentPage, searchTerm);
+      invalidateDashboardClientCaches();
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: {
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
+      void fetchData(currentPage, searchTerm);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al eliminar.";
       toast.error(message);

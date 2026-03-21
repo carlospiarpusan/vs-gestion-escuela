@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient } from "@/lib/supabase";
+import { fetchJsonWithRetry } from "@/lib/retry";
 
 const categoriesCache = new Map<string, string[]>();
 const pendingRequests = new Map<string, Promise<string[]>>();
@@ -13,16 +13,10 @@ export async function fetchSchoolCategories(escuelaId: string) {
   if (pending) return pending;
 
   const request = (async () => {
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("escuelas")
-      .select("categorias")
-      .eq("id", escuelaId)
-      .single();
-
-    if (error) throw error;
-
-    const categories = data?.categorias || [];
+    const payload = await fetchJsonWithRetry<{ categorias: string[] }>(
+      `/api/escuelas/categorias?escuela_id=${encodeURIComponent(escuelaId)}`
+    );
+    const categories = payload.categorias || [];
     categoriesCache.set(escuelaId, categories);
     pendingRequests.delete(escuelaId);
     return categories;

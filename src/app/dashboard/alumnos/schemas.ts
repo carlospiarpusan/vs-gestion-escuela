@@ -6,6 +6,7 @@ export const alumnoSchema = z.object({
   dni: z.string().min(5, "La cédula debe tener al menos 5 caracteres."),
   telefono: z.string().min(7, "El teléfono debe tener al menos 7 dígitos."),
   email: z.string().email("Correo electrónico inválido.").or(z.literal("")).optional(),
+  fecha_nacimiento: z.string().optional(),
   valor_total: z
     .string()
     .refine(

@@ -28,6 +28,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { X } from "lucide-react";
+import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
 
 interface ModalProps {
   open: boolean;
@@ -35,6 +36,7 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   maxWidth?: string;
+  mobilePresentation?: "sheet" | "fullscreen";
 }
 
 export default function Modal({
@@ -43,7 +45,9 @@ export default function Modal({
   title,
   children,
   maxWidth = "max-w-lg",
+  mobilePresentation = "sheet",
 }: ModalProps) {
+  const isMobile = useIsMobileVariant();
   const overlayRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -71,10 +75,14 @@ export default function Modal({
   // No renderizar nada si el modal está cerrado
   if (!open) return null;
 
+  const isFullscreenMobile = isMobile && mobilePresentation === "fullscreen";
+
   return (
     <div
       ref={overlayRef}
-      className="apple-overlay fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className={`apple-overlay fixed inset-0 z-50 flex justify-center ${
+        isFullscreenMobile ? "items-stretch p-0" : "items-end p-0 sm:items-center sm:p-4"
+      }`}
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
@@ -83,12 +91,16 @@ export default function Modal({
       aria-labelledby="modal-title"
     >
       <div
-        className={`apple-panel w-full ${maxWidth} max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden rounded-t-[2rem] sm:rounded-[2rem] animate-scale-in shadow-[var(--surface-shadow-strong)]`}
+        className={`apple-panel w-full ${
+          isFullscreenMobile
+            ? "h-[100dvh] max-w-none rounded-none"
+            : `${maxWidth} max-h-[96dvh] rounded-t-[2rem] sm:max-h-[90vh] sm:rounded-[2rem]`
+        } flex flex-col overflow-hidden animate-scale-in shadow-[var(--surface-shadow-strong)]`}
       >
-        <div className="flex items-center justify-between px-5 sm:px-7 py-4 sm:py-5 shrink-0">
+        <div className="flex shrink-0 items-center justify-between px-5 py-4 sm:px-7 sm:py-5">
           <h3
             id="modal-title"
-            className="text-lg sm:text-xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7] pr-2 truncate"
+            className="pr-2 truncate text-lg font-semibold tracking-tight text-foreground sm:text-xl"
           >
             {title}
           </h3>
@@ -97,11 +109,11 @@ export default function Modal({
             className="apple-icon-button shrink-0"
             aria-label="Cerrar modal"
           >
-            <X size={16} className="text-[#86868b]" />
+            <X size={16} className="text-[var(--gray-500)]" />
           </button>
         </div>
 
-        <div className="px-5 sm:px-7 pb-6 overflow-y-auto">
+        <div className="overflow-y-auto px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-7 sm:pb-6">
           <div className="apple-divider mb-5" />
           {children}
         </div>

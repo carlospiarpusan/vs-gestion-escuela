@@ -2,11 +2,14 @@
 
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
+import { fetchJsonWithRetry } from "@/lib/retry";
+import {
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
 import type { CategoriaExamen, Examen, PreguntaExamen, RespuestaExamen } from "@/types/database";
 import {
   AlertCircle,
@@ -22,8 +25,6 @@ import {
   XCircle,
 } from "lucide-react";
 import {
-  CALE_BANK_SOURCE,
-  CALE_EXAM_NOTES_PREFIX,
   CALE_PASSING_PERCENTAGE,
   CALE_QUESTION_COUNT_OPTIONS,
   formatElapsedTime,
@@ -119,6 +120,15 @@ type StoredPracticeResponse = Pick<
   | "explicacion"
   | "fundamento_legal"
 >;
+type StoredReviewPayload = {
+  exam: Examen;
+  rows: StoredPracticeResponse[];
+};
+type ExamenesDashboardResponse = {
+  categories: CategoriaResumen[];
+  history: Examen[];
+  review: StoredReviewPayload | null;
+};
 
 function isIntentoCale(value: IntentoCale | null): value is IntentoCale {
   return Boolean(value);
@@ -209,38 +219,19 @@ function buildStoredPracticeResult(
   };
 }
 
-async function fetchCaleCategoriesWithCounts(): Promise<CategoriaResumen[]> {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from("categorias_examen")
-    .select("*")
-    .eq("fuente", CALE_BANK_SOURCE)
-    .order("orden");
-
-  if (error) throw error;
-
-  const categories = ((data as CategoriaExamen[]) || []).filter(
-    (item) => item.fuente === CALE_BANK_SOURCE
-  );
-  const withCounts = await Promise.all(
-    categories.map(async (category) => {
-      const { count, error: countError } = await supabase
-        .from("preguntas_examen")
-        .select("id", { count: "exact", head: true })
-        .eq("fuente", CALE_BANK_SOURCE)
-        .eq("activa", true)
-        .eq("categoria_id", category.id);
-
-      if (countError) throw countError;
+function mapIntentosCale(exams: Examen[]): IntentoCale[] {
+  return (exams || [])
+    .map((exam): IntentoCale | null => {
+      const meta = parseCaleExamNotes(exam.notas);
+      if (!meta) return null;
 
       return {
-        ...category,
-        questionCount: count ?? 0,
+        ...exam,
+        alumno_nombre: "",
+        meta,
       };
     })
-  );
-
-  return withCounts;
+    .filter(isIntentoCale);
 }
 
 export default function ExamenesPage() {
@@ -287,6 +278,7 @@ function BancoCaleView() {
 }
 
 function AlumnoEntrenamientoView() {
+  const { perfil } = useAuth();
   const [categories, setCategories] = useState<CategoriaResumen[]>([]);
   const [history, setHistory] = useState<IntentoCale[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
@@ -308,19 +300,56 @@ function AlumnoEntrenamientoView() {
   const unansweredCount = Math.max(sessionQuestions.length - answeredCount, 0);
   const inSession = sessionQuestions.length > 0 && sessionStartedAt !== null;
 
+  const loadDashboard = useCallback(
+    async ({
+      examId,
+      fresh = false,
+    }: {
+      examId?: string;
+      fresh?: boolean;
+    } = {}) => {
+      if (!perfil?.id) {
+        return {
+          categories: [],
+          history: [],
+          review: null,
+        } satisfies ExamenesDashboardResponse;
+      }
+
+      const params = new URLSearchParams();
+      if (examId) params.set("examId", examId);
+      if (fresh) params.set("fresh", "1");
+
+      return getDashboardListCached<ExamenesDashboardResponse>({
+        name: "examenes-dashboard",
+        scope: {
+          id: perfil.id,
+          rol: perfil.rol,
+          escuelaId: perfil.escuela_id,
+          sedeId: perfil.sede_id,
+        },
+        params,
+        forceFresh: fresh,
+        loader: () =>
+          fetchJsonWithRetry<ExamenesDashboardResponse>(
+            `/api/examenes/dashboard${params.toString() ? `?${params.toString()}` : ""}`
+          ),
+      });
+    },
+    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
+  );
+
   useEffect(() => {
+    if (!perfil?.id) return;
     let active = true;
 
     const load = async () => {
       try {
-        const [categoryData, historyData] = await Promise.all([
-          fetchCaleCategoriesWithCounts(),
-          fetchMyCaleHistory(),
-        ]);
+        const payload = await loadDashboard();
 
         if (!active) return;
-        setCategories(categoryData);
-        setHistory(historyData);
+        setCategories(payload.categories || []);
+        setHistory(mapIntentosCale(payload.history || []));
         setError("");
       } catch (loadError) {
         console.error("[ExamenesPage] Error preparando práctica CALE:", loadError);
@@ -334,7 +363,7 @@ function AlumnoEntrenamientoView() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadDashboard, perfil?.id]);
 
   useEffect(() => {
     if (!inSession || !sessionStartedAt) return undefined;
@@ -430,7 +459,9 @@ function AlumnoEntrenamientoView() {
       setCurrentIndex(0);
       setAnswers({});
       setElapsedSeconds(0);
-      setHistory(await fetchMyCaleHistory());
+      invalidateDashboardClientCaches("dashboard-list:examenes-dashboard:");
+      const refreshed = await loadDashboard({ fresh: true });
+      setHistory(mapIntentosCale(refreshed.history || []));
     } catch (submitError) {
       console.error("[ExamenesPage] Error enviando práctica:", submitError);
       setError(
@@ -446,7 +477,10 @@ function AlumnoEntrenamientoView() {
     setError("");
 
     try {
-      const review = await fetchCaleExamReview(examId);
+      const payload = await loadDashboard({ examId, fresh: true });
+      const review = payload.review
+        ? buildStoredPracticeResult(payload.review.exam, payload.review.rows)
+        : null;
 
       if (!review) {
         throw new Error("No se pudo recuperar la revisión guardada de este simulacro.");
@@ -993,62 +1027,6 @@ function AlumnoEntrenamientoView() {
   }
 
   return <Spinner />;
-}
-
-async function fetchCaleExamReview(examId: string): Promise<PracticeResultPayload | null> {
-  const supabase = createClient();
-  const [examRes, responsesRes] = await Promise.all([
-    supabase.from("examenes").select("*").eq("id", examId).maybeSingle(),
-    supabase
-      .from("respuestas_examen")
-      .select(
-        "pregunta_id, orden_pregunta, respuesta_alumno, respuesta_omitida, es_correcta, categoria_nombre, pregunta_texto, imagen_url, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta, explicacion, fundamento_legal"
-      )
-      .eq("examen_id", examId)
-      .order("orden_pregunta", { ascending: true })
-      .order("created_at", { ascending: true }),
-  ]);
-
-  if (examRes.error) throw examRes.error;
-  if (responsesRes.error) throw responsesRes.error;
-
-  if (!examRes.data) return null;
-
-  const review = buildStoredPracticeResult(
-    examRes.data as Examen,
-    (responsesRes.data as StoredPracticeResponse[]) || []
-  );
-
-  return review;
-}
-
-async function fetchMyCaleHistory(): Promise<IntentoCale[]> {
-  const supabase = createClient();
-  const data = await fetchAllSupabaseRows<Examen>((from, to) =>
-    supabase
-      .from("examenes")
-      .select("*")
-      .like("notas", `${CALE_EXAM_NOTES_PREFIX}%`)
-      .order("created_at", { ascending: false })
-      .range(from, to)
-      .then(({ data: rows, error }) => ({
-        data: (rows as Examen[]) ?? [],
-        error,
-      }))
-  );
-
-  return ((data as Examen[]) || [])
-    .map((exam): IntentoCale | null => {
-      const meta = parseCaleExamNotes(exam.notas);
-      if (!meta) return null;
-
-      return {
-        ...exam,
-        alumno_nombre: "",
-        meta,
-      };
-    })
-    .filter(isIntentoCale);
 }
 
 function StatCard({

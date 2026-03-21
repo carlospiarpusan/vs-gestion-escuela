@@ -74,6 +74,29 @@ type ImapConnectionConfig = {
   mailbox: string;
 };
 
+type EncryptionSeedSource = "primary" | "legacy" | "compatibility";
+
+type EncryptionSeed = {
+  seed: string;
+  fingerprint: string;
+  source: EncryptionSeedSource;
+};
+
+type ParsedEncryptedSecret = {
+  version: "legacy" | "v2";
+  fingerprint: string | null;
+  ivB64: string;
+  authTagB64: string;
+  encryptedB64: string;
+};
+
+type DecryptedSecretResult = {
+  value: string;
+  seed: EncryptionSeed;
+  parsed: ParsedEncryptedSecret;
+  requiresReencryption: boolean;
+};
+
 function normalizeText(value: string | null | undefined) {
   const trimmed = (value || "").trim();
   return trimmed.length > 0 ? trimmed : "";
@@ -94,7 +117,19 @@ function deriveEncryptionKey(seed: string) {
   return createHash("sha256").update(seed).digest();
 }
 
-function getPrimaryEncryptionSeed() {
+function fingerprintEncryptionSeed(seed: string) {
+  return createHash("sha256").update(seed).digest("hex").slice(0, 16);
+}
+
+function getCompatibilityEncryptionSeed() {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
+}
+
+function hasDedicatedEncryptionSeed() {
+  return Boolean(process.env.EMAIL_INVOICE_ENCRYPTION_KEY?.trim());
+}
+
+function getDedicatedEncryptionSeed() {
   const seed = process.env.EMAIL_INVOICE_ENCRYPTION_KEY?.trim();
   if (!seed) {
     throw new Error(
@@ -104,10 +139,35 @@ function getPrimaryEncryptionSeed() {
   return seed;
 }
 
-function getDecryptionSeeds() {
-  const primarySeed = process.env.EMAIL_INVOICE_ENCRYPTION_KEY?.trim();
-  const legacySeed = process.env.EMAIL_INVOICE_LEGACY_ENCRYPTION_KEY?.trim();
-  const seeds = [primarySeed, legacySeed].filter((value): value is string => Boolean(value));
+function getConfiguredDecryptionSeeds() {
+  const rawSeeds: Array<{ seed: string; source: EncryptionSeedSource }> = [
+    {
+      seed: process.env.EMAIL_INVOICE_ENCRYPTION_KEY?.trim() || "",
+      source: "primary",
+    },
+    {
+      seed: process.env.EMAIL_INVOICE_LEGACY_ENCRYPTION_KEY?.trim() || "",
+      source: "legacy",
+    },
+    {
+      seed: getCompatibilityEncryptionSeed(),
+      source: "compatibility",
+    },
+  ];
+
+  const seen = new Set<string>();
+  const seeds: EncryptionSeed[] = [];
+  for (const candidate of rawSeeds) {
+    if (!candidate.seed) continue;
+    const fingerprint = fingerprintEncryptionSeed(candidate.seed);
+    if (seen.has(fingerprint)) continue;
+    seen.add(fingerprint);
+    seeds.push({
+      seed: candidate.seed,
+      fingerprint,
+      source: candidate.source,
+    });
+  }
 
   if (seeds.length === 0) {
     throw new Error(
@@ -119,41 +179,135 @@ function getDecryptionSeeds() {
 }
 
 function encryptSecret(value: string) {
+  const seed = getDedicatedEncryptionSeed();
+  const fingerprint = fingerprintEncryptionSeed(seed);
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", deriveEncryptionKey(getPrimaryEncryptionSeed()), iv);
+  const cipher = createCipheriv("aes-256-gcm", deriveEncryptionKey(seed), iv);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
-  return `${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted.toString("base64")}`;
+  return `v2:${fingerprint}:${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted.toString("base64")}`;
 }
 
-function decryptSecret(value: string) {
-  const [ivB64, authTagB64, encryptedB64] = value.split(":");
-  if (!ivB64 || !authTagB64 || !encryptedB64) {
-    throw new Error("La credencial cifrada del correo no es valida.");
+function parseEncryptedSecret(value: string): ParsedEncryptedSecret {
+  const parts = value.split(":");
+  if (parts.length === 5 && parts[0] === "v2") {
+    const [, fingerprint, ivB64, authTagB64, encryptedB64] = parts;
+    if (!fingerprint || !ivB64 || !authTagB64 || !encryptedB64) {
+      throw new Error("La credencial cifrada del correo no es valida.");
+    }
+    return {
+      version: "v2",
+      fingerprint,
+      ivB64,
+      authTagB64,
+      encryptedB64,
+    };
   }
 
-  for (const seed of getDecryptionSeeds()) {
+  if (parts.length === 3) {
+    const [ivB64, authTagB64, encryptedB64] = parts;
+    if (!ivB64 || !authTagB64 || !encryptedB64) {
+      throw new Error("La credencial cifrada del correo no es valida.");
+    }
+    return {
+      version: "legacy",
+      fingerprint: null,
+      ivB64,
+      authTagB64,
+      encryptedB64,
+    };
+  }
+
+  throw new Error("La credencial cifrada del correo no es valida.");
+}
+
+function decryptSecretDetailed(value: string): DecryptedSecretResult {
+  const parsed = parseEncryptedSecret(value);
+  const configuredSeeds = getConfiguredDecryptionSeeds();
+  const orderedSeeds = parsed.fingerprint
+    ? [
+        ...configuredSeeds.filter((seed) => seed.fingerprint === parsed.fingerprint),
+        ...configuredSeeds.filter((seed) => seed.fingerprint !== parsed.fingerprint),
+      ]
+    : configuredSeeds;
+
+  for (const seedConfig of orderedSeeds) {
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",
-        deriveEncryptionKey(seed),
-        Buffer.from(ivB64, "base64")
+        deriveEncryptionKey(seedConfig.seed),
+        Buffer.from(parsed.ivB64, "base64")
       );
-      decipher.setAuthTag(Buffer.from(authTagB64, "base64"));
+      decipher.setAuthTag(Buffer.from(parsed.authTagB64, "base64"));
       const decrypted = Buffer.concat([
-        decipher.update(Buffer.from(encryptedB64, "base64")),
+        decipher.update(Buffer.from(parsed.encryptedB64, "base64")),
         decipher.final(),
       ]);
-      return decrypted.toString("utf8");
+      return {
+        value: decrypted.toString("utf8"),
+        seed: seedConfig,
+        parsed,
+        requiresReencryption:
+          parsed.version !== "v2" || seedConfig.source !== "primary" || !parsed.fingerprint,
+      };
     } catch {
       // Try the next configured key before failing definitively.
     }
+  }
+
+  if (parsed.fingerprint && !configuredSeeds.some((seed) => seed.fingerprint === parsed.fingerprint)) {
+    throw new Error(
+      "No se encontro la llave que protege la credencial de correo. Define EMAIL_INVOICE_LEGACY_ENCRYPTION_KEY o vuelve a guardar la app password."
+    );
   }
 
   throw new Error(
     "No se pudo descifrar la credencial de correo con las claves configuradas. Si migraste desde una clave anterior, define EMAIL_INVOICE_LEGACY_ENCRYPTION_KEY."
   );
 }
+
+function decryptSecret(value: string) {
+  const decrypted = decryptSecretDetailed(value);
+  if (!decrypted.value) {
+    throw new Error("La credencial cifrada del correo no es valida.");
+  }
+  return decrypted.value;
+}
+
+function encryptSecretWithPrimaryIfAvailable(value: string) {
+  if (!hasDedicatedEncryptionSeed()) return null;
+  return encryptSecret(value);
+}
+
+function resolveCredentialRecoveryError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("No se encontro la llave que protege la credencial de correo")) {
+    return new Error(
+      "La app password guardada fue cifrada con una llave anterior que ya no esta disponible. Edita la conexion del correo e ingresa de nuevo la app password para recuperarla."
+    );
+  }
+
+  if (message.includes("No se pudo descifrar la credencial de correo")) {
+    return new Error(
+      "No se pudo leer la app password guardada. Edita la conexion del correo e ingresa de nuevo la app password para volver a cifrarla con la clave actual."
+    );
+  }
+
+  if (message.includes("No hay claves de descifrado configuradas para la conexion de correo")) {
+    return new Error(
+      "No se puede leer la app password guardada porque faltan claves de cifrado en el servidor. Configura EMAIL_INVOICE_ENCRYPTION_KEY o vuelve a conectar el correo con una app password nueva."
+    );
+  }
+
+  return error instanceof Error ? error : new Error("No se pudo procesar la credencial de correo.");
+}
+
+export const __emailInvoiceCrypto = {
+  decryptSecret,
+  decryptSecretDetailed,
+  encryptSecret,
+  fingerprintEncryptionSeed,
+};
 
 function sanitizeIntegration(row: IntegrationRow | null): EmailInvoiceIntegrationView | null {
   if (!row || row.provider !== MANUAL_IMAP_PROVIDER) return null;
@@ -398,11 +552,24 @@ async function assertImapConnection(config: {
 export async function saveEmailInvoiceIntegration(input: SaveIntegrationInput) {
   const supabaseAdmin = buildSupabaseAdminClient();
   const current = await getIntegrationBySchool(input.escuelaId);
-  const passwordToStore =
-    input.imapPassword ??
-    (current?.provider === MANUAL_IMAP_PROVIDER && current.imap_password_encrypted
-      ? decryptSecret(current.imap_password_encrypted)
-      : null);
+  let passwordToStore = input.imapPassword ?? null;
+  let migratedEncryptedPassword: string | null = null;
+
+  if (
+    !passwordToStore &&
+    current?.provider === MANUAL_IMAP_PROVIDER &&
+    current.imap_password_encrypted
+  ) {
+    try {
+      const decrypted = decryptSecretDetailed(current.imap_password_encrypted);
+      passwordToStore = decrypted.value;
+      if (decrypted.requiresReencryption) {
+        migratedEncryptedPassword = encryptSecretWithPrimaryIfAvailable(decrypted.value);
+      }
+    } catch (error) {
+      throw resolveCredentialRecoveryError(error);
+    }
+  }
 
   if (!passwordToStore) {
     throw new Error("Debes ingresar la clave o app password del correo.");
@@ -430,7 +597,7 @@ export async function saveEmailInvoiceIntegration(input: SaveIntegrationInput) {
     imap_user: input.imapUser.trim(),
     imap_password_encrypted: input.imapPassword
       ? encryptSecret(input.imapPassword)
-      : current?.imap_password_encrypted,
+      : migratedEncryptedPassword || current?.imap_password_encrypted,
     oauth_refresh_token_encrypted: null,
     mailbox: normalizeMailbox(input.mailbox),
     from_filter: optionalText(input.fromFilter),
@@ -722,16 +889,42 @@ async function syncSingleIntegration(
       );
     }
 
+    let decryptedPassword: string;
+    let decryptedSecret: DecryptedSecretResult;
+    try {
+      decryptedSecret = decryptSecretDetailed(integration.imap_password_encrypted);
+      decryptedPassword = decryptedSecret.value;
+    } catch (error) {
+      throw resolveCredentialRecoveryError(error);
+    }
+
     const connection = await openValidatedImapMailbox({
       host: integration.imap_host,
       port: integration.imap_port,
       secure: integration.imap_secure,
       user: integration.imap_user,
-      pass: decryptSecret(integration.imap_password_encrypted),
+      pass: decryptedPassword,
       mailbox: integration.mailbox || DEFAULT_MAILBOX,
     });
     client = connection.client;
     releaseLock = () => connection.lock.release();
+
+    if (decryptedSecret.requiresReencryption) {
+      const migratedEncryptedPassword = encryptSecretWithPrimaryIfAvailable(decryptedSecret.value);
+      if (
+        migratedEncryptedPassword &&
+        migratedEncryptedPassword !== integration.imap_password_encrypted
+      ) {
+        await supabaseAdmin
+          .from("facturas_correo_integraciones")
+          .update({
+            imap_password_encrypted: migratedEncryptedPassword,
+            last_error: null,
+          })
+          .eq("id", integration.id);
+        integration.imap_password_encrypted = migratedEncryptedPassword;
+      }
+    }
 
     try {
       const uids = await client.search(buildSearchObject(integration, options), { uid: true });

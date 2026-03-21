@@ -15,11 +15,17 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { fetchJsonWithRetry } from "@/lib/retry";
+import {
+  getDashboardCatalogCached,
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
+import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
+import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import type { Clase, TipoClase, EstadoClase, Alumno, Instructor, Vehiculo } from "@/types/database";
 import { Plus } from "lucide-react";
 
@@ -44,8 +50,6 @@ const emptyForm = {
   notas: "",
 };
 
-/** Tipo auxiliar para las filas del mapa de alumnos/instructores */
-type PersonaRow = { id: string; nombre: string; apellidos: string };
 type ClaseRow = Clase & { alumno_nombre?: string; instructor_nombre?: string };
 type ClasesListResponse = {
   totalCount: number;
@@ -99,12 +103,17 @@ export default function ClasesPage() {
         });
         if (search.trim()) params.set("q", search.trim());
 
-        const payload = await fetchJsonWithRetry<ClasesListResponse>(
-          `/api/clases?${params.toString()}`,
-          {
-            cache: "no-store",
-          }
-        );
+        const payload = await getDashboardListCached<ClasesListResponse>({
+          name: "clases-table",
+          scope: {
+            id: perfil?.id,
+            rol: perfil?.rol,
+            escuelaId,
+            sedeId: perfil?.sede_id,
+          },
+          params,
+          loader: () => fetchJsonWithRetry<ClasesListResponse>(`/api/clases?${params.toString()}`),
+        });
 
         if (fetchId !== fetchIdRef.current) return;
 
@@ -123,7 +132,7 @@ export default function ClasesPage() {
         }
       }
     },
-    [escuelaId]
+    [escuelaId, perfil?.id, perfil?.rol, perfil?.sede_id]
   );
 
   // Cargar datos cuando el perfil este disponible o cambie la pagina/busqueda
@@ -139,48 +148,32 @@ export default function ClasesPage() {
     if (!escuelaId) return;
 
     let cancelled = false;
-    const supabase = createClient();
 
     const loadCatalogs = async () => {
-      const [alumnosRows, instructoresRows, vehiculosRows] = await Promise.all([
-        fetchAllSupabaseRows<PersonaRow>((from, to) =>
-          supabase
-            .from("alumnos")
-            .select("id, nombre, apellidos")
-            .eq("escuela_id", escuelaId)
-            .eq("estado", "activo")
-            .order("nombre", { ascending: true })
-            .order("apellidos", { ascending: true })
-            .range(from, to)
-            .then(({ data, error }) => ({ data: (data as PersonaRow[]) ?? [], error }))
-        ),
-        fetchAllSupabaseRows<PersonaRow>((from, to) =>
-          supabase
-            .from("instructores")
-            .select("id, nombre, apellidos")
-            .eq("escuela_id", escuelaId)
-            .eq("estado", "activo")
-            .order("nombre", { ascending: true })
-            .order("apellidos", { ascending: true })
-            .range(from, to)
-            .then(({ data, error }) => ({ data: (data as PersonaRow[]) ?? [], error }))
-        ),
-        fetchAllSupabaseRows<Vehiculo>((from, to) =>
-          supabase
-            .from("vehiculos")
-            .select("id, marca, modelo, matricula")
-            .eq("escuela_id", escuelaId)
-            .neq("estado", "baja")
-            .order("created_at", { ascending: false })
-            .range(from, to)
-            .then(({ data, error }) => ({ data: (data as Vehiculo[]) ?? [], error }))
-        ),
-      ]);
+      const catalogs = await getDashboardCatalogCached<{
+        alumnos: Alumno[];
+        instructores: Instructor[];
+        vehiculos: Vehiculo[];
+      }>({
+        name: "clases-form",
+        scope: {
+          id: perfil?.id,
+          rol: perfil?.rol,
+          escuelaId,
+          sedeId: perfil?.sede_id,
+        },
+        loader: () =>
+          fetchJsonWithRetry<{
+            alumnos: Alumno[];
+            instructores: Instructor[];
+            vehiculos: Vehiculo[];
+          }>("/api/clases/catalogos"),
+      });
 
       if (cancelled) return;
-      setAlumnos(alumnosRows as Alumno[]);
-      setInstructores(instructoresRows as Instructor[]);
-      setVehiculos(vehiculosRows);
+      setAlumnos(catalogs.alumnos);
+      setInstructores(catalogs.instructores);
+      setVehiculos(catalogs.vehiculos);
     };
 
     void loadCatalogs();
@@ -188,7 +181,7 @@ export default function ClasesPage() {
     return () => {
       cancelled = true;
     };
-  }, [escuelaId]);
+  }, [escuelaId, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
   /** Callback del DataTable server-side: cambio de pagina */
   const handlePageChange = useCallback((page: number) => {
@@ -312,6 +305,18 @@ export default function ClasesPage() {
 
       setSaving(false);
       setModalOpen(false);
+      invalidateDashboardClientCaches([
+        "dashboard-list:clases-table:",
+        "dashboard-catalog:clases-form:",
+        "dashboard-summary:",
+      ]);
+      void revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
       fetchData(currentPage, searchTerm);
     } catch (networkError) {
       // Capturar errores de red u otros fallos inesperados
@@ -342,6 +347,14 @@ export default function ClasesPage() {
       setSaving(false);
       setDeleteOpen(false);
       setDeleting(null);
+      invalidateDashboardClientCaches(["dashboard-list:clases-table:", "dashboard-summary:"]);
+      void revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
       fetchData(currentPage, searchTerm);
     } catch (networkError) {
       // Capturar errores de red u otros fallos inesperados

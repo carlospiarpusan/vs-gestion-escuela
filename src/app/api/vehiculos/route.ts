@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import { getServerReadCached } from "@/lib/server-read-cache";
+import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
 import type { EstadoVehiculo, Rol, TipoMantenimiento, TipoVehiculo } from "@/types/database";
 
@@ -39,6 +42,8 @@ type CountRow = {
   total: number | string | null;
 };
 
+const DASHBOARD_LIST_CACHE_TTL_MS = 45 * 1000;
+
 function parseInteger(value: string | null, fallback: number, min: number, max: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -63,6 +68,11 @@ export async function GET(request: Request) {
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
   }
+
+  const scope = {
+    escuelaId,
+    sedeId: perfil.sede_id,
+  };
 
   const values: Array<string | number> = [];
   const addValue = (value: string | number) => {
@@ -90,53 +100,68 @@ export async function GET(request: Request) {
   const limitRef = `$${values.length + 1}`;
   const offsetRef = `$${values.length + 2}`;
 
-  const [countRes, rowsRes] = await Promise.all([
-    pool.query<CountRow>(
-      `
-        select count(*)::int as total
-        from public.vehiculos v
-        where ${whereSql}
-      `,
-      values
-    ),
-    pool.query<VehiculoWithBitacoraRow>(
-      `
-        select
-          v.*,
-          coalesce(b.registros_bitacora, 0)::int as registros_bitacora,
-          b.ultimo_registro_fecha,
-          b.ultimo_registro_tipo,
-          b.ultimo_registro_descripcion,
-          b.ultimo_registro_monto,
-          b.ultimo_registro_km
-        from public.vehiculos v
-        left join lateral (
-          select
-            count(*)::int as registros_bitacora,
-            (array_agg(m.fecha order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_fecha,
-            (array_agg(m.tipo order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_tipo,
-            (array_agg(m.descripcion order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_descripcion,
-            (array_agg(m.monto order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_monto,
-            (array_agg(m.kilometraje_actual order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_km
-          from public.mantenimiento_vehiculos m
-          where m.vehiculo_id = v.id
-        ) b on true
-        where ${whereSql}
-        order by v.created_at desc
-        limit ${limitRef} offset ${offsetRef}
-      `,
-      [...values, pageSize, offset]
-    ),
-  ]);
+  const payload = await getServerReadCached({
+    key: buildDashboardListServerCacheKey("vehiculos", perfil.id, scope, url.searchParams),
+    ttlMs: DASHBOARD_LIST_CACHE_TTL_MS,
+    tags: buildDashboardListCacheTags("vehiculos", scope),
+    bypass: isFreshDashboardDataRequested(url.searchParams),
+    loader: async () => {
+      const [countRes, rowsRes] = await Promise.all([
+        pool.query<CountRow>(
+          `
+            select count(*)::int as total
+            from public.vehiculos v
+            where ${whereSql}
+          `,
+          values
+        ),
+        pool.query<VehiculoWithBitacoraRow>(
+          `
+            select
+              v.*,
+              coalesce(b.registros_bitacora, 0)::int as registros_bitacora,
+              b.ultimo_registro_fecha,
+              b.ultimo_registro_tipo,
+              b.ultimo_registro_descripcion,
+              b.ultimo_registro_monto,
+              b.ultimo_registro_km
+            from public.vehiculos v
+            left join lateral (
+              select
+                count(*)::int as registros_bitacora,
+                (array_agg(m.fecha order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_fecha,
+                (array_agg(m.tipo order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_tipo,
+                (array_agg(m.descripcion order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_descripcion,
+                (array_agg(m.monto order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_monto,
+                (array_agg(m.kilometraje_actual order by m.fecha desc, m.created_at desc))[1] as ultimo_registro_km
+              from public.mantenimiento_vehiculos m
+              where m.vehiculo_id = v.id
+            ) b on true
+            where ${whereSql}
+            order by v.created_at desc
+            limit ${limitRef} offset ${offsetRef}
+          `,
+          [...values, pageSize, offset]
+        ),
+      ]);
 
-  return NextResponse.json({
-    totalCount: Number(countRes.rows[0]?.total || 0),
-    rows: rowsRes.rows.map((row) => ({
-      ...row,
-      registros_bitacora: Number(row.registros_bitacora || 0),
-      ultimo_registro_monto:
-        row.ultimo_registro_monto == null ? null : toNumber(row.ultimo_registro_monto),
-      ultimo_registro_km: row.ultimo_registro_km == null ? null : toNumber(row.ultimo_registro_km),
-    })),
+      return {
+        totalCount: Number(countRes.rows[0]?.total || 0),
+        rows: rowsRes.rows.map((row) => ({
+          ...row,
+          registros_bitacora: Number(row.registros_bitacora || 0),
+          ultimo_registro_monto:
+            row.ultimo_registro_monto == null ? null : toNumber(row.ultimo_registro_monto),
+          ultimo_registro_km:
+            row.ultimo_registro_km == null ? null : toNumber(row.ultimo_registro_km),
+        })),
+      };
+    },
+  });
+
+  return NextResponse.json(payload, {
+    headers: {
+      "Cache-Control": "private, max-age=45, stale-while-revalidate=60",
+    },
   });
 }

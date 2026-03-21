@@ -14,6 +14,7 @@ type AlumnoApiRow = {
   dni: string;
   telefono: string;
   email: string | null;
+  fecha_nacimiento: string | null;
   tipo_permiso: string;
   categorias: string[] | null;
   estado: string;
@@ -172,6 +173,7 @@ export async function GET(request: Request) {
             a.dni,
             a.telefono,
             a.email,
+            a.fecha_nacimiento,
             a.tipo_permiso,
             a.categorias,
             a.estado,

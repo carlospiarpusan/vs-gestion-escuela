@@ -39,6 +39,7 @@
 import { useMemo, useState } from "react";
 import { Search, ChevronLeft, ChevronRight, Pencil, Trash2, X } from "lucide-react";
 import TableScrollArea from "@/components/dashboard/TableScrollArea";
+import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
 
 // --- Tipos ---
 
@@ -75,6 +76,8 @@ interface DataTableProps<T> {
   currentPage?: number;
   /** Valor de búsqueda controlado externamente (opcional) */
   searchTerm?: string;
+  /** Render específico para la tarjeta móvil */
+  mobileCardRender?: (row: T) => React.ReactNode;
 }
 
 export default function DataTable<T extends { id: string | number }>({
@@ -93,7 +96,9 @@ export default function DataTable<T extends { id: string | number }>({
   onSearchChange,
   currentPage: externalPage,
   searchTerm: externalSearchTerm,
+  mobileCardRender,
 }: DataTableProps<T>) {
+  const isMobile = useIsMobileVariant();
   const [searchInput, setSearchInput] = useState(externalSearchTerm ?? "");
   const [appliedSearch, setAppliedSearch] = useState((externalSearchTerm ?? "").trim());
   const [page, setPage] = useState(0);
@@ -168,6 +173,55 @@ export default function DataTable<T extends { id: string | number }>({
     }
   };
 
+  const renderMobileCard = (row: T) => {
+    if (mobileCardRender) {
+      return mobileCardRender(row);
+    }
+
+    return (
+      <div className="apple-panel-muted rounded-[24px] p-4">
+        <div className="space-y-3">
+          {columns.map((col) => {
+            const value = col.render
+              ? col.render(row)
+              : String((row as Record<string, unknown>)[String(col.key)] ?? "—");
+
+            return (
+              <div key={String(col.key)} className="flex flex-col gap-1">
+                <span className="apple-kicker">{col.label}</span>
+                <div className="text-sm text-foreground">{value}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {(extraActions || onEdit || onDelete) && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {extraActions?.(row)}
+            {onEdit && (
+              <button
+                onClick={() => onEdit(row)}
+                className="apple-button-secondary min-h-[42px] px-4 text-xs font-semibold"
+              >
+                <Pencil size={14} />
+                Editar
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={() => onDelete(row)}
+                className="apple-button-danger min-h-[42px] px-4 text-xs font-semibold"
+              >
+                <Trash2 size={14} />
+                Eliminar
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // --- Estado: Cargando datos (skeleton) ---
   if (loading) {
     return (
@@ -185,7 +239,7 @@ export default function DataTable<T extends { id: string | number }>({
                   </th>
                 ))}
                 {(onEdit || onDelete || extraActions) && (
-                  <th className="sticky right-0 bg-white/95 px-5 py-4 text-right backdrop-blur-sm dark:bg-[#1d1d1f]/95">
+                  <th className="sticky right-0 bg-[var(--surface-strong)]/95 px-5 py-4 text-right backdrop-blur-sm">
                     <div className="ml-auto h-3 w-16 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
                   </th>
                 )}
@@ -203,7 +257,7 @@ export default function DataTable<T extends { id: string | number }>({
                     </td>
                   ))}
                   {(onEdit || onDelete || extraActions) && (
-                    <td className="sticky right-0 bg-white/95 px-5 py-4 text-right backdrop-blur-sm dark:bg-[#1d1d1f]/95">
+                    <td className="sticky right-0 bg-[var(--surface-strong)]/95 px-5 py-4 text-right backdrop-blur-sm">
                       <div className="flex items-center justify-end gap-2">
                         <div className="h-6 w-6 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
                         <div className="h-6 w-6 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
@@ -224,7 +278,7 @@ export default function DataTable<T extends { id: string | number }>({
       <div className="mb-5">
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
-            <Search size={16} className="absolute top-1/2 left-4 -translate-y-1/2 text-[#86868b]" />
+            <Search size={16} className="absolute top-1/2 left-4 -translate-y-1/2 text-[var(--gray-500)]" />
             <input
               type="text"
               placeholder={searchPlaceholder}
@@ -248,7 +302,7 @@ export default function DataTable<T extends { id: string | number }>({
               <button
                 type="button"
                 onClick={clearSearch}
-                className="absolute top-1/2 right-2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[#86868b] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                className="absolute top-1/2 right-2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--gray-500)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
                 aria-label="Limpiar búsqueda"
                 title="Limpiar"
               >
@@ -267,100 +321,112 @@ export default function DataTable<T extends { id: string | number }>({
         </div>
 
         {searchInput !== appliedSearch && (
-          <p className="mt-2 px-1 text-xs text-[#86868b]">
+          <p className="mt-2 px-1 text-xs text-[var(--gray-500)]">
             Presiona Enter o usa el botón Buscar para aplicar el filtro.
           </p>
         )}
       </div>
 
-      <TableScrollArea>
-        <table className="w-full min-w-max text-sm">
-          <thead>
-            <tr className="border-b border-gray-200/50 dark:border-gray-800/50">
-              {columns.map((col) => (
-                <th
-                  key={String(col.key)}
-                  scope="col"
-                  className="px-5 py-4 text-left text-[11px] font-semibold tracking-[0.18em] whitespace-nowrap text-[#86868b] uppercase"
-                >
-                  {col.label}
-                </th>
-              ))}
-              {(onEdit || onDelete || extraActions) && (
-                <th
-                  scope="col"
-                  className="sticky right-0 bg-white/95 px-5 py-4 text-right text-[11px] font-semibold tracking-[0.18em] whitespace-nowrap text-[#86868b] uppercase backdrop-blur-sm dark:bg-[#1d1d1f]/95"
-                >
-                  Acciones
-                </th>
-              )}
-            </tr>
-          </thead>
-
-          <tbody>
-            {paginated.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={columns.length + (onEdit || onDelete || extraActions ? 1 : 0)}
-                  className="px-5 py-12 text-center text-[#86868b]"
-                >
-                  {appliedSearch ? "Sin resultados" : "No hay registros"}
-                </td>
+      {isMobile ? (
+        <div className="space-y-3">
+          {paginated.length === 0 ? (
+            <div className="apple-panel-muted rounded-[24px] px-5 py-8 text-center text-sm text-[var(--gray-500)]">
+              {appliedSearch ? "Sin resultados" : "No hay registros"}
+            </div>
+          ) : (
+            paginated.map((row) => <div key={String(row.id)}>{renderMobileCard(row)}</div>)
+          )}
+        </div>
+      ) : (
+        <TableScrollArea>
+          <table className="w-full min-w-max text-sm">
+            <thead>
+              <tr className="border-b border-gray-200/50 dark:border-gray-800/50">
+                {columns.map((col) => (
+                  <th
+                    key={String(col.key)}
+                    scope="col"
+                    className="px-5 py-4 text-left text-[11px] font-semibold tracking-[0.18em] whitespace-nowrap text-[var(--gray-500)] uppercase"
+                  >
+                    {col.label}
+                  </th>
+                ))}
+                {(onEdit || onDelete || extraActions) && (
+                  <th
+                    scope="col"
+                    className="sticky right-0 bg-[var(--surface-strong)]/95 px-5 py-4 text-right text-[11px] font-semibold tracking-[0.18em] whitespace-nowrap text-[var(--gray-500)] uppercase backdrop-blur-sm"
+                  >
+                    Acciones
+                  </th>
+                )}
               </tr>
-            ) : (
-              paginated.map((row) => (
-                <tr
-                  key={row.id}
-                  className="border-b border-gray-200/30 transition-colors hover:bg-black/[0.02] dark:border-gray-800/30 dark:hover:bg-white/[0.03]"
-                >
-                  {columns.map((col) => (
-                    <td
-                      key={String(col.key)}
-                      className="px-5 py-4 align-top text-[#1d1d1f] dark:text-[#f5f5f7]"
-                    >
-                      {col.render
-                        ? col.render(row)
-                        : String((row as Record<string, unknown>)[String(col.key)] ?? "")}
-                    </td>
-                  ))}
-                  {(onEdit || onDelete || extraActions) && (
-                    <td className="sticky right-0 bg-white/95 px-5 py-4 text-right backdrop-blur-sm dark:bg-[#1d1d1f]/95">
-                      <div className="flex items-center justify-end gap-1">
-                        {extraActions && extraActions(row)}
-                        {onEdit && (
-                          <button
-                            onClick={() => onEdit(row)}
-                            className="apple-icon-button hover:text-[#0071e3]"
-                            aria-label="Editar registro"
-                            title="Editar"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                        )}
-                        {onDelete && (
-                          <button
-                            onClick={() => onDelete(row)}
-                            className="apple-icon-button hover:text-red-500"
-                            aria-label="Eliminar registro"
-                            title="Eliminar"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  )}
+            </thead>
+
+            <tbody>
+              {paginated.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={columns.length + (onEdit || onDelete || extraActions ? 1 : 0)}
+                    className="px-5 py-12 text-center text-[var(--gray-500)]"
+                  >
+                    {appliedSearch ? "Sin resultados" : "No hay registros"}
+                  </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </TableScrollArea>
+              ) : (
+                paginated.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="border-b border-gray-200/30 transition-colors hover:bg-black/[0.02] dark:border-gray-800/30 dark:hover:bg-white/[0.03]"
+                  >
+                    {columns.map((col) => (
+                      <td
+                        key={String(col.key)}
+                        className="px-5 py-4 align-top text-foreground"
+                      >
+                        {col.render
+                          ? col.render(row)
+                          : String((row as Record<string, unknown>)[String(col.key)] ?? "")}
+                      </td>
+                    ))}
+                    {(onEdit || onDelete || extraActions) && (
+                      <td className="sticky right-0 bg-[var(--surface-strong)]/95 px-5 py-4 text-right backdrop-blur-sm">
+                        <div className="flex items-center justify-end gap-1">
+                          {extraActions && extraActions(row)}
+                          {onEdit && (
+                            <button
+                              onClick={() => onEdit(row)}
+                              className="apple-icon-button hover:text-[var(--blue-apple)]"
+                              aria-label="Editar registro"
+                              title="Editar"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          )}
+                          {onDelete && (
+                            <button
+                              onClick={() => onDelete(row)}
+                              className="apple-icon-button hover:text-red-500"
+                              aria-label="Eliminar registro"
+                              title="Eliminar"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </TableScrollArea>
+      )}
 
       {/* ========== Paginación ========== */}
       {totalPages > 1 && (
-        <div className="mt-5 flex items-center justify-between">
-          <span className="text-xs font-medium text-[#86868b]">
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-xs font-medium text-[var(--gray-500)]">
             {totalItems} registro{totalItems !== 1 ? "s" : ""}
           </span>
           <div className="flex items-center gap-2">
@@ -370,9 +436,9 @@ export default function DataTable<T extends { id: string | number }>({
               className="apple-icon-button disabled:opacity-30"
               aria-label="Página anterior"
             >
-              <ChevronLeft size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
+              <ChevronLeft size={16} className="text-foreground" />
             </button>
-            <span className="rounded-full border border-[var(--surface-border)] px-3 py-1 text-xs font-medium text-[#86868b]">
+            <span className="rounded-full border border-[var(--surface-border)] px-3 py-1 text-xs font-medium text-[var(--gray-500)]">
               {safePage + 1} / {totalPages}
             </span>
             <button
@@ -381,7 +447,7 @@ export default function DataTable<T extends { id: string | number }>({
               className="apple-icon-button disabled:opacity-30"
               aria-label="Página siguiente"
             >
-              <ChevronRight size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
+              <ChevronRight size={16} className="text-foreground" />
             </button>
           </div>
         </div>

@@ -20,15 +20,8 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
-import DataTable from "@/components/dashboard/DataTable";
-import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
-import {
-  AccountingChipTabs,
-  AccountingMiniList,
-  AccountingPanel,
-  AccountingStatCard,
-  AccountingWorkspaceHeader,
-} from "@/components/dashboard/accounting/AccountingWorkspace";
+import { AccountingWorkspaceHeader } from "@/components/dashboard/accounting/AccountingWorkspace";
+import ExportFormatActions from "@/components/dashboard/ExportFormatActions";
 import { runSupabaseMutationWithRetry } from "@/lib/retry";
 import {
   buildElectronicInvoiceNote,
@@ -38,15 +31,21 @@ import {
 import {
   buildAccountingYears,
   downloadCsv,
-  fetchAccountingReport,
-  formatCompactDate,
-  formatAccountingMoney,
-  type AccountingReportResponse,
   getMonthDateRange,
   MONTH_OPTIONS,
 } from "@/lib/accounting-dashboard";
+import {
+  getDashboardCatalogCached,
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
+import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
+import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import { fetchExpenseDashboard } from "@/lib/finance/expense-service";
+import type { ExpenseDashboardResponse } from "@/lib/finance/types";
+import { downloadSpreadsheetWorkbook } from "@/lib/spreadsheet-export";
 import { normalizeExpenseCategory } from "@/lib/expense-category";
-import { EXPENSE_ADVANCED_SEARCH_HINT, parseExpenseSearch } from "@/lib/expense-search";
+import { parseExpenseSearch } from "@/lib/expense-search";
 import type {
   EstadoPagoGasto,
   FacturaCorreoImportacion,
@@ -54,41 +53,22 @@ import type {
   CategoriaGasto,
   MetodoPagoGasto,
 } from "@/types/database";
-import {
-  AlertTriangle,
-  BarChart3,
-  Clock3,
-  Download,
-  Landmark,
-  Link2,
-  Mail,
-  Plus,
-  ReceiptText,
-  RefreshCw,
-  Repeat,
-  ShieldCheck,
-  Unplug,
-  Upload,
-  Wallet,
-} from "lucide-react";
+import { Plus } from "lucide-react";
 
 import {
   PAGE_SIZE,
   currentYear,
+  currentMonth,
   categorias,
   metodos,
   estadosPagoGasto,
   emptyForm,
   emptyEmailIntegrationForm,
-  EXPENSE_SECTION_ITEMS,
-  EXPENSE_VIEW_ITEMS,
   parseExpenseSection,
   inferImapHost,
   isHorasClosureExpense,
-  getEmailImportDisplayTitle,
   applyExpenseViewToSupabaseQuery,
   applyExpenseSearchToSupabaseQuery,
-  getExpenseDueMeta,
   resolveSedeId,
   type GastoFormState,
   type EmailInvoiceIntegrationView,
@@ -98,6 +78,17 @@ import {
   type ExpenseSection,
   type ExpenseView,
 } from "./constants";
+import {
+  buildExpenseColumns,
+  buildExpenseTramitadorOptions,
+  ExpenseFacturasSection,
+  ExpenseFiltersSection,
+  ExpenseSearchHint,
+  ExpenseSectionPanel,
+  ExpenseStatusBanners,
+  ExpenseSummarySection,
+  ExpenseTableSection,
+} from "./GastosSections";
 
 const DeleteConfirm = dynamic(() => import("@/components/dashboard/DeleteConfirm"), {
   loading: () => null,
@@ -117,6 +108,7 @@ export default function GastosPage() {
   // --- Auth & state ---
   const { perfil } = useAuth();
   const searchParams = useSearchParams();
+  const defaultMonth = String(currentMonth).padStart(2, "0");
   const [data, setData] = useState<Gasto[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
@@ -127,17 +119,18 @@ export default function GastosPage() {
   );
   const [activeView, setActiveView] = useState<ExpenseView>("all");
   const fetchIdRef = useRef(0);
+  const [reloadKey, setReloadKey] = useState(0);
   const [filtroCategoria, setFiltroCategoria] = useState("");
   const [filtroMetodo, setFiltroMetodo] = useState("");
   const [filtroEstadoPago, setFiltroEstadoPago] = useState("");
-  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroMes, setFiltroMes] = useState(defaultMonth);
   const [filtroYear, setFiltroYear] = useState(String(currentYear));
   const [filtroRecurrente, setFiltroRecurrente] = useState(false);
   const [selectedTramitador, setSelectedTramitador] = useState("");
-  const [summary, setSummary] = useState<AccountingReportResponse | null>(null);
+  const [summary, setSummary] = useState<ExpenseDashboardResponse | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState("");
-  const [exporting, setExporting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "xls" | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -234,7 +227,7 @@ export default function GastosPage() {
   }, [emailModalOpen]);
 
   const shouldLoadEmailAutomation =
-    activeSection === "automatizacion" || emailModalOpen || emailHistoryModalOpen;
+    activeSection === "facturas" || emailModalOpen || emailHistoryModalOpen;
 
   const loadEmailIntegrationState = useCallback(
     async (options?: SedeOption[]) => {
@@ -244,7 +237,7 @@ export default function GastosPage() {
       setEmailError("");
 
       try {
-        const response = await fetch("/api/gastos/facturas-correo", { cache: "no-store" });
+        const response = await fetch("/api/gastos/facturas-correo");
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.error || "No se pudo cargar la integracion de correo.");
@@ -300,97 +293,129 @@ export default function GastosPage() {
       setTableError("");
 
       try {
-        const supabase = createClient();
-        const expenseSearch = parseExpenseSearch(search);
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+          section: activeSection,
+          view: activeView,
+        });
+        if (search) params.set("q", search);
+        if (filtroCategoria) params.set("categoria", filtroCategoria);
+        if (filtroMetodo) params.set("metodo", filtroMetodo);
+        if (effectiveEstadoPago) params.set("estado", effectiveEstadoPago);
+        if (filtroMes) params.set("mes", filtroMes);
+        if (filtroYear) params.set("year", filtroYear);
+        if (filtroRecurrente) params.set("recurrente", "true");
+        if (selectedTramitador) params.set("tramitador", selectedTramitador);
 
-        let countQuery = supabase
-          .from("gastos")
-          .select("id", { count: "exact", head: true })
-          .eq("escuela_id", perfil.escuela_id);
+        const payload = await getDashboardListCached<{ count: number; rows: Gasto[] }>({
+          name: "gastos-ledger",
+          scope: {
+            id: perfil.id,
+            rol: perfil.rol,
+            escuelaId: perfil.escuela_id,
+            sedeId: perfil.sede_id,
+          },
+          params,
+          loader: async () => {
+            const supabase = createClient();
+            const expenseSearch = parseExpenseSearch(search);
 
-        if (activeSection !== "tramitadores" && filtroCategoria) {
-          countQuery = countQuery.eq("categoria", filtroCategoria);
-        }
-        if (filtroMetodo) {
-          countQuery = countQuery.eq("metodo_pago", filtroMetodo);
-        }
-        if (effectiveEstadoPago) {
-          countQuery = countQuery.eq("estado_pago", effectiveEstadoPago);
-        }
-        if (filtroRecurrente) {
-          countQuery = countQuery.eq("recurrente", true);
-        }
-        if (filtroYear) {
-          const range = getMonthDateRange(Number(filtroYear), filtroMes);
-          countQuery = countQuery.gte("fecha", range.from).lte("fecha", range.to);
-        }
-        if (activeSection === "tramitadores") {
-          countQuery = countQuery.eq("categoria", "tramitador");
-          if (selectedTramitador) {
-            countQuery = countQuery.eq("proveedor", selectedTramitador);
-          }
-        } else {
-          countQuery = applyExpenseViewToSupabaseQuery(countQuery, activeView);
-        }
-        countQuery = applyExpenseSearchToSupabaseQuery(countQuery, expenseSearch);
+            let countQuery = supabase
+              .from("gastos")
+              .select("id", { count: "exact", head: true })
+              .eq("escuela_id", perfil.escuela_id);
 
-        const { count, error: countError } = await countQuery;
-        if (countError) {
-          throw countError;
-        }
+            if (activeSection !== "tramitadores" && filtroCategoria) {
+              countQuery = countQuery.eq("categoria", filtroCategoria);
+            }
+            if (filtroMetodo) {
+              countQuery = countQuery.eq("metodo_pago", filtroMetodo);
+            }
+            if (effectiveEstadoPago) {
+              countQuery = countQuery.eq("estado_pago", effectiveEstadoPago);
+            }
+            if (filtroRecurrente) {
+              countQuery = countQuery.eq("recurrente", true);
+            }
+            if (filtroYear) {
+              const range = getMonthDateRange(Number(filtroYear), filtroMes);
+              countQuery = countQuery.gte("fecha", range.from).lte("fecha", range.to);
+            }
+            if (activeSection === "tramitadores") {
+              countQuery = countQuery.eq("categoria", "tramitador");
+              if (selectedTramitador) {
+                countQuery = countQuery.eq("proveedor", selectedTramitador);
+              }
+            } else {
+              countQuery = applyExpenseViewToSupabaseQuery(countQuery, activeView);
+            }
+            countQuery = applyExpenseSearchToSupabaseQuery(countQuery, expenseSearch);
+
+            const from = page * PAGE_SIZE;
+            const to = from + PAGE_SIZE - 1;
+
+            let dataQuery = supabase
+              .from("gastos")
+              .select(
+                "id, mantenimiento_id, categoria, concepto, monto, metodo_pago, proveedor, numero_factura, fecha, fecha_vencimiento, estado_pago, recurrente, notas, created_at"
+              )
+              .eq("escuela_id", perfil.escuela_id)
+              .order(activeSection === "cuentas" ? "fecha_vencimiento" : "fecha", {
+                ascending: activeSection === "cuentas",
+              })
+              .order("created_at", { ascending: false })
+              .range(from, to);
+
+            if (activeSection !== "tramitadores" && filtroCategoria) {
+              dataQuery = dataQuery.eq("categoria", filtroCategoria);
+            }
+            if (filtroMetodo) {
+              dataQuery = dataQuery.eq("metodo_pago", filtroMetodo);
+            }
+            if (effectiveEstadoPago) {
+              dataQuery = dataQuery.eq("estado_pago", effectiveEstadoPago);
+            }
+            if (filtroRecurrente) {
+              dataQuery = dataQuery.eq("recurrente", true);
+            }
+            if (filtroYear) {
+              const range = getMonthDateRange(Number(filtroYear), filtroMes);
+              dataQuery = dataQuery.gte("fecha", range.from).lte("fecha", range.to);
+            }
+            if (activeSection === "tramitadores") {
+              dataQuery = dataQuery.eq("categoria", "tramitador");
+              if (selectedTramitador) {
+                dataQuery = dataQuery.eq("proveedor", selectedTramitador);
+              }
+            } else {
+              dataQuery = applyExpenseViewToSupabaseQuery(dataQuery, activeView);
+            }
+            dataQuery = applyExpenseSearchToSupabaseQuery(dataQuery, expenseSearch);
+
+            const [{ count, error: countError }, { data, error: dataError }] = await Promise.all([
+              countQuery,
+              dataQuery,
+            ]);
+
+            if (countError) {
+              throw countError;
+            }
+            if (dataError) {
+              throw dataError;
+            }
+
+            return {
+              count: count ?? 0,
+              rows: (data as Gasto[]) || [],
+            };
+          },
+        });
 
         if (fetchId !== fetchIdRef.current) return;
 
-        const from = page * PAGE_SIZE;
-        const to = from + PAGE_SIZE - 1;
-
-        let dataQuery = supabase
-          .from("gastos")
-          .select(
-            "id, mantenimiento_id, categoria, concepto, monto, metodo_pago, proveedor, numero_factura, fecha, fecha_vencimiento, estado_pago, recurrente, notas, created_at"
-          )
-          .eq("escuela_id", perfil.escuela_id)
-          .order(activeSection === "cuentas" ? "fecha_vencimiento" : "fecha", {
-            ascending: activeSection === "cuentas",
-          })
-          .order("created_at", { ascending: false })
-          .range(from, to);
-
-        if (activeSection !== "tramitadores" && filtroCategoria) {
-          dataQuery = dataQuery.eq("categoria", filtroCategoria);
-        }
-        if (filtroMetodo) {
-          dataQuery = dataQuery.eq("metodo_pago", filtroMetodo);
-        }
-        if (effectiveEstadoPago) {
-          dataQuery = dataQuery.eq("estado_pago", effectiveEstadoPago);
-        }
-        if (filtroRecurrente) {
-          dataQuery = dataQuery.eq("recurrente", true);
-        }
-        if (filtroYear) {
-          const range = getMonthDateRange(Number(filtroYear), filtroMes);
-          dataQuery = dataQuery.gte("fecha", range.from).lte("fecha", range.to);
-        }
-        if (activeSection === "tramitadores") {
-          dataQuery = dataQuery.eq("categoria", "tramitador");
-          if (selectedTramitador) {
-            dataQuery = dataQuery.eq("proveedor", selectedTramitador);
-          }
-        } else {
-          dataQuery = applyExpenseViewToSupabaseQuery(dataQuery, activeView);
-        }
-        dataQuery = applyExpenseSearchToSupabaseQuery(dataQuery, expenseSearch);
-
-        const { data, error: dataError } = await dataQuery;
-        if (dataError) {
-          throw dataError;
-        }
-
-        if (fetchId !== fetchIdRef.current) return;
-
-        setTotalCount(count ?? 0);
-        setData((data as Gasto[]) || []);
+        setTotalCount(payload.count);
+        setData(payload.rows);
       } catch (fetchError: unknown) {
         if (fetchId !== fetchIdRef.current) return;
         setTotalCount(0);
@@ -415,6 +440,9 @@ export default function GastosPage() {
       activeView,
       activeSection,
       selectedTramitador,
+      perfil?.id,
+      perfil?.rol,
+      perfil?.sede_id,
     ]
   );
 
@@ -437,6 +465,7 @@ export default function GastosPage() {
     activeView,
     activeSection,
     selectedTramitador,
+    reloadKey,
   ]);
 
   useEffect(() => {
@@ -456,30 +485,23 @@ export default function GastosPage() {
       const params = new URLSearchParams({
         from: range.from,
         to: range.to,
-        page: "0",
-        pageSize: "10",
-        include:
-          activeSection === "cuentas" || activeSection === "tramitadores"
-            ? "summary,breakdown,payables"
-            : "summary,breakdown",
       });
 
-      if (activeSection !== "tramitadores" && filtroCategoria)
-        params.set("gasto_categoria", filtroCategoria);
-      if (filtroMetodo) params.set("gasto_metodo", filtroMetodo);
+      if (activeSection !== "tramitadores" && filtroCategoria) params.set("categoria", filtroCategoria);
+      if (filtroMetodo) params.set("metodo", filtroMetodo);
       if (activeSection === "cuentas") {
-        params.set("gasto_estado", "pendiente");
+        params.set("estado", "pendiente");
       } else if (filtroEstadoPago) {
-        params.set("gasto_estado", filtroEstadoPago);
+        params.set("estado", filtroEstadoPago);
       }
       if (filtroRecurrente) params.set("recurrente", "true");
       if (activeSection === "tramitadores") {
-        params.set("gasto_view", "tramitadores");
+        params.set("view", "tramitadores");
         if (selectedTramitador) {
-          params.set("gasto_contraparte", selectedTramitador);
+          params.set("contraparte", selectedTramitador);
         }
       } else if (activeView !== "all") {
-        params.set("gasto_view", activeView);
+        params.set("view", activeView);
       }
       if (searchTerm) params.set("q", searchTerm);
 
@@ -487,7 +509,7 @@ export default function GastosPage() {
       setSummaryError("");
 
       try {
-        const payload = await fetchAccountingReport(params);
+        const payload = await fetchExpenseDashboard(params);
         setSummary(payload);
       } catch (summaryErr: unknown) {
         setSummary(null);
@@ -514,27 +536,39 @@ export default function GastosPage() {
     activeView,
     activeSection,
     selectedTramitador,
+    reloadKey,
   ]);
 
   useEffect(() => {
     if (!perfil?.escuela_id || !shouldLoadEmailAutomation) return;
 
-    const supabase = createClient();
     const loadEmailResources = async () => {
       try {
-        const { data: sedesRows, error: sedesError } = await supabase
-          .from("sedes")
-          .select("id, nombre, es_principal")
-          .eq("escuela_id", perfil.escuela_id)
-          .eq("estado", "activa")
-          .order("es_principal", { ascending: false })
-          .order("nombre", { ascending: true });
+        const options = await getDashboardCatalogCached<SedeOption[]>({
+          name: "gastos-email-sedes",
+          scope: {
+            id: perfil.id,
+            rol: perfil.rol,
+            escuelaId: perfil.escuela_id,
+            sedeId: perfil.sede_id,
+          },
+          loader: async () => {
+            const supabase = createClient();
+            const { data: sedesRows, error: sedesError } = await supabase
+              .from("sedes")
+              .select("id, nombre, es_principal")
+              .eq("escuela_id", perfil.escuela_id)
+              .eq("estado", "activa")
+              .order("es_principal", { ascending: false })
+              .order("nombre", { ascending: true });
 
-        if (sedesError) {
-          throw sedesError;
-        }
+            if (sedesError) {
+              throw sedesError;
+            }
 
-        const options = (sedesRows as SedeOption[]) || [];
+            return (sedesRows as SedeOption[]) || [];
+          },
+        });
         setSedesOptions(options);
         await loadEmailIntegrationState(options);
       } catch (resourceError: unknown) {
@@ -547,7 +581,14 @@ export default function GastosPage() {
     };
 
     void loadEmailResources();
-  }, [loadEmailIntegrationState, perfil?.escuela_id, shouldLoadEmailAutomation]);
+  }, [
+    loadEmailIntegrationState,
+    perfil?.escuela_id,
+    perfil?.id,
+    perfil?.rol,
+    perfil?.sede_id,
+    shouldLoadEmailAutomation,
+  ]);
 
   /** Handle page change from DataTable (server-side). */
   const handlePageChange = useCallback((page: number) => {
@@ -570,6 +611,22 @@ export default function GastosPage() {
       invoiceFileInputRef.current.value = "";
     }
   }, []);
+
+  const invalidateExpenseResources = useCallback(() => {
+    invalidateDashboardClientCaches([
+      "dashboard-list:gastos-ledger:",
+      "dashboard-catalog:gastos-email-sedes:",
+      "finance-expense:",
+      "finance-reports:",
+    ]);
+    void revalidateTaggedServerCaches(
+      buildScopedMutationRevalidationTags({
+        scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+        includeFinance: true,
+        includeDashboard: true,
+      })
+    );
+  }, [perfil?.escuela_id, perfil?.sede_id]);
 
   const openEmailIntegrationModal = () => {
     setEmailNotice("");
@@ -709,6 +766,8 @@ export default function GastosPage() {
       setEmailNotice(
         `Sincronizacion completada: ${importedText}, ${duplicatedText}, ${errorText}.`
       );
+      invalidateExpenseResources();
+      setReloadKey((value) => value + 1);
       await Promise.all([loadEmailIntegrationState(), fetchData(currentPage, searchTerm)]);
     } catch (syncError: unknown) {
       setEmailError(
@@ -765,6 +824,8 @@ export default function GastosPage() {
       setEmailNotice(
         `Busqueda historica completada: ${summary.imported} importadas, ${summary.duplicated} duplicadas, ${summary.skipped} omitidas y ${summary.errors} con error.${truncationText}`
       );
+      invalidateExpenseResources();
+      setReloadKey((value) => value + 1);
       await Promise.all([loadEmailIntegrationState(), fetchData(currentPage, searchTerm)]);
     } catch (syncError: unknown) {
       setEmailError(
@@ -1019,6 +1080,8 @@ export default function GastosPage() {
 
       resetInvoiceImport();
       setImportModalOpen(false);
+      invalidateExpenseResources();
+      setReloadKey((value) => value + 1);
       await fetchData(currentPage, searchTerm);
     } catch (importError: unknown) {
       setInvoiceImportError(
@@ -1077,6 +1140,8 @@ export default function GastosPage() {
       clearDraft(emptyForm);
       setSaving(false);
       setModalOpen(false);
+      invalidateExpenseResources();
+      setReloadKey((value) => value + 1);
       fetchData(currentPage, searchTerm);
     } catch (networkError: unknown) {
       // Handle unexpected network / runtime errors.
@@ -1105,6 +1170,8 @@ export default function GastosPage() {
       setSaving(false);
       setDeleteOpen(false);
       setDeleting(null);
+      invalidateExpenseResources();
+      setReloadKey((value) => value + 1);
       fetchData(currentPage, searchTerm);
     } catch (networkError: unknown) {
       const message =
@@ -1114,10 +1181,10 @@ export default function GastosPage() {
     }
   };
 
-  const handleExportCsv = async () => {
+  const handleExport = async (format: "csv" | "xls") => {
     if (!perfil?.escuela_id) return;
 
-    setExporting(true);
+    setExportingFormat(format);
     try {
       const supabase = createClient();
       const rows: Gasto[] = [];
@@ -1169,42 +1236,63 @@ export default function GastosPage() {
         if (normalizedBatch.length < pageSize) break;
         from += pageSize;
       }
+      const filenameBase = `gastos-${filtroYear}${filtroMes ? `-${filtroMes}` : ""}`;
+      const headers = [
+        "Fecha",
+        "Vencimiento",
+        "Estado pago",
+        "Categoria",
+        "Concepto",
+        "Monto",
+        "Metodo",
+        "Proveedor",
+        "Factura",
+        "Recurrente",
+        "Notas",
+      ];
+      const exportRows = rows.map((row) => [
+        row.fecha,
+        row.fecha_vencimiento,
+        row.estado_pago,
+        row.categoria,
+        row.concepto,
+        Number(row.monto),
+        row.metodo_pago,
+        row.proveedor,
+        row.numero_factura,
+        row.recurrente ? "Si" : "No",
+        row.notas,
+      ]);
 
-      downloadCsv(
-        `gastos-${filtroYear}${filtroMes ? `-${filtroMes}` : ""}.csv`,
-        [
-          "Fecha",
-          "Vencimiento",
-          "Estado pago",
-          "Categoria",
-          "Concepto",
-          "Monto",
-          "Metodo",
-          "Proveedor",
-          "Factura",
-          "Recurrente",
-          "Notas",
-        ],
-        rows.map((row) => [
-          row.fecha,
-          row.fecha_vencimiento,
-          row.estado_pago,
-          row.categoria,
-          row.concepto,
-          Number(row.monto),
-          row.metodo_pago,
-          row.proveedor,
-          row.numero_factura,
-          row.recurrente ? "Si" : "No",
-          row.notas,
-        ])
-      );
+      if (format === "csv") {
+        downloadCsv(`${filenameBase}.csv`, headers, exportRows);
+        return;
+      }
+
+      await downloadSpreadsheetWorkbook(`${filenameBase}.xls`, [
+        {
+          name: "Resumen gastos",
+          headers: ["Indicador", "Valor"],
+          rows: [
+            ["Gastos totales", summary?.summary?.gastosTotales || 0],
+            ["Gasto promedio", summary?.summary?.gastoPromedio || 0],
+            ["Total de gastos", summary?.summary?.totalGastos || 0],
+            ["Gastos recurrentes", summary?.summary?.gastosRecurrentesTotal || 0],
+            ["Pendiente por pagar", summary?.payables?.totalPendiente || 0],
+          ],
+        },
+        {
+          name: "Libro de gastos",
+          headers,
+          rows: exportRows,
+        },
+      ]);
     } catch (exportErr: unknown) {
       setTableError(
         exportErr instanceof Error ? exportErr.message : "No se pudo exportar los gastos."
       );
     } finally {
-      setExporting(false);
+      setExportingFormat(null);
     }
   };
 
@@ -1217,248 +1305,43 @@ export default function GastosPage() {
     (activeSection !== "tramitadores" && filtroCategoria) ||
     filtroMetodo ||
     (activeSection !== "cuentas" && filtroEstadoPago) ||
-    filtroMes ||
+    filtroMes !== defaultMonth ||
     filtroRecurrente ||
     filtroYear !== String(currentYear) ||
     (activeSection === "tramitadores" && selectedTramitador) ||
     (activeSection !== "tramitadores" && activeView !== "all")
   );
-  const topExpenseCategory = summary?.breakdown.gastosPorCategoria[0];
-  const topPendingProvider = summary?.payables?.topProveedores[0];
-  const payablesBuckets = summary?.payables?.buckets || [];
-  const payablesTopProviders = summary?.payables?.topProveedores || [];
-  const tramitadorRows = summary?.breakdown.topTramitadoresGasto || [];
-  const tramitadorPortfolio = summary?.breakdown.tramitadorPortfolio || [];
-  const pendingTramitadorRows = summary?.payables?.topTramitadores || [];
-  const totalTramitador = (summary?.breakdown.gastosPorCategoria || [])
-    .filter((row) => row.categoria === "tramitador")
-    .reduce((sum, row) => sum + Number(row.total || 0), 0);
-  const totalTramitadorPendiente = pendingTramitadorRows.reduce(
-    (sum, row) => sum + Number(row.total || 0),
-    0
+  const tramitadorOptions = useMemo(() => buildExpenseTramitadorOptions(summary), [summary]);
+  const totalPagina = useMemo(
+    () => data.reduce((sum, row) => sum + Number(row.monto || 0), 0),
+    [data]
   );
-  const topTramitador = tramitadorRows[0];
-  const topPendingTramitador = pendingTramitadorRows[0];
-  const selectedTramitadorRow =
-    tramitadorPortfolio.find((row) => row.nombre === selectedTramitador) || null;
-  const tramitadorOptions = Array.from(
-    new Set(
-      [...tramitadorPortfolio, ...tramitadorRows, ...pendingTramitadorRows]
-        .map((row) => row.nombre)
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-  const tramitadoresActivos = tramitadorPortfolio.length;
-  const tramitadoresConSaldo = tramitadorPortfolio.filter((row) => row.pendiente > 0).length;
-  const unnamedTramitadorRow =
-    tramitadorPortfolio.find((row) => row.nombre === "Sin tramitador") || null;
-  const topTramitadorShare =
-    totalTramitador > 0 && topTramitador
-      ? (Number(topTramitador.total || 0) / totalTramitador) * 100
-      : 0;
-  const totalPagina = data.reduce((sum, row) => sum + Number(row.monto || 0), 0);
-  const currentSectionMeta =
-    EXPENSE_SECTION_ITEMS.find((item) => item.id === activeSection) || EXPENSE_SECTION_ITEMS[0];
-  const visibleViewItems =
-    activeSection === "automatizacion" || activeSection === "tramitadores"
-      ? []
-      : activeSection === "cuentas"
-        ? EXPENSE_VIEW_ITEMS.filter(
-            (item) =>
-              item.id === "all" || item.id === "with_invoice" || item.id === "without_invoice"
-          )
-        : EXPENSE_VIEW_ITEMS;
 
   const clearFilters = () => {
     setFiltroCategoria("");
     setFiltroMetodo("");
     setFiltroEstadoPago("");
-    setFiltroMes("");
+    setFiltroMes(defaultMonth);
     setFiltroYear(String(currentYear));
     setFiltroRecurrente(false);
     setSelectedTramitador("");
     setActiveView("all");
     setCurrentPage(0);
   };
-  /** Column definitions for the DataTable component. */
-  const columns = useMemo(() => {
-    if (activeSection === "tramitadores") {
-      return [
-        { key: "fecha" as keyof Gasto, label: "Fecha" },
-        {
-          key: "proveedor" as keyof Gasto,
-          label: "Tramitador",
-          render: (row: Gasto) => (
-            <div className="space-y-1">
-              <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                {row.proveedor || "Sin tramitador"}
-              </p>
-              <p className="text-xs text-[#86868b]">{row.estado_pago}</p>
-            </div>
-          ),
-        },
-        {
-          key: "concepto" as keyof Gasto,
-          label: "Concepto",
-          render: (row: Gasto) => (
-            <div className="space-y-1">
-              <span className="font-medium">{row.concepto}</span>
-              {row.numero_factura ? (
-                <p className="text-xs text-[#86868b]">Factura {row.numero_factura}</p>
-              ) : null}
-            </div>
-          ),
-        },
-        {
-          key: "monto" as keyof Gasto,
-          label: "Monto",
-          render: (row: Gasto) => (
-            <span className="font-medium text-red-500">
-              {formatAccountingMoney(Number(row.monto))}
-            </span>
-          ),
-        },
-        {
-          key: "fecha_vencimiento" as keyof Gasto,
-          label: "Vencimiento",
-          render: (row: Gasto) => {
-            const dueMeta = getExpenseDueMeta(row.fecha_vencimiento);
-            return (
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  {row.fecha_vencimiento || "—"}
-                </p>
-                <span
-                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${dueMeta.className}`}
-                >
-                  {dueMeta.label}
-                </span>
-              </div>
-            );
-          },
-        },
-        { key: "metodo_pago" as keyof Gasto, label: "Método" },
-      ];
-    }
-
-    const baseColumns = [
-      { key: "fecha" as keyof Gasto, label: activeSection === "cuentas" ? "Registro" : "Fecha" },
-      {
-        key: "concepto" as keyof Gasto,
-        label: "Concepto",
-        render: (r: Gasto) => (
-          <div className="space-y-1">
-            <span className="font-medium">{r.concepto}</span>
-            {r.mantenimiento_id && (
-              <span className="inline-flex rounded-full bg-[#0071e3]/10 px-2 py-0.5 text-[10px] font-semibold text-[#0071e3]">
-                Bitácora
-              </span>
-            )}
-          </div>
-        ),
-      },
-      {
-        key: "categoria" as keyof Gasto,
-        label: "Categoría",
-        render: (r: Gasto) => (
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-[#86868b] dark:bg-gray-800">
-            {r.categoria.replace("_", " ")}
-          </span>
-        ),
-      },
-      {
-        key: "monto" as keyof Gasto,
-        label: "Monto",
-        render: (r: Gasto) => (
-          <span className="font-medium text-red-500">{formatAccountingMoney(Number(r.monto))}</span>
-        ),
-      },
-      { key: "proveedor" as keyof Gasto, label: "Proveedor" },
-    ];
-
-    if (activeSection === "cuentas") {
-      return [
-        ...baseColumns,
-        {
-          key: "fecha_vencimiento" as keyof Gasto,
-          label: "Vencimiento",
-          render: (row: Gasto) => {
-            const dueMeta = getExpenseDueMeta(row.fecha_vencimiento);
-            return (
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  {row.fecha_vencimiento || "—"}
-                </p>
-                <span
-                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${dueMeta.className}`}
-                >
-                  {dueMeta.label}
-                </span>
-                <p className="text-[11px] text-[#86868b]">{dueMeta.detail}</p>
-              </div>
-            );
-          },
-        },
-        {
-          key: "estado_pago" as keyof Gasto,
-          label: "Estado pago",
-          render: (row: Gasto) => (
-            <span
-              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                row.estado_pago === "pagado"
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                  : row.estado_pago === "anulado"
-                    ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-                    : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-              }`}
-            >
-              {row.estado_pago}
-            </span>
-          ),
-        },
-      ];
-    }
-
-    return [...baseColumns, { key: "metodo_pago" as keyof Gasto, label: "Método" }];
-  }, [activeSection]);
+  const columns = useMemo(() => buildExpenseColumns(activeSection), [activeSection]);
+  const headerDescription =
+    activeSection === "facturas"
+      ? "Soportes del gasto en un solo lugar: carga manual, correo automático e historial de importaciones."
+      : "Libro de egresos, cuentas por pagar y tramitadores. Cada sección trabaja un flujo específico para que la operación contable no se mezcle.";
 
   return (
     <div>
       <AccountingWorkspaceHeader
         badge="Gastos"
         title="Gastos"
-        description="Libro de egresos, cuentas por pagar, tramitadores y automatización de facturas. Cada sección trabaja un flujo específico para que la operación contable no se mezcle."
+        description={headerDescription}
         actions={
-          activeSection === "automatizacion" ? (
-            <>
-              <button
-                type="button"
-                onClick={openEmailIntegrationModal}
-                className="inline-flex items-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
-              >
-                <Link2 size={16} />
-                {emailIntegration ? "Editar correo" : "Conectar correo"}
-              </button>
-              <button
-                type="button"
-                onClick={handleSyncEmailIntegration}
-                disabled={!emailIntegration || emailSyncing || emailLoading}
-                className="inline-flex items-center gap-2 rounded-2xl border border-[#0071e3]/20 bg-[#0071e3]/5 px-4 py-2.5 text-sm font-semibold text-[#0071e3] transition-colors hover:bg-[#0071e3]/10 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]"
-              >
-                <RefreshCw size={16} className={emailSyncing ? "animate-spin" : ""} />
-                {emailSyncing ? "Sincronizando..." : "Sincronizar ahora"}
-              </button>
-              <button
-                type="button"
-                onClick={openHistoricalEmailSearchModal}
-                disabled={!emailIntegration || emailSyncing || emailLoading}
-                className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-[#1d1d1f] transition-colors hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:border-gray-600"
-              >
-                <Clock3 size={16} />
-                Buscar antiguas
-              </button>
-            </>
-          ) : (
+          activeSection === "facturas" ? null : (
             <>
               <button
                 type="button"
@@ -1468,773 +1351,130 @@ export default function GastosPage() {
                 <Plus size={16} />
                 Nuevo gasto
               </button>
-              <button
-                type="button"
-                onClick={openImportModal}
-                className="inline-flex items-center gap-2 rounded-2xl border border-[#0071e3]/20 bg-[#0071e3]/5 px-4 py-2.5 text-sm font-semibold text-[#0071e3] transition-colors hover:bg-[#0071e3]/10 dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]"
-              >
-                <Upload size={16} />
-                Importar factura
-              </button>
-              <button
-                type="button"
-                onClick={handleExportCsv}
-                disabled={exporting}
-                className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-[#1d1d1f] transition-colors hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:border-gray-600"
-              >
-                <Download size={16} />
-                {exporting ? "Exportando CSV..." : "Exportar CSV"}
-              </button>
+              <ExportFormatActions
+                exportingFormat={exportingFormat}
+                disabled={loading || data.length === 0}
+                onExportCsv={() => void handleExport("csv")}
+                onExportXls={() => void handleExport("xls")}
+              />
             </>
           )
         }
       />
 
-      {linkedNotice && (
-        <div className="mb-4 rounded-2xl border border-[#0071e3]/15 bg-[#0071e3]/8 px-4 py-3 text-sm text-[#0b63c7] dark:text-[#69a9ff]">
-          {linkedNotice}
-        </div>
-      )}
+      <ExpenseStatusBanners
+        linkedNotice={linkedNotice}
+        emailNotice={emailNotice}
+        emailError={emailError}
+        summaryError={summaryError}
+        tableError={tableError}
+        activeSection={activeSection}
+      />
 
-      {emailNotice && (
-        <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/30 dark:bg-emerald-900/10 dark:text-emerald-300">
-          {emailNotice}
-        </div>
-      )}
+      <ExpenseSectionPanel
+        activeSection={activeSection}
+        activeView={activeView}
+        onViewChange={(view) => {
+          setActiveView(view);
+          setCurrentPage(0);
+        }}
+      />
 
-      {emailError && (
-        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-300">
-          {emailError}
-        </div>
-      )}
+      {activeSection === "facturas" ? (
+        <ExpenseFacturasSection
+          emailIntegration={emailIntegration}
+          emailImportHistory={emailImportHistory}
+          emailLoading={emailLoading}
+          emailSyncing={emailSyncing}
+          emailSaving={emailSaving}
+          onOpenImportModal={openImportModal}
+          onOpenIntegration={openEmailIntegrationModal}
+          onSync={handleSyncEmailIntegration}
+          onOpenHistoricalSearch={openHistoricalEmailSearchModal}
+          onDisconnect={handleDeleteEmailIntegration}
+        />
+      ) : null}
 
-      {activeSection !== "automatizacion" && (
-        <AccountingPanel
-          title={currentSectionMeta.label}
-          description={currentSectionMeta.description}
-        >
-          {visibleViewItems.length > 0 ? (
-            <AccountingChipTabs
-              value={activeView}
-              items={visibleViewItems}
-              onChange={(view) => {
-                setActiveView(view);
-                setCurrentPage(0);
-              }}
-            />
-          ) : null}
-        </AccountingPanel>
-      )}
+      <ExpenseFiltersSection
+        activeSection={activeSection}
+        selectedTramitador={selectedTramitador}
+        tramitadorOptions={tramitadorOptions}
+        filtroCategoria={filtroCategoria}
+        filtroMetodo={filtroMetodo}
+        filtroEstadoPago={filtroEstadoPago}
+        filtroYear={filtroYear}
+        filtroMes={filtroMes}
+        filtroRecurrente={filtroRecurrente}
+        years={years}
+        mesesDelAno={mesesDelAno}
+        categorias={categorias}
+        metodos={metodos}
+        estadosPagoGasto={estadosPagoGasto}
+        hayFiltros={hayFiltros}
+        totalPagina={totalPagina}
+        onSelectedTramitadorChange={(value) => {
+          setSelectedTramitador(value);
+          setCurrentPage(0);
+        }}
+        onCategoriaChange={(value) => {
+          setFiltroCategoria(value);
+          setCurrentPage(0);
+        }}
+        onMetodoChange={(value) => {
+          setFiltroMetodo(value);
+          setCurrentPage(0);
+        }}
+        onEstadoPagoChange={(value) => {
+          setFiltroEstadoPago(value);
+          setCurrentPage(0);
+        }}
+        onYearChange={(value) => {
+          setFiltroYear(value);
+          setFiltroMes("");
+          setCurrentPage(0);
+        }}
+        onMesChange={(value) => {
+          setFiltroMes(value);
+          setCurrentPage(0);
+        }}
+        onRecurrenteChange={(value) => {
+          setFiltroRecurrente(value);
+          setCurrentPage(0);
+        }}
+        onClearFilters={clearFilters}
+      />
 
-      {activeSection === "automatizacion" && (
-        <div className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-2xl border border-gray-100 bg-white p-5 dark:border-gray-800 dark:bg-[#1d1d1f]">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Mail size={18} className="text-[#0071e3]" />
-                  <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                    Correo de facturas
-                  </h3>
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                      emailIntegration?.activa
-                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                        : "bg-gray-100 text-[#86868b] dark:bg-gray-800"
-                    }`}
-                  >
-                    {emailIntegration?.activa ? "Activo" : "Sin conectar"}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-[#86868b]">
-                  Conecta un buzón IMAP para leer adjuntos XML o ZIP y registrar automaticamente las
-                  facturas electronicas en gastos.
-                </p>
-              </div>
+      <ExpenseSummarySection
+        activeSection={activeSection}
+        summary={summary}
+        summaryLoading={summaryLoading}
+        selectedTramitador={selectedTramitador}
+        onToggleSelectedTramitador={(name) => {
+          setSelectedTramitador((current) => (current === name ? "" : name));
+          setCurrentPage(0);
+        }}
+        onClearSelectedTramitador={() => {
+          setSelectedTramitador("");
+          setCurrentPage(0);
+        }}
+      />
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={openEmailIntegrationModal}
-                  className="inline-flex items-center gap-2 rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 px-3 py-2 text-sm text-[#0071e3] dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10"
-                >
-                  <Link2 size={15} />
-                  {emailIntegration ? "Editar conexion" : "Conectar"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSyncEmailIntegration}
-                  disabled={!emailIntegration || emailSyncing || emailLoading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-[#1d1d1f] disabled:opacity-50 dark:border-gray-700 dark:text-[#f5f5f7]"
-                >
-                  <RefreshCw size={15} className={emailSyncing ? "animate-spin" : ""} />
-                  {emailSyncing ? "Sincronizando..." : "Sincronizar ahora"}
-                </button>
-                <button
-                  type="button"
-                  onClick={openHistoricalEmailSearchModal}
-                  disabled={!emailIntegration || emailSyncing || emailLoading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-[#1d1d1f] disabled:opacity-50 dark:border-gray-700 dark:text-[#f5f5f7]"
-                >
-                  <Clock3 size={15} />
-                  Buscar antiguas
-                </button>
-                {emailIntegration && (
-                  <button
-                    type="button"
-                    onClick={handleDeleteEmailIntegration}
-                    disabled={emailSaving}
-                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 disabled:opacity-50 dark:border-red-900/30 dark:text-red-300"
-                  >
-                    <Unplug size={15} />
-                    Desconectar
-                  </button>
-                )}
-              </div>
-            </div>
+      <ExpenseSearchHint activeSection={activeSection} />
 
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl bg-[#f5f5f7] p-4 dark:bg-[#111]">
-                <p className="text-xs tracking-[0.14em] text-[#86868b] uppercase">Buzon</p>
-                <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  {emailLoading ? "Cargando..." : emailIntegration?.correo || "Sin configurar"}
-                </p>
-                <p className="mt-1 text-xs text-[#86868b]">
-                  {emailIntegration
-                    ? `${emailIntegration.imap_host}:${emailIntegration.imap_port}`
-                    : "Conecta un correo con IMAP habilitado"}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-[#f5f5f7] p-4 dark:bg-[#111]">
-                <p className="text-xs tracking-[0.14em] text-[#86868b] uppercase">Bandeja</p>
-                <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  {emailIntegration?.mailbox || "INBOX"}
-                </p>
-                <p className="mt-1 text-xs text-[#86868b]">
-                  {emailIntegration?.import_only_unseen
-                    ? "Solo correos no leidos"
-                    : "Correos nuevos por UID"}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-[#f5f5f7] p-4 dark:bg-[#111]">
-                <p className="text-xs tracking-[0.14em] text-[#86868b] uppercase">
-                  Ultima sincronizacion
-                </p>
-                <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  {emailIntegration?.last_synced_at
-                    ? new Date(emailIntegration.last_synced_at).toLocaleString("es-CO")
-                    : "Aun no sincronizado"}
-                </p>
-                <p className="mt-1 text-xs text-[#86868b]">
-                  UID maximo: {emailIntegration?.last_uid || "—"}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-[#f5f5f7] p-4 dark:bg-[#111]">
-                <p className="text-xs tracking-[0.14em] text-[#86868b] uppercase">
-                  Modo automatico
-                </p>
-                <p className="mt-1 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  {emailIntegration?.auto_sync ? "Cron activo" : "Solo manual"}
-                </p>
-                <p className="mt-1 text-xs text-[#86868b]">
-                  {emailIntegration?.subject_filter || emailIntegration?.from_filter
-                    ? `Filtros: ${emailIntegration?.from_filter || "sin remitente"} / ${emailIntegration?.subject_filter || "sin asunto"}`
-                    : "Sin filtros adicionales"}
-                </p>
-              </div>
-            </div>
-
-            {emailIntegration?.last_error && (
-              <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/30 dark:bg-amber-900/10 dark:text-amber-300">
-                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                <span>{emailIntegration.last_error}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-gray-100 bg-white p-5 dark:border-gray-800 dark:bg-[#1d1d1f]">
-            <div className="flex items-center gap-2">
-              <Clock3 size={18} className="text-[#0071e3]" />
-              <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                Ultimas importaciones
-              </h3>
-            </div>
-            <div className="mt-4 space-y-3">
-              {emailImportHistory.length === 0 && (
-                <p className="text-sm text-[#86868b]">
-                  Aun no hay facturas importadas desde correo.
-                </p>
-              )}
-              {emailImportHistory.slice(0, 5).map((item) => (
-                <div key={item.id} className="rounded-xl bg-[#f5f5f7] px-4 py-3 dark:bg-[#111]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                        {getEmailImportDisplayTitle(item)}
-                      </p>
-                      <p className="mt-1 text-xs text-[#86868b]">
-                        {item.supplier_name || item.remitente || "Proveedor no identificado"}
-                      </p>
-                    </div>
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        item.status === "importada"
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                          : item.status === "duplicada"
-                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                            : item.status === "omitida"
-                              ? "bg-gray-100 text-[#86868b] dark:bg-gray-800 dark:text-gray-300"
-                              : "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300"
-                      }`}
-                    >
-                      {item.status}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-[#86868b]">
-                    {item.created_at
-                      ? new Date(item.created_at).toLocaleString("es-CO")
-                      : "Sin fecha"}{" "}
-                    {item.detail ? `• ${item.detail}` : ""}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeSection !== "automatizacion" && (
-        <div className="mb-4 rounded-xl bg-white px-4 py-3 dark:bg-[#1d1d1f]">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            <div>
-              <label className="apple-label">
-                {activeSection === "tramitadores" ? "Tramitador" : "Categoría"}
-              </label>
-              {activeSection === "tramitadores" ? (
-                <select
-                  value={selectedTramitador}
-                  onChange={(e) => {
-                    setSelectedTramitador(e.target.value);
-                    setCurrentPage(0);
-                  }}
-                  className="apple-input"
-                >
-                  <option value="">Todos</option>
-                  {tramitadorOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <select
-                  value={filtroCategoria}
-                  onChange={(e) => {
-                    setFiltroCategoria(e.target.value);
-                    setCurrentPage(0);
-                  }}
-                  className="apple-input"
-                >
-                  <option value="">Todas</option>
-                  {categorias.map((categoria) => (
-                    <option key={categoria} value={categoria}>
-                      {categoria.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            <div>
-              <label className="apple-label">Método</label>
-              <select
-                value={filtroMetodo}
-                onChange={(e) => {
-                  setFiltroMetodo(e.target.value);
-                  setCurrentPage(0);
-                }}
-                className="apple-input"
-              >
-                <option value="">Todos</option>
-                {metodos.map((metodo) => (
-                  <option key={metodo} value={metodo}>
-                    {metodo}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="apple-label">Estado pago</label>
-              <select
-                value={activeSection === "cuentas" ? "pendiente" : filtroEstadoPago}
-                onChange={(e) => {
-                  setFiltroEstadoPago(e.target.value);
-                  setCurrentPage(0);
-                }}
-                className="apple-input"
-                disabled={activeSection === "cuentas"}
-              >
-                <option value="">Todos</option>
-                {estadosPagoGasto.map((estado) => (
-                  <option key={estado} value={estado}>
-                    {estado}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="apple-label">Año</label>
-              <select
-                value={filtroYear}
-                onChange={(e) => {
-                  setFiltroYear(e.target.value);
-                  setFiltroMes("");
-                  setCurrentPage(0);
-                }}
-                className="apple-input"
-              >
-                {years.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="apple-label">Mes</label>
-              <select
-                value={filtroMes}
-                onChange={(e) => {
-                  setFiltroMes(e.target.value);
-                  setCurrentPage(0);
-                }}
-                className="apple-input"
-              >
-                {mesesDelAno.map((mes) => (
-                  <option key={mes.value || "all"} value={mes.value}>
-                    {mes.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-end pb-1">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">
-                <input
-                  type="checkbox"
-                  checked={filtroRecurrente}
-                  onChange={(e) => {
-                    setFiltroRecurrente(e.target.checked);
-                    setCurrentPage(0);
-                  }}
-                  className="rounded"
-                />
-                Solo recurrentes
-              </label>
-            </div>
-          </div>
-
-          {hayFiltros && (
-            <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-100 pt-3 dark:border-gray-800">
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-[#86868b] dark:border-gray-700"
-              >
-                Limpiar filtros
-              </button>
-              <p className="text-sm font-semibold text-red-500 dark:text-red-400">
-                Total página: {formatAccountingMoney(totalPagina)}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeSection !== "automatizacion" && summaryError && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
-          {summaryError}
-        </div>
-      )}
-
-      {activeSection !== "automatizacion" && tableError && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
-          {tableError}
-        </div>
-      )}
-
-      {activeSection === "libro" && (
-        <div className="mb-4 space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <AccountingStatCard
-              eyebrow="Egreso"
-              label="Gasto total"
-              value={
-                summaryLoading ? "..." : formatAccountingMoney(summary?.summary.gastosTotales || 0)
-              }
-              detail="Egreso consolidado del rango seleccionado."
-              tone="danger"
-              icon={<Landmark size={18} />}
-            />
-            <AccountingStatCard
-              eyebrow="Promedio"
-              label="Promedio por gasto"
-              value={
-                summaryLoading ? "..." : formatAccountingMoney(summary?.summary.gastoPromedio || 0)
-              }
-              detail={`${summary?.summary.totalGastos || 0} egreso${(summary?.summary.totalGastos || 0) === 1 ? "" : "s"} en el periodo.`}
-              tone="primary"
-              icon={<Wallet size={18} />}
-            />
-            <AccountingStatCard
-              eyebrow="Control"
-              label="Recurrentes"
-              value={
-                summaryLoading
-                  ? "..."
-                  : formatAccountingMoney(summary?.summary.gastosRecurrentesTotal || 0)
-              }
-              detail={`${summary?.summary.gastosRecurrentesCount || 0} movimiento${(summary?.summary.gastosRecurrentesCount || 0) === 1 ? "" : "s"} recurrente${(summary?.summary.gastosRecurrentesCount || 0) === 1 ? "" : "s"}.`}
-              tone="warning"
-              icon={<Repeat size={18} />}
-            />
-            <AccountingStatCard
-              eyebrow="Concentración"
-              label="Categoría líder"
-              value={topExpenseCategory?.categoria || "Sin datos"}
-              detail={
-                summaryLoading ? "..." : formatAccountingMoney(topExpenseCategory?.total || 0)
-              }
-              tone="default"
-              icon={<BarChart3 size={18} />}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <AccountingMiniList
-              title="Categorías dominantes"
-              description="Dónde se concentra el gasto del periodo."
-              emptyLabel="No hay categorías con movimiento."
-              items={(summary?.breakdown.gastosPorCategoria || []).slice(0, 6).map((row) => ({
-                label: row.categoria || "Sin categoría",
-                value: formatAccountingMoney(row.total),
-                meta: `${row.cantidad} movimiento${row.cantidad === 1 ? "" : "s"}`,
-              }))}
-            />
-            <AccountingMiniList
-              title="Proveedores principales"
-              description="Contrapartes con mayor peso económico."
-              emptyLabel="No hay proveedores con movimientos en este rango."
-              items={(summary?.breakdown.topProveedoresGasto || []).slice(0, 6).map((row) => ({
-                label: row.concepto || "Sin proveedor",
-                value: formatAccountingMoney(row.total),
-                meta: `${row.cantidad} gasto${row.cantidad === 1 ? "" : "s"}`,
-              }))}
-            />
-            <AccountingMiniList
-              title="Métodos dominantes"
-              description="Cómo se están pagando los egresos."
-              emptyLabel="No hay métodos de pago registrados."
-              items={(summary?.breakdown.gastosPorMetodo || []).slice(0, 6).map((row) => ({
-                label: row.metodo_pago || "Sin método",
-                value: formatAccountingMoney(row.total),
-                meta: `${row.cantidad} movimiento${row.cantidad === 1 ? "" : "s"}`,
-              }))}
-            />
-          </div>
-        </div>
-      )}
-
-      {activeSection === "cuentas" && (
-        <div className="mb-4 space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <AccountingStatCard
-              eyebrow="Por pagar"
-              label="Total pendiente"
-              value={
-                summaryLoading
-                  ? "..."
-                  : formatAccountingMoney(summary?.payables?.totalPendiente || 0)
-              }
-              detail="Facturas y egresos pendientes de salida."
-              tone="warning"
-              icon={<ShieldCheck size={18} />}
-            />
-            <AccountingStatCard
-              eyebrow="Riesgo"
-              label="Vencido"
-              value={
-                summaryLoading ? "..." : formatAccountingMoney(summary?.payables?.vencido || 0)
-              }
-              detail="Obligaciones fuera del plazo esperado."
-              tone="danger"
-              icon={<AlertTriangle size={18} />}
-            />
-            <AccountingStatCard
-              eyebrow="Agenda"
-              label="Próximo a vencer"
-              value={
-                summaryLoading ? "..." : formatAccountingMoney(summary?.payables?.vencePronto || 0)
-              }
-              detail="Compromisos que vencen en 7 días o menos."
-              tone="warning"
-              icon={<Clock3 size={18} />}
-            />
-            <AccountingStatCard
-              eyebrow="Proveedor"
-              label="Proveedor líder"
-              value={topPendingProvider?.nombre || "Sin datos"}
-              detail={
-                summaryLoading ? "..." : formatAccountingMoney(topPendingProvider?.total || 0)
-              }
-              tone="default"
-              icon={<ReceiptText size={18} />}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <AccountingBreakdownCard
-              title="Antigüedad por pagar"
-              subtitle="Distribución de cuentas por pagar según su vencimiento."
-              rows={payablesBuckets.map((row) => ({ ...row, concepto: row.bucket }))}
-              labelKey="concepto"
-              emptyLabel="No hay egresos pendientes para este rango."
-            />
-            <AccountingBreakdownCard
-              title="Top proveedores por pagar"
-              subtitle="Contrapartes con mayor saldo pendiente actualmente."
-              rows={payablesTopProviders.map((row) => ({ ...row, concepto: row.nombre }))}
-              labelKey="concepto"
-              emptyLabel="No hay proveedores con saldo pendiente."
-            />
-          </div>
-        </div>
-      )}
-
-      {activeSection === "tramitadores" && (
-        <div className="mb-4 space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <AccountingStatCard
-              eyebrow="Tramitadores"
-              label="Pagado del periodo"
-              value={summaryLoading ? "..." : formatAccountingMoney(totalTramitador)}
-              detail="Total ejecutado en categoría tramitador."
-              tone="primary"
-              icon={<ReceiptText size={18} />}
-            />
-            <AccountingStatCard
-              eyebrow="Tramitadores"
-              label="Pendiente por pagar"
-              value={summaryLoading ? "..." : formatAccountingMoney(totalTramitadorPendiente)}
-              detail="Saldo abierto con terceros."
-              tone="warning"
-              icon={<Clock3 size={18} />}
-            />
-            <AccountingStatCard
-              eyebrow={selectedTramitadorRow ? "En foco" : "Cobertura"}
-              label={selectedTramitadorRow ? selectedTramitadorRow.nombre : "Tramitadores activos"}
-              value={
-                selectedTramitadorRow
-                  ? formatAccountingMoney(
-                      selectedTramitadorRow.pagado + selectedTramitadorRow.pendiente
-                    )
-                  : String(tramitadoresActivos)
-              }
-              detail={
-                summaryLoading
-                  ? "..."
-                  : selectedTramitadorRow
-                    ? `Pagado ${formatAccountingMoney(selectedTramitadorRow.pagado)} · Pendiente ${formatAccountingMoney(selectedTramitadorRow.pendiente)}`
-                    : `${tramitadoresConSaldo} con saldo abierto. ${topTramitador ? `${topTramitador.nombre} concentra ${topTramitadorShare.toFixed(0)}% del pagado.` : ""}`
-              }
-              tone={selectedTramitadorRow ? "primary" : "default"}
-              icon={<BarChart3 size={18} />}
-            />
-            <AccountingStatCard
-              eyebrow="Urgencia"
-              label="Más urgente por pagar"
-              value={topPendingTramitador?.nombre || "Sin pendientes"}
-              detail={
-                summaryLoading
-                  ? "..."
-                  : formatAccountingMoney(Number(topPendingTramitador?.total || 0))
-              }
-              tone="danger"
-              icon={<AlertTriangle size={18} />}
-            />
-          </div>
-
-          {unnamedTramitadorRow && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/30 dark:bg-amber-900/10 dark:text-amber-300">
-              Hay {unnamedTramitadorRow.movimientos} movimiento
-              {unnamedTramitadorRow.movimientos === 1 ? "" : "s"} sin nombre de tramitador. Completa
-              el nombre desde alumnos, matrículas o gastos manuales para no fragmentar la cartera.
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <AccountingBreakdownCard
-              title="Gasto por tramitador"
-              subtitle="Cuánto se ha causado o pagado a cada tramitador en el periodo."
-              rows={tramitadorRows.map((row) => ({
-                concepto: row.nombre,
-                cantidad: row.cantidad,
-                total: row.total,
-              }))}
-              labelKey="concepto"
-              emptyLabel="No hay pagos a tramitador en este corte."
-            />
-            <AccountingBreakdownCard
-              title="Pendiente por tramitador"
-              subtitle="Cuánto falta por pagarle a cada tramitador."
-              rows={pendingTramitadorRows.map((row) => ({
-                concepto: row.nombre,
-                cantidad: row.cantidad,
-                total: row.total,
-              }))}
-              labelKey="concepto"
-              emptyLabel="No hay saldos pendientes con tramitadores."
-            />
-          </div>
-
-          <AccountingPanel
-            title="Cartera operativa por tramitador"
-            description="Haz clic en un tercero para enfocar la tabla, el resumen y la exportación. Aquí se ve lo pagado, lo pendiente y el vencido por nombre normalizado."
-            actions={
-              selectedTramitador ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTramitador("");
-                    setCurrentPage(0);
-                  }}
-                  className="rounded-full border border-gray-200 px-3 py-2 text-sm font-semibold text-[#4a4a4f] transition-colors hover:border-gray-300 dark:border-gray-700 dark:text-[#c7c7cc] dark:hover:border-gray-600"
-                >
-                  Ver todos
-                </button>
-              ) : null
-            }
-          >
-            {tramitadorPortfolio.length === 0 ? (
-              <p className="text-sm text-[#86868b]">
-                No hay cartera de tramitadores para este rango.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-                {tramitadorPortfolio.map((row) => {
-                  const isActive = selectedTramitador === row.nombre;
-                  return (
-                    <button
-                      key={`tramitador-portfolio-${row.nombre}`}
-                      type="button"
-                      onClick={() => {
-                        setSelectedTramitador((current) =>
-                          current === row.nombre ? "" : row.nombre
-                        );
-                        setCurrentPage(0);
-                      }}
-                      className={`rounded-2xl border px-4 py-4 text-left transition-colors ${
-                        isActive
-                          ? "border-[#0071e3]/40 bg-[#0071e3]/8 dark:border-[#0071e3]/50 dark:bg-[#0071e3]/12"
-                          : "border-gray-100 bg-[#f7f9fc] hover:border-gray-200 dark:border-gray-800 dark:bg-[#111214] dark:hover:border-gray-700"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                            {row.nombre}
-                          </p>
-                          <p className="mt-1 text-xs text-[#86868b]">
-                            {row.movimientos} movimiento{row.movimientos === 1 ? "" : "s"} · último{" "}
-                            {row.ultimaFecha ? formatCompactDate(row.ultimaFecha) : "sin fecha"}
-                          </p>
-                        </div>
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                            row.vencido > 0
-                              ? "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300"
-                              : row.pendiente > 0
-                                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                          }`}
-                        >
-                          {row.vencido > 0 ? "Vencido" : row.pendiente > 0 ? "Pendiente" : "Al día"}
-                        </span>
-                      </div>
-                      <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                        <div className="rounded-xl bg-white px-3 py-2 dark:bg-[#1d1d1f]">
-                          <p className="text-[#86868b]">Pagado</p>
-                          <p className="mt-1 font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                            {formatAccountingMoney(row.pagado)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl bg-white px-3 py-2 dark:bg-[#1d1d1f]">
-                          <p className="text-[#86868b]">Pendiente</p>
-                          <p className="mt-1 font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                            {formatAccountingMoney(row.pendiente)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl bg-white px-3 py-2 dark:bg-[#1d1d1f]">
-                          <p className="text-[#86868b]">Vencido</p>
-                          <p className="mt-1 font-semibold text-red-500">
-                            {formatAccountingMoney(row.vencido)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl bg-white px-3 py-2 dark:bg-[#1d1d1f]">
-                          <p className="text-[#86868b]">Promedio</p>
-                          <p className="mt-1 font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                            {formatAccountingMoney(row.ticketPromedio)}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </AccountingPanel>
-        </div>
-      )}
-
-      {(activeSection === "libro" ||
-        activeSection === "cuentas" ||
-        activeSection === "tramitadores") && (
-        <div className="mb-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-xs text-[#86868b] dark:border-gray-800 dark:bg-[#1d1d1f]">
-          {EXPENSE_ADVANCED_SEARCH_HINT}
-        </div>
-      )}
-
-      {(activeSection === "libro" ||
-        activeSection === "cuentas" ||
-        activeSection === "tramitadores") && (
-        <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
-          <DataTable
-            key={activeSection}
-            columns={columns}
-            data={data}
-            loading={loading}
-            searchPlaceholder={
-              activeSection === "cuentas"
-                ? "Buscar por proveedor, concepto, factura o fecha de pago..."
-                : activeSection === "tramitadores"
-                  ? "Buscar por tramitador, concepto, factura o fecha..."
-                  : "Buscar por concepto, proveedor, factura, categoria, metodo o notas. Usa fecha: o monto: para filtros exactos."
-            }
-            searchTerm={searchTerm}
-            onEdit={openEdit}
-            onDelete={openDelete}
-            serverSide
-            totalCount={totalCount}
-            currentPage={currentPage}
-            onPageChange={handlePageChange}
-            onSearchChange={handleSearchChange}
-            pageSize={PAGE_SIZE}
-          />
-        </div>
-      )}
+      <ExpenseTableSection
+        activeSection={activeSection}
+        columns={columns}
+        data={data}
+        loading={loading}
+        totalCount={totalCount}
+        currentPage={currentPage}
+        searchTerm={searchTerm}
+        onEdit={openEdit}
+        onDelete={openDelete}
+        onPageChange={handlePageChange}
+        onSearchChange={handleSearchChange}
+        pageSize={PAGE_SIZE}
+      />
 
       <GastoModal
         open={modalOpen}

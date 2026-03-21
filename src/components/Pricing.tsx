@@ -1,26 +1,26 @@
-"use client";
-
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { BadgeCheck, Building2, CarFront, GraduationCap, Headphones } from "lucide-react";
+import SectionIntro from "@/components/public/SectionIntro";
 
 const planCards = [
   {
     icon: GraduationCap,
     title: "Escuela en crecimiento",
-    description: "Ideal para una sede que necesita ordenar alumnos, clases, pagos y caja diaria.",
+    description:
+      "Para una sede que necesita ordenar alumnos, clases, ingresos, cartera y caja diaria con rapidez.",
   },
   {
     icon: Building2,
     title: "Operación multi-sede",
-    description: "Pensado para escuelas que necesitan control por sede, instructores, flota y reportes.",
+    description:
+      "Para escuelas que necesitan control por sede, usuarios, flota, gastos e informes más visibles.",
   },
 ];
 
 const planHighlights = [
-  "Demo guiada gratuita para validar el flujo real de tu escuela.",
-  "Configuración inicial acompañada para sedes, vehículos y usuarios.",
-  "Planes adaptados al tamaño de tu operación en Colombia.",
+  "Demo guiada para validar el flujo real de tu autoescuela.",
+  "Acompañamiento inicial para sedes, vehículos, usuarios y estructura operativa.",
+  "Propuesta ajustada al tamaño de tu escuela y su forma de trabajar.",
 ];
 
 export default function Pricing() {
@@ -30,67 +30,31 @@ export default function Pricing() {
       className="border-y border-gray-100 bg-[linear-gradient(180deg,rgba(244,247,252,0.9),rgba(255,255,255,0.96))] py-16 dark:border-gray-900 dark:bg-[linear-gradient(180deg,rgba(10,10,12,0.95),rgba(0,0,0,1))] sm:py-24 md:py-32"
     >
       <div className="mx-auto max-w-[1180px] px-6">
-        <div className="mb-12 max-w-3xl">
-          <motion.span
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.45 }}
-            className="apple-badge"
-          >
-            Planes y acompañamiento
-          </motion.span>
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.55, delay: 0.05 }}
-            className="mt-4 text-left text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl"
-          >
-            Precios claros para escuelas de conducción en Colombia.
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.55, delay: 0.1 }}
-            className="mt-5 max-w-2xl text-left text-base leading-relaxed text-gray-500 sm:text-lg"
-          >
-            Estamos afinando la tabla pública de precios. Mientras tanto, puedes arrancar con demo
-            guiada, configuración inicial acompañada y una propuesta ajustada al tamaño de tu flota,
-            tus sedes y tus usuarios.
-          </motion.p>
-        </div>
+        <SectionIntro
+          badge="Planes y acompañamiento"
+          title="Una propuesta comercial ajustada a la operación de tu autoescuela"
+          description="La home no vende un plan abstracto. Te invita a validar si el sistema encaja con tu nivel de operación, sedes, flota y equipo."
+        />
 
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.55 }}
-            className="apple-panel p-6 sm:p-8"
-          >
+          <div className="apple-panel p-6 sm:p-8">
             <div className="mb-6 flex flex-wrap items-center gap-3">
-              <span className="apple-badge">Demo gratuita</span>
+              <span className="apple-badge">Demo guiada</span>
               <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-300">
-                Implementación guiada
+                Implementación acompañada
               </span>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              {planCards.map((plan, index) => (
-                <motion.div
+              {planCards.map((plan) => (
+                <article
                   key={plan.title}
-                  initial={{ opacity: 0, y: 18 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.45, delay: 0.08 * index }}
                   className="rounded-[28px] border border-gray-100 bg-white/80 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-gray-800 dark:bg-white/[0.03]"
                 >
                   <plan.icon className="mb-4 h-10 w-10 text-blue-apple" />
                   <h3 className="text-xl font-semibold text-foreground">{plan.title}</h3>
                   <p className="mt-3 text-sm leading-6 text-gray-500">{plan.description}</p>
-                </motion.div>
+                </article>
               ))}
             </div>
 
@@ -98,23 +62,16 @@ export default function Pricing() {
               <div className="flex items-center gap-3">
                 <CarFront className="h-5 w-5 text-blue-apple" />
                 <p className="text-sm font-semibold text-foreground">
-                  Cotización ajustada a tu operación real, no a una plantilla genérica.
+                  La demo se orienta a tu operación real: alumnos, pagos, sedes, instructores y flota.
                 </p>
               </div>
               <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                Si estás en Ipiales, Pasto, Bogotá o cualquier ciudad de Colombia, la plataforma se
-                adapta a tu volumen de alumnos, instructores y vehículos.
+                El enfoque comercial está pensado para autoescuelas en Colombia que necesitan ordenar su operación antes de crecer.
               </p>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.55, delay: 0.08 }}
-            className="apple-panel-muted flex flex-col justify-between p-6 sm:p-8"
-          >
+          <div className="apple-panel-muted flex flex-col justify-between p-6 sm:p-8">
             <div>
               <div className="mb-5 flex items-center gap-3">
                 <Headphones className="h-5 w-5 text-blue-apple" />
@@ -138,7 +95,7 @@ export default function Pricing() {
                 href="/registro"
                 className="apple-button-primary min-h-[48px] justify-center text-sm font-semibold"
               >
-                Crear cuenta para mi autoescuela
+                Crear cuenta
               </Link>
               <a
                 href="#contacto"
@@ -147,7 +104,7 @@ export default function Pricing() {
                 Solicitar acompañamiento
               </a>
             </div>
-          </motion.div>
+          </div>
         </div>
       </div>
     </section>

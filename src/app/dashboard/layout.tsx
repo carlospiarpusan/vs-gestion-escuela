@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { AuthProvider } from "@/contexts/AuthContext";
 import DashboardClientLayout from "@/app/dashboard/DashboardClientLayout";
+import DashboardToaster from "@/app/dashboard/DashboardToaster";
 import { getDashboardInitialAuthState } from "@/lib/dashboard-auth-server";
-import { Toaster } from "sonner";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const initialState = await getDashboardInitialAuthState();
@@ -15,7 +15,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <AuthProvider initialState={initialState}>
       <DashboardClientLayout>
         {children}
-        <Toaster position="top-right" richColors />
+        <DashboardToaster />
       </DashboardClientLayout>
     </AuthProvider>
   );

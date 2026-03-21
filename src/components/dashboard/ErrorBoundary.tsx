@@ -33,13 +33,11 @@ export default class ErrorBoundary extends Component<Props, State> {
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100/80 dark:bg-red-950/40">
             <AlertCircle size={26} className="text-red-500" />
           </div>
-          <h2 className="mb-2 text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-            Algo salió mal
-          </h2>
-          <p className="mb-1 text-sm text-[#86868b] text-center max-w-md">
+          <h2 className="mb-2 text-lg font-semibold text-foreground">Algo salió mal</h2>
+          <p className="apple-copy mb-1 max-w-md text-center text-sm">
             Ocurrió un error inesperado en esta sección.
           </p>
-          <p className="mb-5 text-xs text-[#86868b]/60 text-center max-w-md font-mono">
+          <p className="mb-5 max-w-md text-center text-xs font-mono text-[color:color-mix(in_srgb,var(--gray-500)_72%,transparent)]">
             {this.state.error?.message || "Error desconocido"}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import { getServerReadCached } from "@/lib/server-read-cache";
+import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol, TipoMantenimiento } from "@/types/database";
 
@@ -37,6 +40,8 @@ type MantenimientoRow = {
 type CountRow = {
   total: number | string | null;
 };
+
+const DASHBOARD_LIST_CACHE_TTL_MS = 45 * 1000;
 
 function parseInteger(value: string | null, fallback: number, min: number, max: number) {
   const parsed = Number(value);
@@ -85,6 +90,11 @@ export async function GET(request: Request) {
     }
   }
 
+  const scope = {
+    escuelaId,
+    sedeId: perfil.sede_id,
+  };
+
   const values: Array<string | number> = [];
   const addValue = (value: string | number) => {
     values.push(value);
@@ -123,44 +133,59 @@ export async function GET(request: Request) {
   const limitRef = `$${values.length + 1}`;
   const offsetRef = `$${values.length + 2}`;
 
-  const [countRes, rowsRes] = await Promise.all([
-    pool.query<CountRow>(
-      `
-        select count(*)::int as total
-        from public.mantenimiento_vehiculos m
-        left join public.vehiculos v on v.id = m.vehiculo_id
-        left join public.instructores i on i.id = m.instructor_id
-        where ${whereSql}
-      `,
-      values
-    ),
-    pool.query<MantenimientoRow>(
-      `
-        select
-          m.*,
-          trim(concat_ws(' ', v.marca, v.modelo, '(' || v.matricula || ')')) as vehiculo_nombre,
-          nullif(trim(concat_ws(' ', i.nombre, i.apellidos)), '') as instructor_nombre
-        from public.mantenimiento_vehiculos m
-        left join public.vehiculos v on v.id = m.vehiculo_id
-        left join public.instructores i on i.id = m.instructor_id
-        where ${whereSql}
-        order by m.fecha desc, m.created_at desc
-        limit ${limitRef} offset ${offsetRef}
-      `,
-      [...values, pageSize, offset]
-    ),
-  ]);
+  const payload = await getServerReadCached({
+    key: buildDashboardListServerCacheKey("mantenimiento", perfil.id, scope, url.searchParams),
+    ttlMs: DASHBOARD_LIST_CACHE_TTL_MS,
+    tags: buildDashboardListCacheTags("mantenimiento", scope),
+    bypass: isFreshDashboardDataRequested(url.searchParams),
+    loader: async () => {
+      const [countRes, rowsRes] = await Promise.all([
+        pool.query<CountRow>(
+          `
+            select count(*)::int as total
+            from public.mantenimiento_vehiculos m
+            left join public.vehiculos v on v.id = m.vehiculo_id
+            left join public.instructores i on i.id = m.instructor_id
+            where ${whereSql}
+          `,
+          values
+        ),
+        pool.query<MantenimientoRow>(
+          `
+            select
+              m.*,
+              trim(concat_ws(' ', v.marca, v.modelo, '(' || v.matricula || ')')) as vehiculo_nombre,
+              nullif(trim(concat_ws(' ', i.nombre, i.apellidos)), '') as instructor_nombre
+            from public.mantenimiento_vehiculos m
+            left join public.vehiculos v on v.id = m.vehiculo_id
+            left join public.instructores i on i.id = m.instructor_id
+            where ${whereSql}
+            order by m.fecha desc, m.created_at desc
+            limit ${limitRef} offset ${offsetRef}
+          `,
+          [...values, pageSize, offset]
+        ),
+      ]);
 
-  return NextResponse.json({
-    totalCount: Number(countRes.rows[0]?.total || 0),
-    rows: rowsRes.rows.map((row) => ({
-      ...row,
-      monto: toNumber(row.monto),
-      kilometraje_actual: row.kilometraje_actual == null ? null : toNumber(row.kilometraje_actual),
-      litros: row.litros == null ? null : toNumber(row.litros),
-      precio_por_litro: row.precio_por_litro == null ? null : toNumber(row.precio_por_litro),
-      vehiculo_nombre: row.vehiculo_nombre || "—",
-      instructor_nombre: row.instructor_nombre || "—",
-    })),
+      return {
+        totalCount: Number(countRes.rows[0]?.total || 0),
+        rows: rowsRes.rows.map((row) => ({
+          ...row,
+          monto: toNumber(row.monto),
+          kilometraje_actual:
+            row.kilometraje_actual == null ? null : toNumber(row.kilometraje_actual),
+          litros: row.litros == null ? null : toNumber(row.litros),
+          precio_por_litro: row.precio_por_litro == null ? null : toNumber(row.precio_por_litro),
+          vehiculo_nombre: row.vehiculo_nombre || "—",
+          instructor_nombre: row.instructor_nombre || "—",
+        })),
+      };
+    },
+  });
+
+  return NextResponse.json(payload, {
+    headers: {
+      "Cache-Control": "private, max-age=45, stale-while-revalidate=60",
+    },
   });
 }

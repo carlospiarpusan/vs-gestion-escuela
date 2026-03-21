@@ -3,9 +3,16 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
 import { AlertCircle, ChevronLeft, ChevronRight, ReceiptText, RefreshCw } from "lucide-react";
 import TableScrollArea from "@/components/dashboard/TableScrollArea";
-import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
+import {
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
+import { fetchJsonWithRetry } from "@/lib/retry";
+import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
+import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import type { CierreHorasInstructor, Instructor } from "@/types/database";
 
 // ─── Constantes ────────────────────────────────────────────────
@@ -36,6 +43,11 @@ type GeneracionGastoHoraRow = {
   valor_hora: number | string;
   monto_total: number | string;
   accion: "creado" | "actualizado";
+};
+type HorasDashboardResponse = {
+  instructores: InstructorHorasRow[];
+  horas: Array<{ instructor_id: string; fecha: string; horas: number }>;
+  monthClosures: CierreHoraMensualRow[];
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -68,6 +80,7 @@ const fmtCOP = (n: number) =>
 
 export default function HorasPage() {
   const { perfil } = useAuth();
+  const isMobile = useIsMobileVariant();
   const today = new Date();
 
   const [mes, setMes] = useState(today.getMonth());
@@ -114,60 +127,73 @@ export default function HorasPage() {
   const fetchData = useCallback(async () => {
     if (!perfil?.escuela_id) return;
     setLoading(true);
-    const supabase = createClient();
+    setLoadingClosures(true);
+    setClosureError(null);
 
-    const firstDay = padMonth(anio, mes, 1);
-    const lastDay = padMonth(anio, mes, daysInMonth);
+    try {
+      const params = new URLSearchParams({
+        anio: String(anio),
+        mes: String(mes),
+      });
+      const payload = await getDashboardListCached<HorasDashboardResponse>({
+        name: "horas-dashboard",
+        scope: {
+          id: perfil.id,
+          rol: perfil.rol,
+          escuelaId: perfil.escuela_id,
+          sedeId: perfil.sede_id,
+        },
+        params,
+        loader: () => fetchJsonWithRetry<HorasDashboardResponse>(`/api/horas?${params.toString()}`),
+      });
 
-    const [instRows, horasRows] = await Promise.all([
-      fetchAllSupabaseRows<InstructorHorasRow>((from, to) =>
-        supabase
-          .from("instructores")
-          .select("id, nombre, apellidos, color, sede_id, valor_hora")
-          .eq("escuela_id", perfil.escuela_id)
-          .eq("estado", "activo")
-          .order("nombre", { ascending: true })
-          .order("apellidos", { ascending: true })
-          .range(from, to)
-          .then(({ data, error }) => ({ data: (data as InstructorHorasRow[]) ?? [], error }))
-      ),
-      fetchAllSupabaseRows<{ instructor_id: string; fecha: string; horas: number }>((from, to) =>
-        supabase
-          .from("horas_trabajo")
-          .select("instructor_id, fecha, horas")
-          .eq("escuela_id", perfil.escuela_id)
-          .gte("fecha", firstDay)
-          .lte("fecha", lastDay)
-          .order("fecha", { ascending: true })
-          .range(from, to)
-          .then(({ data, error }) => ({
-            data: (data as { instructor_id: string; fecha: string; horas: number }[]) ?? [],
-            error,
-          }))
-      ),
-    ]);
+      const map: HorasMap = {};
+      const vh: Record<string, number> = {};
 
-    const map: HorasMap = {};
-    const vh: Record<string, number> = {};
+      payload.instructores.forEach((i) => {
+        map[i.id] = {};
+        vh[i.id] = Number(i.valor_hora) || 0;
+      });
 
-    instRows.forEach((i) => {
-      map[i.id] = {};
-      vh[i.id] = Number(i.valor_hora) || 0;
-    });
+      payload.horas.forEach((h) => {
+        const day = parseInt(h.fecha.split("-")[2], 10);
+        if (!map[h.instructor_id]) map[h.instructor_id] = {};
+        map[h.instructor_id][day] = Number(h.horas);
+      });
 
-    horasRows.forEach((h: { instructor_id: string; fecha: string; horas: number }) => {
-      const day = parseInt(h.fecha.split("-")[2], 10);
-      if (!map[h.instructor_id]) map[h.instructor_id] = {};
-      map[h.instructor_id][day] = Number(h.horas);
-    });
-
-    setInstructores(instRows as unknown as Instructor[]);
-    setHorasMap(map);
-    setValorHoras(vh);
-    setInputOverrides({});
-    setValorHoraEdits({});
-    setLoading(false);
-  }, [perfil?.escuela_id, mes, anio, daysInMonth]);
+      setInstructores(payload.instructores as unknown as Instructor[]);
+      setHorasMap(map);
+      setValorHoras(vh);
+      setMonthClosures(
+        canGenerateMonthlyExpenses && monthClosed ? payload.monthClosures || [] : []
+      );
+      setInputOverrides({});
+      setValorHoraEdits({});
+      setSaveError(null);
+    } catch (loadError) {
+      console.error("[HorasPage] Error cargando horas:", loadError);
+      setInstructores([]);
+      setHorasMap({});
+      setValorHoras({});
+      setMonthClosures([]);
+      setSaveError("No se pudieron cargar las horas del mes.");
+      if (canGenerateMonthlyExpenses && monthClosed) {
+        setClosureError("No se pudo verificar el cierre contable del mes.");
+      }
+    } finally {
+      setLoading(false);
+      setLoadingClosures(false);
+    }
+  }, [
+    anio,
+    canGenerateMonthlyExpenses,
+    mes,
+    monthClosed,
+    perfil?.escuela_id,
+    perfil?.id,
+    perfil?.rol,
+    perfil?.sede_id,
+  ]);
 
   useEffect(() => {
     if (perfil) fetchData();
@@ -240,6 +266,11 @@ export default function HorasPage() {
         }
         return next;
       });
+    } else {
+      invalidateDashboardClientCaches([
+        "dashboard-list:horas-dashboard:",
+        "dashboard-list:horas-grid:",
+      ]);
     }
 
     setSavingCells(prev => { const n = new Set(prev); n.delete(key); return n; });
@@ -269,6 +300,11 @@ export default function HorasPage() {
     if (error) {
       setSaveError("No se pudo guardar el valor por hora.");
       setValorHoras(prev => ({ ...prev, [instructorId]: previousValue }));
+    } else {
+      invalidateDashboardClientCaches([
+        "dashboard-list:horas-dashboard:",
+        "dashboard-list:horas-grid:",
+      ]);
     }
     setSavingValor(prev => { const n = new Set(prev); n.delete(instructorId); return n; });
   };
@@ -298,47 +334,10 @@ export default function HorasPage() {
     (inst) => getTotalInstructor(inst.id) > 0 && (valorHoras[inst.id] ?? 0) <= 0
   );
 
-  const fetchMonthlyClosures = useCallback(async () => {
-    if (!perfil?.escuela_id || !canGenerateMonthlyExpenses || !monthClosed) {
-      setMonthClosures([]);
-      setClosureError(null);
-      return;
-    }
-
-    setLoadingClosures(true);
-    setClosureError(null);
-
-    try {
-      const supabase = createClient();
-      const rows = await fetchAllSupabaseRows<CierreHoraMensualRow>((from, to) =>
-        supabase
-          .from("cierres_horas_instructores")
-          .select("id, instructor_id, gasto_id, periodo_anio, periodo_mes, fecha_cierre, total_horas, valor_hora, monto_total, updated_at")
-          .eq("escuela_id", perfil.escuela_id)
-          .eq("periodo_anio", anio)
-          .eq("periodo_mes", monthNumber)
-          .order("monto_total", { ascending: false })
-          .range(from, to)
-          .then(({ data, error }) => ({ data: (data as CierreHoraMensualRow[]) ?? [], error }))
-      );
-      setMonthClosures(rows);
-    } catch (closureLoadError) {
-      console.error("[HorasPage] Error cargando cierres mensuales:", closureLoadError);
-      setMonthClosures([]);
-      setClosureError("No se pudo verificar el cierre contable del mes.");
-    } finally {
-      setLoadingClosures(false);
-    }
-  }, [anio, canGenerateMonthlyExpenses, monthClosed, monthNumber, perfil?.escuela_id]);
-
   useEffect(() => {
     setClosureNotice(null);
     setClosureError(null);
   }, [monthKey]);
-
-  useEffect(() => {
-    void fetchMonthlyClosures();
-  }, [fetchMonthlyClosures]);
 
   const handleGenerateMonthlyExpenses = async () => {
     if (!monthClosed || !canGenerateMonthlyExpenses || !perfil?.escuela_id) return;
@@ -369,7 +368,21 @@ export default function HorasPage() {
         );
       }
 
-      await fetchMonthlyClosures();
+      invalidateDashboardClientCaches([
+        "dashboard-list:horas-dashboard:",
+        "dashboard-list:horas-closures:",
+        "dashboard-list:horas-grid:",
+        "dashboard-list:gastos-ledger:",
+        "accounting-report:",
+      ]);
+      void revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: true,
+          includeDashboard: true,
+        })
+      );
+      await fetchData();
     } catch (generationError) {
       console.error("[HorasPage] Error generando gastos mensuales:", generationError);
       setClosureError(getErrorMessage(generationError, "No se pudo generar el gasto mensual de horas."));
@@ -398,6 +411,217 @@ export default function HorasPage() {
 
   // right offset para la columna de total horas (deja espacio para la columna valor)
   const totalColRight = canEditValor ? VALOR_COL_W : 0;
+
+  const renderMobileHoursCards = () => (
+    <div className="space-y-4 p-4">
+      {instructores.map((inst) => {
+        const totalInst = getTotalInstructor(inst.id);
+        const totalValor = getTotalValor(inst.id);
+        const cierreMes = closureByInstructor.get(inst.id);
+
+        return (
+          <div
+            key={inst.id}
+            className="rounded-[1.75rem] border border-gray-100 bg-[#f7f9fc] p-4 dark:border-gray-800 dark:bg-[#111214]"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  {inst.color ? (
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: inst.color }}
+                    />
+                  ) : null}
+                  <h3 className="truncate text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {inst.nombre} {inst.apellidos}
+                  </h3>
+                </div>
+                <p className="mt-1 text-xs text-[#86868b]">
+                  {totalInst > 0
+                    ? `${totalInst}h registradas en ${selectedMonthLabel}`
+                    : `Sin horas registradas en ${selectedMonthLabel}`}
+                </p>
+              </div>
+              {cierreMes ? (
+                <span className="rounded-full bg-green-100 px-2.5 py-1 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                  Gasto generado
+                </span>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-white px-3 py-3 dark:bg-[#1a1c20]">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">
+                  Total horas
+                </p>
+                <p className="mt-1 text-lg font-semibold text-[#0071e3]">
+                  {totalInst > 0 ? `${totalInst}h` : "—"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white px-3 py-3 dark:bg-[#1a1c20]">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">
+                  Valor total
+                </p>
+                <p className="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">
+                  {totalValor > 0 ? fmtCOP(totalValor) : "—"}
+                </p>
+              </div>
+            </div>
+
+            {canEditValor ? (
+              <div className="mt-4">
+                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">
+                  Valor por hora
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={getValorHoraDisplay(inst.id)}
+                  onChange={(e) =>
+                    setValorHoraEdits((prev) => ({ ...prev, [inst.id]: e.target.value }))
+                  }
+                  onBlur={() => handleValorHoraBlur(inst.id)}
+                  placeholder="0"
+                  className={`apple-input ${savingValor.has(inst.id) ? "opacity-40" : ""}`}
+                />
+              </div>
+            ) : null}
+
+            {canGenerateMonthlyExpenses && monthClosed && totalInst > 0 ? (
+              <div
+                className={`mt-4 rounded-2xl px-3 py-3 text-sm ${
+                  cierreMes
+                    ? "border border-green-200 bg-green-50 text-green-700 dark:border-green-900/50 dark:bg-green-900/20 dark:text-green-300"
+                    : "border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300"
+                }`}
+              >
+                {cierreMes
+                  ? `Gasto generado: ${fmtCOP(Number(cierreMes.monto_total || 0))}`
+                  : "Pendiente de pasar a gasto"}
+              </div>
+            ) : null}
+
+            <div className="mt-4">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">
+                Registro diario
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                {days.map((d) => {
+                  const key = `${inst.id}-${d}`;
+                  const val = getCellValue(inst.id, d);
+                  const numVal = parseFloat(val);
+                  const hasVal = val !== "" && numVal > 0;
+                  const isRest =
+                    val === "0" || (val !== "" && numVal === 0 && horasMap[inst.id]?.[d] === 0);
+                  const isSaving = savingCells.has(key);
+                  const dow = getDayOfWeek(anio, mes, d);
+                  const isWE = dow === 0 || dow === 6;
+                  const isToday =
+                    d === today.getDate() &&
+                    mes === today.getMonth() &&
+                    anio === today.getFullYear();
+
+                  return (
+                    <div
+                      key={d}
+                      className={`rounded-2xl border px-2 py-2 transition-opacity ${
+                        isSaving ? "opacity-40" : ""
+                      } ${
+                        isRest
+                          ? "border-amber-200 bg-amber-100/70 dark:border-amber-800 dark:bg-amber-900/20"
+                          : isToday && hasVal
+                            ? "border-[#0071e3]/30 bg-[#0071e3]/12"
+                            : isToday
+                              ? "border-[#0071e3]/20 bg-[#0071e3]/6"
+                              : hasVal && isWE
+                                ? "border-blue-100 bg-blue-50/60 dark:border-blue-900/40 dark:bg-[#0071e3]/8"
+                                : hasVal
+                                  ? "border-[#0071e3]/10 bg-[#0071e3]/5 dark:border-[#0071e3]/20 dark:bg-[#0071e3]/7"
+                                  : isWE
+                                    ? "border-gray-200 bg-gray-50/60 dark:border-gray-800 dark:bg-[#1a1a1a]/60"
+                                    : "border-gray-200 bg-white dark:border-gray-800 dark:bg-[#17181c]"
+                      }`}
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-1">
+                        <span
+                          className={`text-xs font-semibold ${
+                            isToday ? "text-[#0071e3]" : "text-[#1d1d1f] dark:text-[#f5f5f7]"
+                          }`}
+                        >
+                          {d}
+                        </span>
+                        <span
+                          className={`text-[10px] ${
+                            isToday
+                              ? "text-[#0071e3]"
+                              : isWE
+                                ? "text-[#0071e3]/70"
+                                : "text-[#86868b]"
+                          }`}
+                        >
+                          {DIA_ABREV[dow]}
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={2}
+                        value={val}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/[^0-9]/g, "");
+                          handleChange(inst.id, d, v);
+                        }}
+                        onBlur={() => handleBlur(inst.id, d)}
+                        onFocus={(e) => e.target.select()}
+                        readOnly={isReadOnly}
+                        placeholder="·"
+                        aria-label={`${inst.nombre} día ${d}`}
+                        className={`h-11 w-full rounded-xl border border-transparent bg-white/80 px-1 text-center text-sm outline-none dark:bg-[#0f1013] ${
+                          isRest
+                            ? "font-semibold text-amber-600 dark:text-amber-400"
+                            : hasVal
+                              ? "font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"
+                              : "text-[#86868b]"
+                        } ${
+                          isReadOnly
+                            ? "cursor-default"
+                            : "focus:border-[#0071e3]/30 focus:bg-[#0071e3]/10 dark:focus:bg-[#0071e3]/20"
+                        }`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="rounded-[1.75rem] border border-gray-100 bg-white p-4 dark:border-gray-800 dark:bg-[#17181c]">
+        <div className={`grid gap-3 ${canEditValor ? "grid-cols-2" : "grid-cols-1"}`}>
+          <div className="rounded-2xl bg-gray-50 px-3 py-3 dark:bg-[#111214]">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Total mes</p>
+            <p className="mt-1 text-lg font-semibold text-[#0071e3]">
+              {grandTotal > 0 ? `${grandTotal}h` : "—"}
+            </p>
+          </div>
+          {canEditValor ? (
+            <div className="rounded-2xl bg-gray-50 px-3 py-3 dark:bg-[#111214]">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">
+                Total a gasto
+              </p>
+              <p className="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">
+                {grandTotalValor > 0 ? fmtCOP(grandTotalValor) : "—"}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 
   // ── Render ────────────────────────────────────────────────────
 
@@ -543,6 +767,8 @@ export default function HorasPage() {
             <span className="text-4xl">📋</span>
             <p className="text-sm">No hay instructores activos para mostrar</p>
           </div>
+        ) : isMobile ? (
+          renderMobileHoursCards()
         ) : (
           <TableScrollArea framed={false} viewportClassName="w-full">
             <table
@@ -824,7 +1050,11 @@ export default function HorasPage() {
 
       {/* Leyenda */}
       {!loading && instructores.length > 0 && (
-        <div className="flex flex-wrap items-center gap-4 mt-4 text-xs text-[#86868b] animate-fade-in">
+        <div
+          className={`mt-4 flex flex-wrap gap-4 text-xs text-[#86868b] animate-fade-in ${
+            isMobile ? "items-start" : "items-center"
+          }`}
+        >
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm bg-[#0071e3]/10 border border-[#0071e3]/20" />
             Día con horas
@@ -848,7 +1078,7 @@ export default function HorasPage() {
             </div>
           )}
           {!isReadOnly && (
-            <span className="ml-auto italic">
+            <span className={`${isMobile ? "w-full italic" : "ml-auto italic"}`}>
               Los cambios se guardan automáticamente al salir de cada celda
             </span>
           )}

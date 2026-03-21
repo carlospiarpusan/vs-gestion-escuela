@@ -8,6 +8,13 @@ import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { fetchJsonWithRetry } from "@/lib/retry";
+import { getDashboardCatalogCached } from "@/lib/dashboard-client-cache";
+import {
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
+import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
+import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import type { Perfil, Sede } from "@/types/database";
 import { Plus, Power } from "lucide-react";
 
@@ -80,10 +87,18 @@ export default function AdministrativosPage() {
 
         if (search.trim()) params.set("q", search.trim());
 
-        const payload = await fetchJsonWithRetry<AdministrativosListResponse>(
-          `/api/administrativos?${params.toString()}`,
-          { cache: "no-store" }
-        );
+        const payload = await getDashboardListCached<AdministrativosListResponse>({
+          name: "administrativos-table",
+          scope: {
+            id: perfil.id,
+            rol: perfil.rol,
+            escuelaId: perfil.escuela_id,
+            sedeId: perfil.sede_id,
+          },
+          params,
+          loader: () =>
+            fetchJsonWithRetry<AdministrativosListResponse>(`/api/administrativos?${params.toString()}`),
+        });
 
         if (fetchId !== fetchIdRef.current) return;
 
@@ -104,7 +119,7 @@ export default function AdministrativosPage() {
         }
       }
     },
-    [perfil?.escuela_id]
+    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
   );
 
   useEffect(() => {
@@ -113,17 +128,30 @@ export default function AdministrativosPage() {
     let cancelled = false;
 
     const loadSedes = async () => {
-      const supabase = createClient();
-      const { data: sedesData } = await supabase
-        .from("sedes")
-        .select("*")
-        .eq("escuela_id", perfil.escuela_id)
-        .eq("estado", "activa")
-        .order("es_principal", { ascending: false });
+      const sedesData = await getDashboardCatalogCached<Sede[]>({
+        name: "administrativos-sedes",
+        scope: {
+          id: perfil.id,
+          rol: perfil.rol,
+          escuelaId: perfil.escuela_id,
+          sedeId: perfil.sede_id,
+        },
+        loader: async () => {
+          const supabase = createClient();
+          const { data } = await supabase
+            .from("sedes")
+            .select("*")
+            .eq("escuela_id", perfil.escuela_id)
+            .eq("estado", "activa")
+            .order("es_principal", { ascending: false });
+
+          return (data as Sede[]) || [];
+        },
+      });
 
       if (cancelled) return;
 
-      setSedes((sedesData as Sede[]) || []);
+      setSedes(sedesData);
     };
 
     void loadSedes();
@@ -131,7 +159,7 @@ export default function AdministrativosPage() {
     return () => {
       cancelled = true;
     };
-  }, [perfil?.escuela_id]);
+  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
   useEffect(() => {
     if (!perfil?.escuela_id) return;
@@ -207,6 +235,17 @@ export default function AdministrativosPage() {
       });
       setSaving(false);
       setModalOpen(false);
+      invalidateDashboardClientCaches();
+      void revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: {
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
       setReloadKey((value) => value + 1);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al guardar el administrativo.");
@@ -224,6 +263,17 @@ export default function AdministrativosPage() {
         activo: !row.activo,
       }),
     });
+    invalidateDashboardClientCaches();
+    void revalidateTaggedServerCaches(
+      buildScopedMutationRevalidationTags({
+        scope: {
+          escuelaId: perfil?.escuela_id,
+          sedeId: perfil?.sede_id,
+        },
+        includeFinance: false,
+        includeDashboard: true,
+      })
+    );
     setReloadKey((value) => value + 1);
   };
 
@@ -240,6 +290,17 @@ export default function AdministrativosPage() {
       setSaving(false);
       setDeleteOpen(false);
       setDeleting(null);
+      invalidateDashboardClientCaches();
+      void revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: {
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
       setReloadKey((value) => value + 1);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al eliminar el administrativo.");
