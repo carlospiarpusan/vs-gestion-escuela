@@ -248,6 +248,7 @@ export function AuthProvider({
     };
   }, [hydrateAuth, resetAuthState, router]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const setActiveEscuelaId = useCallback(async (_escuelaId: string) => {
     // super_admin opera en alcance global — no se necesita cambiar escuela activa.
   }, []);

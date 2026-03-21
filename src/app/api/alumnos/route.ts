@@ -284,7 +284,8 @@ export async function GET(request: Request) {
         rows: rowsRes.rows.map((row) => {
           const valorTotalResumen = toNumber(row.valor_total_resumen);
           const totalPagado = toNumber(row.total_pagado);
-          const { _total_count: _, ...rest } = row;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { _total_count, ...rest } = row;
 
           return {
             ...rest,

@@ -7,7 +7,6 @@ import { buildQueryParts } from "@/app/api/reportes/contables/query-builder";
 import type {
   AggregateRow,
   AllowedPerfil,
-  LedgerCountRow,
   NamedAggregateRow,
   QueryFilters,
 } from "@/app/api/reportes/contables/types";

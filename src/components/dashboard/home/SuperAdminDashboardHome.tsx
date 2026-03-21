@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
-  BarChart3,
   BookOpenCheck,
   Building2,
   ChevronRight,
@@ -14,6 +13,7 @@ import {
   ShieldX,
   Sparkles,
   UserCog,
+  Wallet,
 } from "lucide-react";
 import {
   type SuperAdminDashboardResponse,
@@ -132,12 +132,12 @@ export default function SuperAdminDashboardHome() {
       accent: "bg-purple-500",
     },
     {
-      id: "metrics",
-      label: "Métricas CALE",
-      href: "/dashboard/examenes?section=analiticas",
+      id: "billing",
+      label: "Pagos y Suscripciones",
+      href: "/dashboard/suscripciones",
       description:
-        "Consulta tendencias, tasas de aprobación y rendimiento global de los simulacros.",
-      icon: <BarChart3 className="text-emerald-400" size={24} />,
+        "Gestiona la facturación, los métodos de pago y el estado de cuenta de cada escuela afiliada.",
+      icon: <Wallet className="text-emerald-400" size={24} />,
       bg: "from-emerald-500/10 to-transparent border-emerald-500/20",
       accent: "bg-emerald-500",
     },
