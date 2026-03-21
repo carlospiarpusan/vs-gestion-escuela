@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  BookOpen,
-  Calendar,
-  CarFront,
-  DollarSign,
-  FileText,
-  Users,
-} from "lucide-react";
+import { BookOpen, Calendar, CarFront, DollarSign, FileText, Users } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -25,10 +18,7 @@ import {
   type AdminDashboardStats as Stats,
   type AdminDashboardSummaryResponse,
 } from "@/lib/dashboard-admin-summary";
-import {
-  getDashboardSummaryCached,
-  readDashboardSummaryCache,
-} from "@/lib/dashboard-client-cache";
+import { getDashboardSummaryCached, readDashboardSummaryCache } from "@/lib/dashboard-client-cache";
 import HomePriorityActions from "@/components/dashboard/HomePriorityActions";
 import PageScaffold from "@/components/dashboard/PageScaffold";
 import SummaryRow from "@/components/dashboard/SummaryRow";
@@ -99,8 +89,7 @@ export default function AdminDashboardHome() {
             const payload = await response.json();
             if (!response.ok) {
               throw new Error(
-                payload?.error ||
-                  `No se pudo cargar el resumen del dashboard (${response.status}).`
+                payload?.error || `No se pudo cargar el resumen del dashboard (${response.status}).`
               );
             }
 
@@ -133,7 +122,7 @@ export default function AdminDashboardHome() {
 
   const statCards = [
     {
-      label: "Alumnos vigentes",
+      label: "Alumnos del mes",
       value: stats.alumnos.toString(),
       icon: <Users size={20} />,
     },
@@ -217,10 +206,10 @@ export default function AdminDashboardHome() {
       <PageScaffold
         eyebrow="Centro operativo"
         title={`Hola, ${nombre}`}
-        description="Resumen de la escuela con foco en alumnos vigentes, agenda del día, exámenes pendientes y recaudo del mes."
+        description="Resumen de la escuela con foco en alumnos del mes, agenda del día, exámenes pendientes y recaudo del mes."
         aside={
           <div className="rounded-[22px] border border-[rgba(15,23,42,0.08)] bg-white/72 px-4 py-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#66707a]">
+            <p className="text-[11px] font-semibold tracking-[0.16em] text-[#66707a] uppercase">
               Señales rápidas
             </p>
             <div className="mt-3 space-y-2 text-sm text-[#66707a] dark:text-[#aeb6bf]">
@@ -242,7 +231,7 @@ export default function AdminDashboardHome() {
             label: stat.label,
             value: stat.value,
             detail:
-              stat.label === "Alumnos vigentes"
+              stat.label === "Alumnos del mes"
                 ? "Regulares activos y pre-registrados en seguimiento."
                 : stat.label === "Clases Hoy"
                   ? "Agenda práctica y teórica del día."
@@ -278,7 +267,8 @@ export default function AdminDashboardHome() {
                 Base del mes por línea
               </h3>
               <p className="mt-1 text-sm text-[#86868b]">
-                Matrículas regulares registradas en el mes actual, separadas entre moto, carro y combos.
+                Matrículas regulares registradas en el mes actual, separadas entre moto, carro y
+                combos.
               </p>
             </div>
             <div className="rounded-2xl bg-[#0071e3]/10 px-3 py-2 text-xs font-semibold text-[#0071e3]">

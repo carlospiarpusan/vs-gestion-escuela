@@ -16,20 +16,14 @@ import {
   type SuperAdminDashboardStats as PlatformStats,
   type SuperAdminSchoolOverview as SchoolOverview,
 } from "@/lib/dashboard-admin-summary";
-import {
-  getDashboardSummaryCached,
-  readDashboardSummaryCache,
-} from "@/lib/dashboard-client-cache";
+import { getDashboardSummaryCached, readDashboardSummaryCache } from "@/lib/dashboard-client-cache";
 import HomePriorityActions from "@/components/dashboard/HomePriorityActions";
 import ListState from "@/components/dashboard/ListState";
 import PageScaffold from "@/components/dashboard/PageScaffold";
 import SummaryRow from "@/components/dashboard/SummaryRow";
 import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
 import { useAuth } from "@/hooks/useAuth";
-import {
-  DashboardLoadingState,
-  fmt,
-} from "@/components/dashboard/home/dashboard-home-shared";
+import { DashboardLoadingState, fmt } from "@/components/dashboard/home/dashboard-home-shared";
 
 export default function SuperAdminDashboardHome() {
   const { perfil } = useAuth();
@@ -196,7 +190,7 @@ export default function SuperAdminDashboardHome() {
       icon: <UserCog size={18} />,
     },
     {
-      label: "Alumnos vigentes",
+      label: "Alumnos del mes",
       value: stats.alumnos.toString(),
       helper: "Base activa del sistema",
       icon: <Users size={18} />,
@@ -227,7 +221,7 @@ export default function SuperAdminDashboardHome() {
         description="Supervisa escuelas, sedes, capacidad y alertas operativas desde un solo lugar."
         aside={
           <div className="rounded-[22px] border border-[rgba(15,23,42,0.08)] bg-white/72 px-4 py-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#66707a]">
+            <p className="text-[11px] font-semibold tracking-[0.16em] text-[#66707a] uppercase">
               Estado general
             </p>
             <p className="mt-3 text-3xl font-semibold text-[#111214] dark:text-[#f5f5f7]">
