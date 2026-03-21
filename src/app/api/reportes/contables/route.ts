@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import { resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import { normalizeUuid } from "@/lib/dashboard-scope";
 import { parseExpenseSearch } from "@/lib/expense-search";
 import {
@@ -11,7 +11,11 @@ import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildFinanceCacheTags } from "@/lib/server-cache-tags";
 import { buildFinanceServerCacheKey } from "@/lib/finance/server/request";
-import { PAYABLE_BUCKET_LABELS, RECEIVABLE_BUCKET_LABELS, sumBucketTotal } from "@/lib/finance/aging";
+import {
+  PAYABLE_BUCKET_LABELS,
+  RECEIVABLE_BUCKET_LABELS,
+  sumBucketTotal,
+} from "@/lib/finance/aging";
 import { createServerTiming } from "@/lib/server-timing";
 import type { Rol } from "@/types/database";
 
@@ -221,7 +225,6 @@ type LedgerCountRow = {
   total: number | string | null;
 };
 
-const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
 const DEFAULT_REPORT_INCLUDES: ReportInclude[] = [
   "options",
   "summary",
@@ -874,7 +877,9 @@ async function getAccessibleOptions(
   const ingresosScopeWhere: string[] = [];
   const gastosScopeWhere: string[] = [];
   const matriculasScopeWhere: string[] = [];
-  const alumnosScopeWhere: string[] = ["a.tipo_registro IN ('practica_adicional', 'aptitud_conductor')"];
+  const alumnosScopeWhere: string[] = [
+    "a.tipo_registro IN ('practica_adicional', 'aptitud_conductor')",
+  ];
   const addYearValue = (value: string) => {
     yearValues.push(value);
     return `$${yearValues.length}`;
@@ -1771,8 +1776,14 @@ async function buildJsonResponse({
             (sum, row) => sum + toNumber(row.total),
             0
           ),
-          vencido: sumBucketTotal(receivablesBucketsRes.rows, RECEIVABLE_BUCKET_LABELS.overdueCritical),
-          vencePronto: sumBucketTotal(receivablesBucketsRes.rows, RECEIVABLE_BUCKET_LABELS.overdueMedium),
+          vencido: sumBucketTotal(
+            receivablesBucketsRes.rows,
+            RECEIVABLE_BUCKET_LABELS.overdueCritical
+          ),
+          vencePronto: sumBucketTotal(
+            receivablesBucketsRes.rows,
+            RECEIVABLE_BUCKET_LABELS.overdueMedium
+          ),
           alDia: sumBucketTotal(receivablesBucketsRes.rows, RECEIVABLE_BUCKET_LABELS.current),
           buckets: receivablesBucketsRes.rows.map((row: AgingBucketRow) => ({
             bucket: row.bucket,
@@ -1995,7 +2006,13 @@ async function buildCsvResponse({
 export async function GET(request: Request) {
   const timing = createServerTiming();
   // Bypassing auth for testing filters
-  const perfil = { id: 'mock-id', rol: 'super_admin' as const, escuela_id: 'a5320c4a-3bf6-4da5-b365-da17d7001d4f', sede_id: null, activo: true } as AllowedPerfil;
+  const perfil = {
+    id: "mock-id",
+    rol: "super_admin" as const,
+    escuela_id: "a5320c4a-3bf6-4da5-b365-da17d7001d4f",
+    sede_id: null,
+    activo: true,
+  } as AllowedPerfil;
   const url = new URL(request.url);
   const dateRange = getCurrentMonthRange();
   const from = parseDateInput(url.searchParams.get("from"), dateRange.from);

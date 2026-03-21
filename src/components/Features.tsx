@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { BellRing, Calendar, Car, CreditCard } from "lucide-react";
-import SectionIntro from "@/components/public/SectionIntro";
+
 import { availableFeatures, upcomingFeatures } from "@/lib/public-site-content";
 
 const areaIcons = {

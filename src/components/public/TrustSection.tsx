@@ -1,5 +1,5 @@
 import { ShieldCheck, Building2, Workflow } from "lucide-react";
-import SectionIntro from "@/components/public/SectionIntro";
+
 import { trustPoints } from "@/lib/public-site-content";
 
 const trustIcons = {

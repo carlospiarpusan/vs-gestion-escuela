@@ -30,12 +30,6 @@ const liveAreas = [
   },
 ];
 
-const upcomingSignals = [
-  "Automatizaciones operativas más amplias",
-  "Analítica ejecutiva más profunda",
-  "Más seguimiento guiado por módulo",
-];
-
 export default function Hero() {
   return (
     <section className="relative overflow-hidden border-b border-[var(--surface-border)] bg-[#0a0f18] pt-26 pb-14 sm:pt-32 sm:pb-20 md:pt-38 md:pb-24">
