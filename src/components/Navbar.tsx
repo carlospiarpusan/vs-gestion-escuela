@@ -2,9 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { ArrowRight, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { PUBLIC_NAV_LINKS } from "@/lib/public-navigation";
+
+const mobileHighlights = ["Alumnos y matrículas", "Ingresos y cartera", "Gastos y flota"];
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -16,56 +19,68 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const navLinks = [
-    { name: "Características", href: "#features" },
-    { name: "Cómo funciona", href: "#how-it-works" },
-    { name: "Precios", href: "#pricing" },
-    { name: "Soporte", href: "#contacto" },
-  ];
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    if (menuOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = previousOverflow;
+    }
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [menuOpen]);
 
   return (
     <>
       <nav
         className={cn(
-          "fixed left-1/2 top-3 z-50 w-[min(1120px,calc(100%-1rem))] -translate-x-1/2 transition-all duration-300 sm:top-4 sm:w-[min(1120px,calc(100%-2rem))]",
-          scrolled || menuOpen
-            ? "opacity-100"
-            : "opacity-95"
+          "fixed top-[max(0.75rem,env(safe-area-inset-top))] left-1/2 z-50 w-[min(1120px,calc(100%-1rem))] -translate-x-1/2 transition-all duration-300 sm:top-4 sm:w-[min(1120px,calc(100%-2rem))]",
+          scrolled || menuOpen ? "opacity-100" : "opacity-95"
         )}
       >
-        <div className={cn(
-          "apple-toolbar rounded-[26px] px-4 py-3 sm:px-5",
-          scrolled || menuOpen ? "shadow-[0_18px_40px_rgba(15,23,42,0.12)]" : "shadow-[0_10px_26px_rgba(15,23,42,0.08)]"
-        )}>
+        <div
+          className={cn(
+            "apple-toolbar rounded-[24px] px-4 py-3 sm:px-5",
+            scrolled || menuOpen
+              ? "shadow-[0_18px_40px_rgba(15,23,42,0.12)]"
+              : "shadow-[0_10px_26px_rgba(15,23,42,0.08)]"
+          )}
+        >
           <div className="flex items-center justify-between gap-4">
-            {/* Logo */}
             <Link
               href="/"
               className="z-50 flex items-center gap-3 transition-opacity hover:opacity-85"
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0071e3] text-sm font-semibold text-white shadow-[0_14px_30px_rgba(0,113,227,0.3)]">
+              <span className="apple-brand-mark flex h-9 w-9 items-center justify-center text-sm font-semibold">
                 A
               </span>
-              <span className="text-[16px] font-semibold tracking-tight text-foreground">
-                AutoEscuela<span className="gradient-text">Pro</span>
-              </span>
+              <div className="min-w-0">
+                <span className="text-foreground block text-[16px] font-semibold tracking-tight">
+                  AutoEscuela<span className="gradient-text">Pro</span>
+                </span>
+                <span className="apple-kicker hidden sm:block">
+                  Software para autoescuelas en Colombia
+                </span>
+              </div>
             </Link>
 
-            {/* Desktop Nav */}
-            <div className="hidden md:flex items-center gap-2 rounded-full border border-[var(--surface-border)] bg-white/45 px-2 py-1 dark:bg-white/[0.03]">
-              {navLinks.map((link) => (
+            <div className="apple-panel-muted hidden items-center gap-2 rounded-full px-2 py-1 md:flex">
+              {PUBLIC_NAV_LINKS.map((link) => (
                 <a
-                  key={link.name}
+                  key={link.label}
                   href={link.href}
-                  className="rounded-full px-3 py-2 text-[12px] font-medium tracking-[0.02em] text-foreground/72 transition-colors hover:text-blue-apple"
+                  className="hover:text-blue-apple rounded-full px-3 py-2 text-[12px] font-medium tracking-[0.02em] text-[var(--gray-600)] transition-colors"
                 >
-                  {link.name}
+                  {link.label}
                 </a>
               ))}
             </div>
 
-            {/* Auth Buttons — desktop */}
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden items-center gap-2 md:flex">
               <Link
                 href="/login"
                 className="apple-button-ghost text-[12px] font-medium tracking-[0.02em]"
@@ -81,17 +96,20 @@ export default function Navbar() {
             </div>
 
             {/* Mobile: login button + hamburger */}
-            <div className="flex md:hidden items-center gap-3 z-50">
+            <div className="z-50 flex items-center gap-3 md:hidden">
+              <Link
+                href="/login"
+                className="text-[13px] font-semibold text-blue-500 transition-colors hover:text-blue-600"
+              >
+                Ingresar
+              </Link>
               <Link
                 href="/registro"
-                className="apple-button-primary px-3.5 py-2 text-[12px] font-medium"
+                className="apple-button-primary min-h-[36px] px-3 py-1.5 text-[12px] font-medium shadow-sm"
               >
-                Crear cuenta
+                Empezar
               </Link>
-              <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                className="apple-icon-button"
-              >
+              <button onClick={() => setMenuOpen(!menuOpen)} className="apple-icon-button">
                 <AnimatePresence mode="wait">
                   {menuOpen ? (
                     <motion.div
@@ -121,7 +139,6 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {/* Mobile menu overlay */}
       <AnimatePresence>
         {menuOpen && (
           <motion.div
@@ -129,41 +146,61 @@ export default function Navbar() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="apple-overlay fixed inset-0 z-40 px-5 pt-24 md:hidden"
+            className="apple-overlay fixed inset-0 z-40 px-4 pt-[calc(env(safe-area-inset-top)+5.25rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] md:hidden"
+            onClick={() => setMenuOpen(false)}
           >
-            <div className="apple-panel mx-auto max-w-md p-5">
+            <div
+              className="apple-panel mx-auto flex h-full max-w-md flex-col overflow-hidden p-5"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="mb-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#86868b]">
-                  Navegación
-                </p>
-                <p className="mt-1 text-sm text-[#6e6e73] dark:text-[#aeaeb2]">
-                  Acceso rápido a la información principal del sitio.
+                <p className="apple-kicker">AutoEscuelas en Colombia</p>
+                <p className="apple-copy mt-1 text-sm">
+                  Entra directo a funciones, implementación, FAQ y planes sin perder contexto del
+                  producto.
                 </p>
               </div>
+
+              <div className="mb-5 flex flex-wrap gap-2">
+                {mobileHighlights.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full border border-[var(--surface-border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--gray-600)]"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+
               <div className="apple-divider mb-4" />
-              <div className="flex flex-col gap-2">
-                {navLinks.map((link) => (
+
+              <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
+                {PUBLIC_NAV_LINKS.map((link) => (
                   <a
-                    key={link.name}
+                    key={link.label}
                     href={link.href}
-                    className="rounded-2xl px-4 py-3 text-lg font-semibold text-foreground transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
+                    className="text-foreground rounded-[20px] border border-transparent px-4 py-3.5 text-base font-semibold transition-colors hover:border-[var(--surface-border)] hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
                     onClick={() => setMenuOpen(false)}
                   >
-                    {link.name}
+                    <span className="flex items-center justify-between gap-3">
+                      {link.label}
+                      <ArrowRight className="h-4 w-4 text-[var(--gray-500)]" />
+                    </span>
                   </a>
                 ))}
               </div>
+
               <div className="mt-6 flex flex-col gap-3">
                 <Link
                   href="/login"
-                  className="apple-button-secondary justify-center text-sm font-medium"
+                  className="apple-button-secondary min-h-[48px] justify-center text-sm font-medium"
                   onClick={() => setMenuOpen(false)}
                 >
                   Iniciar Sesión
                 </Link>
                 <Link
                   href="/registro"
-                  className="apple-button-primary justify-center text-sm font-medium"
+                  className="apple-button-primary min-h-[48px] justify-center text-sm font-medium"
                   onClick={() => setMenuOpen(false)}
                 >
                   Crear cuenta
