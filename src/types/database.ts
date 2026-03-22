@@ -440,6 +440,44 @@ export interface MantenimientoVehiculo {
   created_at: string;
 }
 
+// ── Nóminas ──────────────────────────────────────────────────────────
+export type TipoEmpleadoNomina = "instructor" | "administrativo";
+export type TipoContratoNomina = "prestacion_servicios" | "contrato_laboral";
+export type EstadoNomina = "borrador" | "aprobada" | "pagada" | "anulada";
+export type TipoConceptoNomina = "devengo" | "deduccion";
+
+export interface Nomina {
+  id: string;
+  escuela_id: string;
+  sede_id: string;
+  empleado_tipo: TipoEmpleadoNomina;
+  empleado_id: string;
+  empleado_nombre: string;
+  periodo_anio: number;
+  periodo_mes: number;
+  tipo_contrato: TipoContratoNomina;
+  salario_base: number;
+  total_devengado: number;
+  total_deducciones: number;
+  neto_pagar: number;
+  estado: EstadoNomina;
+  fecha_pago: string | null;
+  notas: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NominaConcepto {
+  id: string;
+  nomina_id: string;
+  tipo: TipoConceptoNomina;
+  concepto: string;
+  descripcion: string | null;
+  valor: number;
+  created_at: string;
+}
+
 export interface Evaluacion {
   id: string;
   titulo: string;

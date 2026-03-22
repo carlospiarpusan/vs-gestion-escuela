@@ -27,6 +27,7 @@ export type DashboardIconKey =
   | "branches"
   | "schools"
   | "subscriptions"
+  | "payroll"
   | "logbook"
   | "permissions";
 
@@ -48,6 +49,7 @@ export type DashboardModuleId =
   | "branches"
   | "schools"
   | "subscriptions"
+  | "payroll"
   | "logbook"
   | "permissions";
 
@@ -368,6 +370,20 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     priority: 145,
     mobilePriority: 2,
     homePriority: 15,
+  },
+  {
+    id: "payroll",
+    label: "Nóminas",
+    shortLabel: "Nóminas",
+    href: "/dashboard/nominas",
+    pathPrefix: "/dashboard/nominas",
+    description:
+      "Pagos mensuales, seguridad social y liquidación de instructores y administrativos.",
+    area: "finance",
+    icon: "payroll",
+    roles: getDashboardRolesForCapabilityModule("payroll"),
+    priority: 75,
+    homePriority: 75,
   },
   {
     id: "logbook",

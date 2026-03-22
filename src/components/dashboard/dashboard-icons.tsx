@@ -19,6 +19,7 @@ import {
   UserCheck,
   UserCog,
   Users,
+  Banknote,
   Wallet,
 } from "lucide-react";
 import type { DashboardIconKey } from "@/lib/dashboard-nav";
@@ -59,6 +60,8 @@ export function renderDashboardIcon(icon: DashboardIconKey, size = 18): ReactNod
       return <Building2 size={size} />;
     case "subscriptions":
       return <CreditCard size={size} />;
+    case "payroll":
+      return <Banknote size={size} />;
     case "logbook":
       return <BookOpen size={size} />;
     case "permissions":

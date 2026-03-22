@@ -33,6 +33,7 @@ export type RoleCapabilityModuleId =
   | "branches"
   | "schools"
   | "subscriptions"
+  | "payroll"
   | "permissions"
   | "account";
 
@@ -177,6 +178,12 @@ export const ROLE_CAPABILITY_MODULES: RoleCapabilityModuleDescriptor[] = [
     visibleInAudit: true,
   },
   {
+    id: "payroll",
+    label: "Nóminas",
+    description: "Pagos mensuales, seguridad social y liquidación de personal.",
+    visibleInAudit: true,
+  },
+  {
     id: "permissions",
     label: "Permisos",
     description: "Matriz de roles y alcances operativos.",
@@ -295,6 +302,7 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
     vehicles: NONE_CAPABILITY,
     logbook: NONE_CAPABILITY,
     hours: NONE_CAPABILITY,
+    payroll: NONE_CAPABILITY,
     exams: {
       state: "full",
       scope: "platform",
@@ -362,6 +370,12 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
       scope: "school",
       actions: ["view", "create", "edit", "close", "configure"],
       note: "Puede modificar valor hora y generar cierres mensuales de su escuela.",
+    },
+    payroll: {
+      state: "full",
+      scope: "school",
+      actions: ["view", "create", "edit", "delete"],
+      note: "Gestiona nóminas de instructores y administrativos de toda su escuela.",
     },
     exams: {
       state: "readonly",
@@ -457,6 +471,12 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
       actions: ["view", "create", "edit", "close", "configure"],
       note: "Puede modificar valor hora y generar cierres mensuales de su sede.",
     },
+    payroll: {
+      state: "scoped",
+      scope: "branch",
+      actions: ["view", "create", "edit", "delete"],
+      note: "Gestiona nóminas de su sede.",
+    },
     exams: {
       state: "readonly",
       scope: "branch",
@@ -540,6 +560,12 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
       scope: "branch",
       actions: ["view", "create", "edit", "close"],
       note: "Puede cerrar el mes, pero no modificar valor hora.",
+    },
+    payroll: {
+      state: "scoped",
+      scope: "branch",
+      actions: ["view", "create", "edit"],
+      note: "Registra nóminas en su sede pero no puede eliminarlas.",
     },
     exams: {
       state: "readonly",

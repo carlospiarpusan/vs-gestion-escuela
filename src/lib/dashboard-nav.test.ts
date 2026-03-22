@@ -43,6 +43,7 @@ describe("dashboard navigation config", () => {
       "income",
       "portfolio",
       "cash",
+      "payroll",
       "expenses",
       "automation",
       "reports",
