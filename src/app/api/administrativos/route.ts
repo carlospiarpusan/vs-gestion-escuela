@@ -54,7 +54,7 @@ type CountRow = {
   total: number | string | null;
 };
 
-const DASHBOARD_LIST_CACHE_TTL_MS = 45 * 1000;
+const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
 
 function parseInteger(value: string | null, fallback: number, min: number, max: number) {
   const parsed = Number(value);

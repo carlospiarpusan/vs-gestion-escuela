@@ -15,6 +15,7 @@ import {
 import { CALE_BANK_SOURCE } from "@/lib/cale";
 
 const EDITOR_ROLES = getAuditedRolesForCapabilityAction("exams", "configure");
+const DELETE_ROLES = getAuditedRolesForCapabilityAction("exams", "delete");
 
 const questionSchema = z.object({
   categoria_id: z.string().uuid(),
@@ -159,6 +160,66 @@ export async function PATCH(
     console.error("[API CALE admin questions PATCH] Error:", error);
     return NextResponse.json(
       { error: "No se pudo actualizar la pregunta del banco CALE." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ questionId: string }> }
+) {
+  const authz = await authorizeApiRequest(DELETE_ROLES);
+  if (!authz.ok) return authz.response;
+
+  const { questionId } = await context.params;
+  if (!questionId) {
+    return NextResponse.json({ error: "Pregunta inválida." }, { status: 400 });
+  }
+
+  try {
+    const supabaseAdmin = buildSupabaseAdminClient();
+
+    const { data: existing, error: existingError } = await supabaseAdmin
+      .from("preguntas_examen")
+      .select("id, codigo_externo, categoria_id")
+      .eq("id", questionId)
+      .eq("fuente", CALE_BANK_SOURCE)
+      .maybeSingle();
+    if (existingError) throw existingError;
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "La pregunta no existe dentro del banco CALE activo." },
+        { status: 404 }
+      );
+    }
+
+    const { error: deleteError } = await supabaseAdmin
+      .from("preguntas_examen")
+      .delete()
+      .eq("id", questionId)
+      .eq("fuente", CALE_BANK_SOURCE);
+    if (deleteError) throw deleteError;
+
+    await supabaseAdmin.from("actividad_log").insert({
+      escuela_id: authz.perfil.escuela_id,
+      sede_id: authz.perfil.sede_id,
+      user_id: authz.perfil.id,
+      accion: "eliminar_pregunta_cale",
+      tabla: "preguntas_examen",
+      registro_id: questionId,
+      detalles: {
+        categoria_id: existing.categoria_id,
+        codigo_externo: existing.codigo_externo,
+      },
+    });
+
+    return NextResponse.json({ deleted: true });
+  } catch (error) {
+    console.error("[API CALE admin questions DELETE] Error:", error);
+    return NextResponse.json(
+      { error: "No se pudo eliminar la pregunta del banco CALE." },
       { status: 500 }
     );
   }

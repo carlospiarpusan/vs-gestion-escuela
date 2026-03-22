@@ -205,12 +205,12 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
     description:
       "Control global de escuelas, estructura general y gobierno general de la plataforma.",
     can: [
-      "Administra escuelas, planes, suscripciones y los controles base en toda la plataforma.",
-      "Consulta informes globales y el estado general de la red de escuelas.",
+      "Administra escuelas, planes y los controles base en toda la plataforma.",
+      "Supervisa el estado y capacidad de las escuelas afiliadas.",
       "Crea, edita y elimina preguntas del banco maestro de evaluaciones CALE.",
     ],
     cannot: [
-      "No queda limitado a una escuela o sede concreta.",
+      "No accede a datos financieros, alumnos individuales ni informes operativos de las escuelas.",
       "No opera el día a día de alumnos, clases, ingresos o personal interno como si fuera una escuela.",
     ],
   },
@@ -306,11 +306,7 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
     cash: NONE_CAPABILITY,
     expenses: NONE_CAPABILITY,
     automation: NONE_CAPABILITY,
-    reports: {
-      state: "readonly",
-      scope: "platform",
-      actions: ["view", "export"],
-    },
+    reports: NONE_CAPABILITY,
     permissions: {
       state: "readonly",
       scope: "platform",
@@ -683,4 +679,76 @@ export function getCapabilityStateLabel(state: RoleCapabilityState) {
 
 export function getAuditedVisibleModules() {
   return ROLE_CAPABILITY_MODULES.filter((module) => module.visibleInAudit);
+}
+
+// ---------------------------------------------------------------------------
+// Override support — allows super_admin to customize the matrix at runtime
+// ---------------------------------------------------------------------------
+
+export type CapabilityOverride = {
+  rol: AuditedRole;
+  module_id: RoleCapabilityModuleId;
+  state: RoleCapabilityState;
+  scope: RoleCapabilityScope;
+  actions: RoleCapabilityAction[];
+  note?: string | null;
+};
+
+export type CapabilityOverrideMap = Record<string, Record<string, CapabilityOverride>>;
+
+export function getDefaultCapability(
+  role: AuditedRole,
+  moduleId: RoleCapabilityModuleId
+): RoleCapability {
+  return AUDITED_ROLE_CAPABILITY_MATRIX[role][moduleId] ?? NONE_CAPABILITY;
+}
+
+export function getCapabilityWithOverrides(
+  role: AuditedRole,
+  moduleId: RoleCapabilityModuleId,
+  overrides: CapabilityOverrideMap | null
+): RoleCapability {
+  const base = getDefaultCapability(role, moduleId);
+  if (!overrides) return base;
+  const override = overrides[role]?.[moduleId];
+  if (!override) return base;
+  return {
+    state: override.state,
+    scope: override.scope,
+    actions: override.actions,
+    note: override.note ?? undefined,
+  };
+}
+
+export function buildOverrideList(overrides: CapabilityOverrideMap): CapabilityOverride[] {
+  const list: CapabilityOverride[] = [];
+  for (const role of AUDITED_ROLE_ORDER) {
+    const roleOverrides = overrides[role];
+    if (!roleOverrides) continue;
+    for (const moduleId of Object.keys(roleOverrides)) {
+      list.push(roleOverrides[moduleId]);
+    }
+  }
+  return list;
+}
+
+export function diffFromDefaults(overrides: CapabilityOverrideMap): CapabilityOverride[] {
+  const diffs: CapabilityOverride[] = [];
+  for (const role of AUDITED_ROLE_ORDER) {
+    const roleOverrides = overrides[role];
+    if (!roleOverrides) continue;
+    for (const moduleId of Object.keys(roleOverrides) as RoleCapabilityModuleId[]) {
+      const override = roleOverrides[moduleId];
+      const def = getDefaultCapability(role, moduleId);
+      if (
+        override.state !== def.state ||
+        override.scope !== def.scope ||
+        JSON.stringify(override.actions.slice().sort()) !==
+          JSON.stringify(def.actions.slice().sort())
+      ) {
+        diffs.push(override);
+      }
+    }
+  }
+  return diffs;
 }

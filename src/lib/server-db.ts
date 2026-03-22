@@ -24,9 +24,9 @@ export function getServerDbPool() {
 
     global.__autoescuelaServerDbPool = new Pool({
       connectionString: databaseUrl,
-      // Un pool de 1 deja muy lentas las pantallas financieras con varias
-      // agregaciones; 4 mantiene el costo bajo sin ahogar los reportes.
-      max: isSupabasePooler ? 4 : 5,
+      // Las pantallas financieras lanzan ~10 queries en paralelo.
+      // 6 mantiene el costo bajo sin generar colas excesivas.
+      max: isSupabasePooler ? 6 : 8,
       idleTimeoutMillis: 5_000,
       connectionTimeoutMillis: 15_000,
       maxUses: 50,

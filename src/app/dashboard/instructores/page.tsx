@@ -109,7 +109,8 @@ export default function InstructoresPage() {
             sedeId: perfil.sede_id,
           },
           params,
-          loader: () => fetchJsonWithRetry<InstructoresListResponse>(`/api/instructores?${params.toString()}`),
+          loader: () =>
+            fetchJsonWithRetry<InstructoresListResponse>(`/api/instructores?${params.toString()}`),
         });
 
         if (fetchId !== fetchIdRef.current) return;
@@ -137,12 +138,7 @@ export default function InstructoresPage() {
   // Re-fetch whenever page, search, or profile changes.
   useEffect(() => {
     if (!perfil) return;
-
-    const timeoutId = window.setTimeout(() => {
-      void fetchData(currentPage, searchTerm);
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
+    void fetchData(currentPage, searchTerm);
   }, [fetchData, perfil, currentPage, searchTerm]);
 
   useEffect(() => {

@@ -11,6 +11,7 @@ import {
   MapPin,
   ShieldAlert,
   Sparkles,
+  Wallet,
 } from "lucide-react";
 import {
   type SuperAdminDashboardResponse,
@@ -24,28 +25,6 @@ import {
 import { getSchoolPlanDescriptor } from "@/lib/school-plans";
 import { useAuth } from "@/hooks/useAuth";
 
-function getHealthClasses(health: PlatformSubscriptionSchool["health"]) {
-  switch (health) {
-    case "risk":
-      return "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300";
-    case "attention":
-      return "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300";
-    default:
-      return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300";
-  }
-}
-
-function getServiceClasses(state: PlatformSubscriptionSchool["estado"]) {
-  switch (state) {
-    case "suspendida":
-      return "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300";
-    case "inactiva":
-      return "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
-    default:
-      return "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300";
-  }
-}
-
 export default function SuperAdminDashboardHome() {
   const { perfil } = useAuth();
   const [stats, setStats] = useState<PlatformStats>({
@@ -53,9 +32,7 @@ export default function SuperAdminDashboardHome() {
     escuelasActivas: 0,
     sedesActivas: 0,
     adminsEscuela: 0,
-    alumnos: 0,
-    alumnosMes: 0,
-    ingresosMes: 0,
+    capacidadPromedio: 0,
   });
   const [loading, setLoading] = useState(true);
   const [subscriptionSchools, setSubscriptionSchools] = useState<PlatformSubscriptionSchool[]>([]);
@@ -115,10 +92,6 @@ export default function SuperAdminDashboardHome() {
 
   const schoolsAtRisk = useMemo(
     () => subscriptionSchools.filter((school) => school.health === "risk"),
-    [subscriptionSchools]
-  );
-  const paidSchoolsCount = useMemo(
-    () => subscriptionSchools.filter((school) => school.paidPlan).length,
     [subscriptionSchools]
   );
   const topAlerts = useMemo(() => schoolsAtRisk.slice(0, 5), [schoolsAtRisk]);
@@ -182,8 +155,8 @@ export default function SuperAdminDashboardHome() {
                 Command Center
               </h1>
               <p className="mt-4 text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Supervisa escuelas, planes, cobertura y el banco maestro CALE desde un único panel
-                global. Aquí el super admin gobierna la red, no la operación diaria de una sede.
+                Administra las escuelas afiliadas, controla capacidad y mantén el banco de
+                evaluaciones global, todo desde un único punto.
               </p>
             </div>
           </div>
@@ -193,42 +166,43 @@ export default function SuperAdminDashboardHome() {
       <div className="relative z-20 mx-auto mt-[-2rem] max-w-7xl px-4 lg:px-12">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/10 dark:border-white/10 dark:bg-zinc-900/50">
+            <div className="absolute -top-4 -right-4 rounded-full bg-blue-500/10 p-6 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                Escuelas activas
+                Escuelas Activas
               </p>
               <div className="rounded-xl bg-blue-100 p-2 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
                 <Building2 size={20} />
               </div>
             </div>
             <p className="mt-4 text-4xl font-black text-zinc-900 dark:text-white">
-              {loading ? "-" : stats.escuelasActivas.toLocaleString("es-CO")}
+              {loading ? "-" : stats.escuelasActivas}
             </p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-              {loading ? "Cargando red..." : `${stats.escuelas} escuelas registradas`}
+              de {stats.escuelas} registradas en plataforma
             </p>
           </div>
 
           <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-500/10 dark:border-white/10 dark:bg-zinc-900/50">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Planes pagos</p>
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                Capacidad Promedio
+              </p>
               <div className="rounded-xl bg-emerald-100 p-2 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
-                <CreditCard size={20} />
+                <Wallet size={20} />
               </div>
             </div>
             <p className="mt-4 text-4xl font-black text-zinc-900 dark:text-white">
-              {loading ? "-" : paidSchoolsCount.toLocaleString("es-CO")}
+              {loading ? "-" : `${stats.capacidadPromedio}%`}
             </p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-              Escuelas hoy en Básico, Profesional o Enterprise
+              Uso promedio de cupos en escuelas activas
             </p>
           </div>
 
           <div className="group relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/70 p-6 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10 dark:border-white/10 dark:bg-zinc-900/50">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                Cobertura de red
-              </p>
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Sedes Activas</p>
               <div className="rounded-xl bg-purple-100 p-2 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400">
                 <MapPin size={20} />
               </div>
@@ -350,28 +324,29 @@ export default function SuperAdminDashboardHome() {
             </div>
           </div>
 
+          {/* Estado de Escuelas */}
           <div className="col-span-1 overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm lg:col-span-2 dark:border-white/10 dark:bg-[#121214]">
             <div className="flex items-center justify-between border-b border-zinc-100 p-6 dark:border-white/5">
               <div>
                 <h3 className="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-white">
-                  <CreditCard className="text-emerald-500" size={20} />
-                  Planes y estado de servicio
+                  <Building2 className="text-blue-500" size={20} />
+                  Estado de Escuelas
                 </h3>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Lectura global de lo que sí sostiene la red hoy.
+                  Estado operativo y capacidad de las escuelas afiliadas.
                 </p>
               </div>
               <Link
-                href="/dashboard/suscripciones"
+                href="/dashboard/escuelas"
                 className="text-sm font-semibold text-blue-600 hover:text-blue-500 dark:text-blue-400"
               >
-                Abrir módulo
+                Gestionar escuelas
               </Link>
             </div>
 
             <div className="p-0">
               {loading ? (
-                <div className="p-6 text-sm text-zinc-500">Cargando planes y cobertura...</div>
+                <div className="p-6 text-sm text-zinc-500">Cargando escuelas...</div>
               ) : planPreview.length === 0 ? (
                 <div className="p-8 text-center text-sm text-zinc-500">
                   No hay escuelas registradas todavía.
@@ -379,7 +354,13 @@ export default function SuperAdminDashboardHome() {
               ) : (
                 <div className="divide-y divide-zinc-100 dark:divide-white/5">
                   {planPreview.map((school) => {
-                    const descriptor = getSchoolPlanDescriptor(school.plan);
+                    const desc = getSchoolPlanDescriptor(school.plan);
+                    const estadoStyles =
+                      school.estado === "activa"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                        : school.estado === "suspendida"
+                          ? "bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400"
+                          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-500/10 dark:text-zinc-400";
                     return (
                       <div
                         key={school.id}
@@ -390,21 +371,34 @@ export default function SuperAdminDashboardHome() {
                             {school.nombre}
                           </span>
                           <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
-                            {descriptor?.label || school.plan} · {school.branchUsageLabel}
+                            Plan {desc?.label || school.plan} · {school.sedesActivas}/
+                            {school.sedesTotal} sedes
                           </span>
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getServiceClasses(school.estado)}`}
-                          >
-                            {school.serviceLabel}
-                          </span>
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getHealthClasses(school.health)}`}
-                          >
-                            {school.healthLabel}
-                          </span>
+                        <div className="flex w-full min-w-[200px] flex-col gap-2 sm:w-2/5">
+                          <div className="flex items-center justify-between">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${estadoStyles}`}
+                            >
+                              {school.estado}
+                            </span>
+                            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                              {school.capacidadPct}% capacidad
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                school.capacidadPct >= 90
+                                  ? "bg-rose-500"
+                                  : school.capacidadPct >= 70
+                                    ? "bg-amber-500"
+                                    : "bg-emerald-500"
+                              }`}
+                              style={{ width: `${Math.min(school.capacidadPct, 100)}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
                     );
@@ -418,13 +412,13 @@ export default function SuperAdminDashboardHome() {
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-[#121214]">
             <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-              Alumnos en la red
+              Escuelas registradas
             </p>
             <p className="mt-3 text-3xl font-black text-zinc-900 dark:text-white">
-              {loading ? "-" : stats.alumnos.toLocaleString("es-CO")}
+              {loading ? "-" : stats.escuelas.toLocaleString("es-CO")}
             </p>
             <p className="mt-2 text-xs text-zinc-500">
-              Señal global de adopción del producto en todas las escuelas.
+              Total de escuelas registradas en la plataforma.
             </p>
           </div>
 
@@ -439,12 +433,14 @@ export default function SuperAdminDashboardHome() {
           </div>
 
           <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-[#121214]">
-            <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Altas del mes</p>
+            <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+              Capacidad promedio
+            </p>
             <p className="mt-3 text-3xl font-black text-zinc-900 dark:text-white">
-              {loading ? "-" : stats.alumnosMes.toLocaleString("es-CO")}
+              {loading ? "-" : `${stats.capacidadPromedio}%`}
             </p>
             <p className="mt-2 text-xs text-zinc-500">
-              Nuevos alumnos registrados este mes en toda la plataforma.
+              Uso promedio de cupos en escuelas activas de la red.
             </p>
           </div>
         </div>

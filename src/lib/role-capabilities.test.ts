@@ -17,7 +17,7 @@ describe("role capabilities", () => {
   it("keeps super_admin focused on global modules instead of daily school operation", () => {
     expect(canAuditedRolePerformAction("super_admin", "students", "view")).toBe(false);
     expect(canAuditedRolePerformAction("super_admin", "income", "view")).toBe(false);
-    expect(canAuditedRolePerformAction("super_admin", "reports", "view")).toBe(true);
+    expect(canAuditedRolePerformAction("super_admin", "reports", "view")).toBe(false);
     expect(canAuditedRolePerformAction("super_admin", "exams", "configure")).toBe(true);
     expect(canAuditedRolePerformAction("super_admin", "subscriptions", "view")).toBe(true);
     expect(canAuditedRolePerformAction("admin_escuela", "subscriptions", "view")).toBe(false);

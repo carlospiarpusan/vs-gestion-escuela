@@ -1,10 +1,6 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import {
-  DASHBOARD_SCHOOL_COOKIE,
-  normalizeUuid,
-  type DashboardSchoolOption,
-} from "@/lib/dashboard-scope";
+import { type DashboardSchoolOption } from "@/lib/dashboard-scope";
 import type { DashboardInitialAuthState } from "@/lib/dashboard-auth-state";
 import type { Perfil } from "@/types/database";
 
@@ -41,7 +37,6 @@ function toUserSnapshot(user: {
 
 export async function getDashboardInitialAuthState(): Promise<DashboardInitialAuthState | null> {
   const supabase = await buildServerClient();
-  const cookieStore = await cookies();
 
   const {
     data: { user },
@@ -54,7 +49,9 @@ export async function getDashboardInitialAuthState(): Promise<DashboardInitialAu
 
   const { data: perfilData, error: perfilError } = await supabase
     .from("perfiles")
-    .select("*")
+    .select(
+      "id, escuela_id, sede_id, nombre, email, rol, telefono, avatar_url, activo, ultimo_acceso, created_at"
+    )
     .eq("id", user.id)
     .maybeSingle();
 
@@ -68,52 +65,18 @@ export async function getDashboardInitialAuthState(): Promise<DashboardInitialAu
     const { data: schoolRows } = await supabase
       .from("escuelas")
       .select("id, nombre")
-      .order("nombre", { ascending: true });
+      .order("nombre", { ascending: true })
+      .limit(100);
 
     const schoolOptions = (schoolRows as DashboardSchoolOption[] | null) ?? [];
-    const cookieSchoolId = normalizeUuid(cookieStore.get(DASHBOARD_SCHOOL_COOKIE)?.value ?? null);
-    const activeEscuelaId =
-      schoolOptions.find((school) => school.id === cookieSchoolId)?.id ??
-      schoolOptions[0]?.id ??
-      null;
-
-    if (!activeEscuelaId) {
-      return {
-        user: toUserSnapshot(user),
-        perfil: { ...perfil, escuela_id: null, sede_id: null },
-        escuelaNombre: null,
-        sedeNombre: null,
-        schoolOptions,
-        activeEscuelaId: null,
-      };
-    }
-
-    const [escuelaRes, sedeRes] = await Promise.all([
-      supabase.from("escuelas").select("nombre").eq("id", activeEscuelaId).maybeSingle(),
-      supabase
-        .from("sedes")
-        .select("id, nombre")
-        .eq("escuela_id", activeEscuelaId)
-        .order("es_principal", { ascending: false })
-        .order("nombre", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-    ]);
 
     return {
       user: toUserSnapshot(user),
-      perfil: {
-        ...perfil,
-        escuela_id: activeEscuelaId,
-        sede_id: sedeRes.data?.id ?? null,
-      },
-      escuelaNombre:
-        escuelaRes.data?.nombre ??
-        schoolOptions.find((school) => school.id === activeEscuelaId)?.nombre ??
-        null,
-      sedeNombre: sedeRes.data?.nombre ?? null,
+      perfil: { ...perfil, escuela_id: null, sede_id: null },
+      escuelaNombre: null,
+      sedeNombre: null,
       schoolOptions,
-      activeEscuelaId,
+      activeEscuelaId: null,
     };
   }
 

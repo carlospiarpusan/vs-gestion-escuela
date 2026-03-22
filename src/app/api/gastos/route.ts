@@ -31,7 +31,7 @@ type ExpenseSummarySqlRow = {
   gastos_recurrentes_count: number | string | null;
 };
 
-const CACHE_TTL_MS = 45 * 1000;
+const CACHE_TTL_MS = 120 * 1000;
 
 export async function GET(request: Request) {
   const timing = createServerTiming();
@@ -49,7 +49,10 @@ export async function GET(request: Request) {
 
   if (!scope.escuelaId) {
     return timing.apply(
-      NextResponse.json({ error: "Selecciona una escuela activa para ver gastos." }, { status: 400 })
+      NextResponse.json(
+        { error: "Selecciona una escuela activa para ver gastos." },
+        { status: 400 }
+      )
     );
   }
 

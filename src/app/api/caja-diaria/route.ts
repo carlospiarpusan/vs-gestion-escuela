@@ -26,7 +26,7 @@ type DailyCashSqlRow = {
   total_registrado: number | string | null;
 };
 
-const CACHE_TTL_MS = 45 * 1000;
+const CACHE_TTL_MS = 120 * 1000;
 
 function buildDateRange(year: number, month: string) {
   if (!month) {
@@ -68,7 +68,10 @@ export async function GET(request: Request) {
 
   if (!scope.escuelaId) {
     return timing.apply(
-      NextResponse.json({ error: "Selecciona una escuela activa para ver la caja diaria." }, { status: 400 })
+      NextResponse.json(
+        { error: "Selecciona una escuela activa para ver la caja diaria." },
+        { status: 400 }
+      )
     );
   }
 
@@ -154,9 +157,8 @@ export async function GET(request: Request) {
             const totalSistecredito = rows.reduce((sum, row) => sum + row.total_sistecredito, 0);
             const totalOtro = rows.reduce((sum, row) => sum + row.total_otro, 0);
             const totalRegistrado = rows.reduce((sum, row) => sum + row.total_registrado, 0);
-            const mejorDia = rows.reduce<typeof rows[number] | null>(
-              (best, row) =>
-                !best || row.total_registrado > best.total_registrado ? row : best,
+            const mejorDia = rows.reduce<(typeof rows)[number] | null>(
+              (best, row) => (!best || row.total_registrado > best.total_registrado ? row : best),
               null
             );
 

@@ -30,6 +30,7 @@ import {
   Search,
   ShieldAlert,
   Target,
+  Trash2,
   Users,
   XCircle,
 } from "lucide-react";
@@ -157,37 +158,44 @@ export function CaleAnalyticsAdminView() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  const loadAnalytics = useCallback(async (silent = false) => {
-    if (silent) setRefreshing(true);
-    else setLoading(true);
+  const loadAnalytics = useCallback(
+    async (silent = false) => {
+      if (silent) setRefreshing(true);
+      else setLoading(true);
 
-    try {
-      const params = new URLSearchParams({
-        year,
-        month,
-      });
+      try {
+        const params = new URLSearchParams({
+          year,
+          month,
+        });
 
-      const response = await fetch(`/api/examenes/cale/admin/analytics?${params.toString()}`, {
-        credentials: "include",
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-      } & Partial<CaleAdminAnalyticsResponse>;
+        const response = await fetch(`/api/examenes/cale/admin/analytics?${params.toString()}`, {
+          credentials: "include",
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        } & Partial<CaleAdminAnalyticsResponse>;
 
-      if (!response.ok || !payload.summary) {
-        throw new Error(payload.error || "No se pudieron cargar las analíticas CALE.");
+        if (!response.ok || !payload.summary) {
+          throw new Error(payload.error || "No se pudieron cargar las analíticas CALE.");
+        }
+
+        setReport(payload as CaleAdminAnalyticsResponse);
+        setError("");
+      } catch (loadError) {
+        console.error("[CaleAnalyticsAdminView] Error:", loadError);
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "No se pudieron cargar las analíticas CALE."
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-
-      setReport(payload as CaleAdminAnalyticsResponse);
-      setError("");
-    } catch (loadError) {
-      console.error("[CaleAnalyticsAdminView] Error:", loadError);
-      setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las analíticas CALE.");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [month, year]);
+    },
+    [month, year]
+  );
 
   useEffect(() => {
     void loadAnalytics();
@@ -217,11 +225,16 @@ export function CaleAnalyticsAdminView() {
               Analítica ejecutiva de evaluaciones
             </p>
             <p className="mt-1 text-xs text-[#86868b]">
-              Pensada para alto volumen: resumen agregado, tendencias y focos de refuerzo sin recorrer intento por intento en el navegador.
+              Pensada para alto volumen: resumen agregado, tendencias y focos de refuerzo sin
+              recorrer intento por intento en el navegador.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[0.9fr_0.9fr_auto]">
-            <select value={year} onChange={(event) => setYear(event.target.value)} className={inputCls}>
+            <select
+              value={year}
+              onChange={(event) => setYear(event.target.value)}
+              className={inputCls}
+            >
               {yearOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -307,7 +320,9 @@ export function CaleAnalyticsAdminView() {
               report.trend.map((point) => (
                 <div key={point.bucket}>
                   <div className="mb-1.5 flex items-center justify-between text-xs">
-                    <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{point.label}</span>
+                    <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {point.label}
+                    </span>
                     <span className="text-[#86868b]">
                       {point.attempts} intentos · {point.averageScore}% · {point.passRate}% aprueban
                     </span>
@@ -315,7 +330,9 @@ export function CaleAnalyticsAdminView() {
                   <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                     <div
                       className="h-full rounded-full bg-[#0071e3]"
-                      style={{ width: `${Math.max(8, Math.round((point.attempts / maxTrendAttempts) * 100))}%` }}
+                      style={{
+                        width: `${Math.max(8, Math.round((point.attempts / maxTrendAttempts) * 100))}%`,
+                      }}
                     />
                   </div>
                 </div>
@@ -336,7 +353,9 @@ export function CaleAnalyticsAdminView() {
             {report.distribution.map((item) => (
               <div key={item.label} className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-[#0a0a0a]">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{item.label}</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {item.label}
+                  </p>
                   <span className="rounded-full bg-[#0071e3]/10 px-2.5 py-1 text-xs font-semibold text-[#0071e3]">
                     {item.count}
                   </span>
@@ -345,7 +364,8 @@ export function CaleAnalyticsAdminView() {
             ))}
 
             <div className="rounded-2xl border border-[#0071e3]/15 bg-[#0071e3]/5 px-4 py-3 text-xs text-[#0b63c7] dark:border-[#0071e3]/25 dark:bg-[#0071e3]/10 dark:text-[#69a9ff]">
-              Preguntas servidas en el periodo: {report.summary.trackedQuestions.toLocaleString("es-CO")}
+              Preguntas servidas en el periodo:{" "}
+              {report.summary.trackedQuestions.toLocaleString("es-CO")}
             </div>
           </div>
         </div>
@@ -360,7 +380,8 @@ export function CaleAnalyticsAdminView() {
                 Precisión por núcleo
               </p>
               <p className="text-xs text-[#86868b]">
-                Calculada combinando la distribución del simulacro CALE y las respuestas falladas guardadas.
+                Calculada combinando la distribución del simulacro CALE y las respuestas falladas
+                guardadas.
               </p>
             </div>
           </div>
@@ -369,7 +390,9 @@ export function CaleAnalyticsAdminView() {
             {report.categories.map((item) => (
               <div key={item.name}>
                 <div className="mb-1.5 flex items-center justify-between text-xs">
-                  <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{item.name}</span>
+                  <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {item.name}
+                  </span>
                   <span className="text-[#86868b]">
                     {item.accuracy}% · {item.wrongCount} fallos · {item.omittedCount} omitidas
                   </span>
@@ -377,7 +400,11 @@ export function CaleAnalyticsAdminView() {
                 <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                   <div
                     className={`h-full rounded-full ${
-                      item.accuracy >= 80 ? "bg-emerald-500" : item.accuracy >= 60 ? "bg-amber-500" : "bg-red-500"
+                      item.accuracy >= 80
+                        ? "bg-emerald-500"
+                        : item.accuracy >= 60
+                          ? "bg-amber-500"
+                          : "bg-red-500"
                     }`}
                     style={{ width: `${Math.max(6, item.accuracy)}%` }}
                   />
@@ -396,11 +423,16 @@ export function CaleAnalyticsAdminView() {
           </div>
 
           {report.toughestQuestions.length === 0 ? (
-            <p className="text-sm text-[#86868b]">Todavía no hay suficiente historial para detectar preguntas críticas.</p>
+            <p className="text-sm text-[#86868b]">
+              Todavía no hay suficiente historial para detectar preguntas críticas.
+            </p>
           ) : (
             <div className="space-y-3">
               {report.toughestQuestions.map((item) => (
-                <div key={`${item.preguntaId}-${item.codigoExterno}`} className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-[#0a0a0a]">
+                <div
+                  key={`${item.preguntaId}-${item.codigoExterno}`}
+                  className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-[#0a0a0a]"
+                >
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-[#0071e3]/10 px-2.5 py-1 text-xs font-semibold text-[#0071e3]">
                       {item.categoriaNombre}
@@ -411,18 +443,25 @@ export function CaleAnalyticsAdminView() {
                       </span>
                     )}
                   </div>
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{item.pregunta}</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {item.pregunta}
+                  </p>
                   <div className="mt-3">
                     <div className="mb-1.5 flex items-center justify-between text-xs">
                       <span className="text-[#86868b]">
-                        {item.wrongCount} fallos · {item.omittedCount} omitidas · {item.totalSeen} exposiciones
+                        {item.wrongCount} fallos · {item.omittedCount} omitidas · {item.totalSeen}{" "}
+                        exposiciones
                       </span>
-                      <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{item.errorRate}%</span>
+                      <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                        {item.errorRate}%
+                      </span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                       <div
                         className="h-full rounded-full bg-red-500"
-                        style={{ width: `${Math.max(8, Math.round((item.wrongCount / maxQuestionErrors) * 100))}%` }}
+                        style={{
+                          width: `${Math.max(8, Math.round((item.wrongCount / maxQuestionErrors) * 100))}%`,
+                        }}
                       />
                     </div>
                   </div>
@@ -447,19 +486,27 @@ export function CaleAnalyticsAdminView() {
           ) : (
             <div className="space-y-2">
               {report.studentsToCoach.map((item) => (
-                <div key={item.alumnoId} className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-[#0a0a0a]">
+                <div
+                  key={item.alumnoId}
+                  className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-[#0a0a0a]"
+                >
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{item.alumnoNombre}</p>
+                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                        {item.alumnoNombre}
+                      </p>
                       <p className="text-xs text-[#86868b]">
-                        {item.attempts} intentos · promedio {item.averageScore}% · último {item.lastScore}%
+                        {item.attempts} intentos · promedio {item.averageScore}% · último{" "}
+                        {item.lastScore}%
                       </p>
                     </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      item.recentFailures >= 2
-                        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                    }`}>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        item.recentFailures >= 2
+                          ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                          : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                      }`}
+                    >
                       {item.recentFailures >= 2 ? "Prioritario" : "Seguimiento"}
                     </span>
                   </div>
@@ -479,22 +526,30 @@ export function CaleAnalyticsAdminView() {
 
           <div className="space-y-2">
             {report.recentAttempts.map((item) => (
-              <div key={item.id} className="flex flex-col gap-2 rounded-2xl bg-white/80 px-4 py-3 dark:bg-[#0a0a0a] sm:flex-row sm:items-center sm:justify-between">
+              <div
+                key={item.id}
+                className="flex flex-col gap-2 rounded-2xl bg-white/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:bg-[#0a0a0a]"
+              >
                 <div>
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{item.alumnoNombre}</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {item.alumnoNombre}
+                  </p>
                   <p className="text-xs text-[#86868b]">
-                    {item.totalPreguntas} preguntas · {formatElapsedTime(item.tiempoSegundos)} · {formatDateTime(item.fechaPresentacion)}
+                    {item.totalPreguntas} preguntas · {formatElapsedTime(item.tiempoSegundos)} ·{" "}
+                    {formatDateTime(item.fechaPresentacion)}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-[#0071e3]/10 px-2.5 py-1 text-xs font-semibold text-[#0071e3]">
                     {item.porcentaje}%
                   </span>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    item.resultado === "aprobado"
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-                  }`}>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      item.resultado === "aprobado"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                    }`}
+                  >
                     {item.resultado === "aprobado" ? "Aprobado" : "Suspendido"}
                   </span>
                 </div>
@@ -522,6 +577,7 @@ export function CaleBankManagerView() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [form, setForm] = useState<CaleQuestionMutationInput>(emptyQuestionForm);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const pageSize = 12;
 
@@ -562,7 +618,8 @@ export function CaleBankManagerView() {
     void loadBank();
   }, [loadBank]);
 
-  const totalPages = report && report.total > 0 ? Math.ceil(report.total / (report.pageSize || pageSize)) : 1;
+  const totalPages =
+    report && report.total > 0 ? Math.ceil(report.total / (report.pageSize || pageSize)) : 1;
 
   const openCreate = () => {
     setEditingQuestionId(null);
@@ -628,7 +685,9 @@ export function CaleBankManagerView() {
       }
 
       setModalOpen(false);
-      setNotice(editingQuestionId ? "Pregunta actualizada correctamente." : "Pregunta creada correctamente.");
+      setNotice(
+        editingQuestionId ? "Pregunta actualizada correctamente." : "Pregunta creada correctamente."
+      );
       if (!editingQuestionId && page !== 0) {
         setPage(0);
       } else {
@@ -639,6 +698,41 @@ export function CaleBankManagerView() {
       setError(saveError instanceof Error ? saveError.message : "No se pudo guardar la pregunta.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async (questionId: string, questionLabel: string) => {
+    if (
+      !window.confirm(
+        `¿Eliminar permanentemente la pregunta "${questionLabel.slice(0, 80)}…"? Esta acción no se puede deshacer.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(questionId);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(`/api/examenes/cale/admin/questions/${questionId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "No se pudo eliminar la pregunta.");
+      }
+
+      setNotice("Pregunta eliminada correctamente.");
+      await loadBank();
+    } catch (deleteError) {
+      console.error("[CaleBankManagerView] Error eliminando pregunta:", deleteError);
+      setError(
+        deleteError instanceof Error ? deleteError.message : "No se pudo eliminar la pregunta."
+      );
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -708,15 +802,23 @@ export function CaleBankManagerView() {
               { label: "Media", value: report.stats.media, tone: "bg-amber-500" },
               { label: "Alta", value: report.stats.dificil, tone: "bg-red-500" },
             ].map((item) => {
-              const percentage = report.stats.total > 0 ? Math.round((item.value / report.stats.total) * 100) : 0;
+              const percentage =
+                report.stats.total > 0 ? Math.round((item.value / report.stats.total) * 100) : 0;
               return (
                 <div key={item.label}>
                   <div className="mb-1.5 flex items-center justify-between text-xs">
-                    <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{item.label}</span>
-                    <span className="text-[#86868b]">{item.value} · {percentage}%</span>
+                    <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {item.label}
+                    </span>
+                    <span className="text-[#86868b]">
+                      {item.value} · {percentage}%
+                    </span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                    <div className={`h-full rounded-full ${item.tone}`} style={{ width: `${percentage}%` }} />
+                    <div
+                      className={`h-full rounded-full ${item.tone}`}
+                      style={{ width: `${percentage}%` }}
+                    />
                   </div>
                 </div>
               );
@@ -755,8 +857,12 @@ export function CaleBankManagerView() {
               <div key={item.id} className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-[#0a0a0a]">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{item.nombre}</p>
-                    <p className="text-xs text-[#86868b]">{item.descripcion || "Sin descripción adicional."}</p>
+                    <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {item.nombre}
+                    </p>
+                    <p className="text-xs text-[#86868b]">
+                      {item.descripcion || "Sin descripción adicional."}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-[#0071e3]">{item.activeCount}</p>
@@ -782,7 +888,10 @@ export function CaleBankManagerView() {
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.4fr_0.9fr_0.8fr_auto]">
             <div className="relative">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
+              <Search
+                size={16}
+                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[#86868b]"
+              />
               <input
                 type="text"
                 value={searchInput}
@@ -861,19 +970,26 @@ export function CaleBankManagerView() {
         ) : (
           <div className="space-y-3">
             {report.questions.map((question) => (
-              <div key={question.id} className="rounded-[1.75rem] bg-white/80 p-4 dark:bg-[#0a0a0a]">
+              <div
+                key={question.id}
+                className="rounded-[1.75rem] bg-white/80 p-4 dark:bg-[#0a0a0a]"
+              >
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-[#0071e3]/10 px-2.5 py-1 text-xs font-semibold text-[#0071e3]">
                     {question.categoria_nombre || "General"}
                   </span>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getCaleDifficultyTone(question.dificultad)}`}>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getCaleDifficultyTone(question.dificultad)}`}
+                  >
                     {getCaleDifficultyLabel(question.dificultad)}
                   </span>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    question.activa
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                      : "bg-gray-100 text-[#86868b] dark:bg-gray-800 dark:text-[#d2d2d7]"
-                  }`}>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      question.activa
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                        : "bg-gray-100 text-[#86868b] dark:bg-gray-800 dark:text-[#d2d2d7]"
+                    }`}
+                  >
                     {question.activa ? "Activa" : "Inactiva"}
                   </span>
                   {question.codigo_externo && (
@@ -893,23 +1009,39 @@ export function CaleBankManagerView() {
                     </p>
                   </div>
                   {report.canEdit && (
-                    <button
-                      onClick={() => openEdit(question)}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 px-3 py-2 text-xs font-semibold text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
-                    >
-                      <PencilLine size={14} />
-                      Editar
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openEdit(question)}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 px-3 py-2 text-xs font-semibold text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
+                      >
+                        <PencilLine size={14} />
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => void handleDelete(question.id, question.pregunta)}
+                        disabled={deletingId === question.id}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/20"
+                      >
+                        {deletingId === question.id ? (
+                          <RefreshCw size={14} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                        Eliminar
+                      </button>
+                    </div>
                   )}
                 </div>
 
                 <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                  {([
-                    ["a", question.opcion_a],
-                    ["b", question.opcion_b],
-                    ["c", question.opcion_c],
-                    ["d", question.opcion_d || ""],
-                  ] as const).map(([option, text]) => {
+                  {(
+                    [
+                      ["a", question.opcion_a],
+                      ["b", question.opcion_b],
+                      ["c", question.opcion_c],
+                      ["d", question.opcion_d || ""],
+                    ] as const
+                  ).map(([option, text]) => {
                     if (!text) return null;
                     const isCorrect = question.respuesta_correcta === option;
                     return (
@@ -932,13 +1064,16 @@ export function CaleBankManagerView() {
                   <div className="mt-4 space-y-2">
                     {question.explicacion && (
                       <p className="text-sm text-[#3a3a3c] dark:text-[#d2d2d7]">
-                        <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Explicación:</span>{" "}
+                        <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                          Explicación:
+                        </span>{" "}
                         {question.explicacion}
                       </p>
                     )}
                     {question.fundamento_legal && (
                       <p className="text-xs text-[#86868b]">
-                        <span className="font-semibold">Fundamento legal:</span> {question.fundamento_legal}
+                        <span className="font-semibold">Fundamento legal:</span>{" "}
+                        {question.fundamento_legal}
                       </p>
                     )}
                   </div>
@@ -946,9 +1081,10 @@ export function CaleBankManagerView() {
               </div>
             ))}
 
-            <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800">
               <p className="text-sm text-[#86868b]">
-                Página {Math.min(page + 1, totalPages)} de {totalPages} · {report.total} resultado{report.total !== 1 ? "s" : ""}
+                Página {Math.min(page + 1, totalPages)} de {totalPages} · {report.total} resultado
+                {report.total !== 1 ? "s" : ""}
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -992,7 +1128,9 @@ export function CaleBankManagerView() {
               <label className={labelCls}>Núcleo</label>
               <select
                 value={form.categoria_id}
-                onChange={(event) => setForm((current) => ({ ...current, categoria_id: event.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, categoria_id: event.target.value }))
+                }
                 className={inputCls}
               >
                 <option value="">Selecciona...</option>
@@ -1008,7 +1146,12 @@ export function CaleBankManagerView() {
               <label className={labelCls}>Dificultad</label>
               <select
                 value={form.dificultad}
-                onChange={(event) => setForm((current) => ({ ...current, dificultad: event.target.value as CaleQuestionMutationInput["dificultad"] }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    dificultad: event.target.value as CaleQuestionMutationInput["dificultad"],
+                  }))
+                }
                 className={inputCls}
               >
                 <option value="facil">Baja</option>
@@ -1021,7 +1164,9 @@ export function CaleBankManagerView() {
               <label className={labelCls}>Tipo permiso</label>
               <select
                 value={form.tipo_permiso}
-                onChange={(event) => setForm((current) => ({ ...current, tipo_permiso: event.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, tipo_permiso: event.target.value }))
+                }
                 className={inputCls}
               >
                 {["comun", "AM", "A1", "A2", "A", "B", "C", "D"].map((option) => (
@@ -1036,7 +1181,9 @@ export function CaleBankManagerView() {
               <label className={labelCls}>Código externo</label>
               <input
                 value={form.codigo_externo}
-                onChange={(event) => setForm((current) => ({ ...current, codigo_externo: event.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, codigo_externo: event.target.value }))
+                }
                 className={inputCls}
                 placeholder="CALE-MANUAL-..."
               />
@@ -1047,7 +1194,9 @@ export function CaleBankManagerView() {
             <label className={labelCls}>Pregunta</label>
             <textarea
               value={form.pregunta}
-              onChange={(event) => setForm((current) => ({ ...current, pregunta: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, pregunta: event.target.value }))
+              }
               className={`${inputCls} min-h-[110px]`}
               placeholder="Redacta una pregunta clara, no una afirmación."
             />
@@ -1057,24 +1206,30 @@ export function CaleBankManagerView() {
             <label className={labelCls}>URL de imagen</label>
             <input
               value={form.imagen_url}
-              onChange={(event) => setForm((current) => ({ ...current, imagen_url: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, imagen_url: event.target.value }))
+              }
               className={inputCls}
               placeholder="https://..."
             />
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {([
-              ["opcion_a", "Opción A"],
-              ["opcion_b", "Opción B"],
-              ["opcion_c", "Opción C"],
-              ["opcion_d", "Opción D"],
-            ] as const).map(([field, label]) => (
+            {(
+              [
+                ["opcion_a", "Opción A"],
+                ["opcion_b", "Opción B"],
+                ["opcion_c", "Opción C"],
+                ["opcion_d", "Opción D"],
+              ] as const
+            ).map(([field, label]) => (
               <div key={field}>
                 <label className={labelCls}>{label}</label>
                 <input
                   value={form[field]}
-                  onChange={(event) => setForm((current) => ({ ...current, [field]: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, [field]: event.target.value }))
+                  }
                   className={inputCls}
                 />
               </div>
@@ -1086,7 +1241,13 @@ export function CaleBankManagerView() {
               <label className={labelCls}>Respuesta correcta</label>
               <select
                 value={form.respuesta_correcta}
-                onChange={(event) => setForm((current) => ({ ...current, respuesta_correcta: event.target.value as CaleQuestionMutationInput["respuesta_correcta"] }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    respuesta_correcta: event.target
+                      .value as CaleQuestionMutationInput["respuesta_correcta"],
+                  }))
+                }
                 className={inputCls}
               >
                 <option value="a">A</option>
@@ -1100,7 +1261,9 @@ export function CaleBankManagerView() {
                 <input
                   type="checkbox"
                   checked={form.activa}
-                  onChange={(event) => setForm((current) => ({ ...current, activa: event.target.checked }))}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, activa: event.target.checked }))
+                  }
                   className="h-4 w-4 rounded border-gray-300 text-[#0071e3] focus:ring-[#0071e3]"
                 />
                 Pregunta activa en el banco
@@ -1112,7 +1275,9 @@ export function CaleBankManagerView() {
             <label className={labelCls}>Explicación</label>
             <textarea
               value={form.explicacion}
-              onChange={(event) => setForm((current) => ({ ...current, explicacion: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, explicacion: event.target.value }))
+              }
               className={`${inputCls} min-h-[110px]`}
               placeholder="Explica por qué la respuesta correcta es la válida."
             />
@@ -1122,13 +1287,15 @@ export function CaleBankManagerView() {
             <label className={labelCls}>Fundamento legal</label>
             <textarea
               value={form.fundamento_legal}
-              onChange={(event) => setForm((current) => ({ ...current, fundamento_legal: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, fundamento_legal: event.target.value }))
+              }
               className={`${inputCls} min-h-[90px]`}
               placeholder="Norma, manual o referencia legal aplicable."
             />
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 dark:border-gray-800 sm:flex-row sm:justify-end">
+          <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end dark:border-gray-800">
             <button
               type="button"
               onClick={() => setModalOpen(false)}
@@ -1144,7 +1311,11 @@ export function CaleBankManagerView() {
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0071e3] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
-              {saving ? "Guardando..." : editingQuestionId ? "Actualizar pregunta" : "Crear pregunta"}
+              {saving
+                ? "Guardando..."
+                : editingQuestionId
+                  ? "Actualizar pregunta"
+                  : "Crear pregunta"}
             </button>
           </div>
         </div>

@@ -21,12 +21,7 @@ import type {
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-export const ALLOWED_ROLES: Rol[] = [
-  "super_admin",
-  "admin_escuela",
-  "admin_sede",
-  "administrativo",
-];
+export const ALLOWED_ROLES: Rol[] = ["admin_escuela", "admin_sede", "administrativo"];
 export const DEFAULT_REPORT_INCLUDES: ReportInclude[] = [
   "options",
   "summary",

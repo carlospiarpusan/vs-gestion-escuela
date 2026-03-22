@@ -260,7 +260,7 @@ const ADMINISTRATIVE_EXPENSE_CATEGORIES = [
 ];
 const PEOPLE_EXPENSE_CATEGORIES = ["nominas", "tramitador"];
 const TRAMITADOR_EXPENSE_CATEGORY = "tramitador";
-const REPORT_CACHE_TTL_MS = 45 * 1000;
+const REPORT_CACHE_TTL_MS = 120 * 1000;
 
 function parseDateInput(value: string | null, fallback: string) {
   if (!value) return fallback;
@@ -2008,11 +2008,18 @@ export async function GET(request: Request) {
   // Bypassing auth for testing filters
   const perfil = {
     id: "mock-id",
-    rol: "super_admin" as const,
+    rol: "admin_escuela" as const,
     escuela_id: "a5320c4a-3bf6-4da5-b365-da17d7001d4f",
     sede_id: null,
     activo: true,
   } as AllowedPerfil;
+
+  if (perfil.rol === "super_admin") {
+    return NextResponse.json(
+      { error: "El super admin no tiene acceso a reportes financieros de escuelas." },
+      { status: 403 }
+    );
+  }
   const url = new URL(request.url);
   const dateRange = getCurrentMonthRange();
   const from = parseDateInput(url.searchParams.get("from"), dateRange.from);

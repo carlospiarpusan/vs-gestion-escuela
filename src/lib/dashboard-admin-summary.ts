@@ -37,9 +37,7 @@ export interface SuperAdminDashboardStats {
   escuelasActivas: number;
   sedesActivas: number;
   adminsEscuela: number;
-  alumnos: number;
-  alumnosMes: number;
-  ingresosMes: number;
+  capacidadPromedio: number;
 }
 
 export type SuperAdminSchoolOverview = PlatformSchoolOverview;
@@ -105,8 +103,8 @@ export type DashboardMonthRange = {
 };
 
 export const DASHBOARD_TIME_ZONE = "America/Bogota";
-export const DASHBOARD_SUMMARY_CACHE_TTL_MS = 45 * 1000;
-export const DASHBOARD_CATALOG_CACHE_TTL_MS = 60 * 1000;
+export const DASHBOARD_SUMMARY_CACHE_TTL_MS = 120 * 1000;
+export const DASHBOARD_CATALOG_CACHE_TTL_MS = 120 * 1000;
 
 function formatDateOnly(year: number, month: number, day: number) {
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -193,9 +191,7 @@ export function createEmptySuperAdminDashboardSummary(): SuperAdminDashboardResp
       escuelasActivas: 0,
       sedesActivas: 0,
       adminsEscuela: 0,
-      alumnos: 0,
-      alumnosMes: 0,
-      ingresosMes: 0,
+      capacidadPromedio: 0,
     },
     schoolOverviews: [],
   };

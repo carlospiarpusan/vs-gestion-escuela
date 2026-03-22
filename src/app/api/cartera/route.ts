@@ -48,7 +48,7 @@ type CountRow = {
   total: number | string | null;
 };
 
-const CACHE_TTL_MS = 45 * 1000;
+const CACHE_TTL_MS = 120 * 1000;
 
 export async function GET(request: Request) {
   const timing = createServerTiming();
@@ -60,13 +60,20 @@ export async function GET(request: Request) {
   if (!authz.ok) return authz.response;
 
   const perfil = authz.perfil as AllowedPerfil;
-  const { url, from, to, page, pageSize, search, scope } = buildFinanceListContext(request, perfil, {
-    defaultPageSize: 10,
-  });
+  const { url, from, to, page, pageSize, search, scope } = buildFinanceListContext(
+    request,
+    perfil,
+    {
+      defaultPageSize: 10,
+    }
+  );
 
   if (!scope.escuelaId) {
     return timing.apply(
-      NextResponse.json({ error: "Selecciona una escuela activa para ver cartera." }, { status: 400 })
+      NextResponse.json(
+        { error: "Selecciona una escuela activa para ver cartera." },
+        { status: 400 }
+      )
     );
   }
 

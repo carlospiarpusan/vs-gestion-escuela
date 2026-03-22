@@ -52,11 +52,6 @@ function persistDashboardSchoolSelection(schoolId: string | null) {
   document.cookie = `${DASHBOARD_SCHOOL_COOKIE}=; path=/; max-age=0; samesite=lax`;
 }
 
-function getStoredDashboardSchoolId() {
-  if (typeof window === "undefined") return null;
-  return normalizeUuid(window.localStorage.getItem(DASHBOARD_SCHOOL_STORAGE_KEY));
-}
-
 /* ─── Forma del contexto ─── */
 interface AuthContextValue {
   user: AuthUserSnapshot | null;
@@ -110,63 +105,29 @@ export function AuthProvider({
     setError(null);
   }, []);
 
-  const applySuperAdminSchoolScope = useCallback(
+  const applySuperAdminGlobalScope = useCallback(
     async (
       supabase: ReturnType<typeof createClient>,
       perfilData: Perfil,
-      options?: DashboardSchoolOption[],
-      requestedSchoolId?: string | null
+      options?: DashboardSchoolOption[]
     ) => {
       const nextOptions =
         options ??
         (((
-          await supabase.from("escuelas").select("id, nombre").order("nombre", { ascending: true })
+          await supabase
+            .from("escuelas")
+            .select("id, nombre")
+            .order("nombre", { ascending: true })
+            .limit(100)
         ).data as DashboardSchoolOption[] | null) ||
           []);
 
       setSchoolOptions(nextOptions);
-
-      const storedSchoolId = requestedSchoolId ?? getStoredDashboardSchoolId();
-      const nextSchoolId =
-        nextOptions.find((school) => school.id === storedSchoolId)?.id ??
-        nextOptions[0]?.id ??
-        null;
-
-      setActiveEscuelaIdState(nextSchoolId);
-      persistDashboardSchoolSelection(nextSchoolId);
-
-      if (!nextSchoolId) {
-        setPerfil({ ...perfilData, escuela_id: null, sede_id: null });
-        setEscuelaNombre(null);
-        setSedeNombre(null);
-        return;
-      }
-
-      const [schoolRes, sedeRes] = await Promise.all([
-        supabase.from("escuelas").select("nombre").eq("id", nextSchoolId).single(),
-        supabase
-          .from("sedes")
-          .select("id, nombre")
-          .eq("escuela_id", nextSchoolId)
-          .order("es_principal", { ascending: false })
-          .order("nombre", { ascending: true })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-
-      const nextEscuelaNombre =
-        schoolRes.data?.nombre ??
-        nextOptions.find((school) => school.id === nextSchoolId)?.nombre ??
-        null;
-      const nextSedeNombre = sedeRes.data?.nombre ?? null;
-
-      setPerfil({
-        ...perfilData,
-        escuela_id: nextSchoolId,
-        sede_id: sedeRes.data?.id ?? null,
-      });
-      setEscuelaNombre(nextEscuelaNombre);
-      setSedeNombre(nextSedeNombre);
+      setActiveEscuelaIdState(null);
+      persistDashboardSchoolSelection(null);
+      setPerfil({ ...perfilData, escuela_id: null, sede_id: null });
+      setEscuelaNombre(null);
+      setSedeNombre(null);
     },
     []
   );
@@ -199,7 +160,9 @@ export function AuthProvider({
 
         const { data: perfilData, error: perfilError } = await supabase
           .from("perfiles")
-          .select("*")
+          .select(
+            "id, escuela_id, sede_id, nombre, email, rol, telefono, avatar_url, activo, ultimo_acceso, created_at"
+          )
           .eq("id", currentUser.id)
           .single();
 
@@ -212,7 +175,7 @@ export function AuthProvider({
         const typedPerfil = perfilData as Perfil;
 
         if (typedPerfil.rol === "super_admin") {
-          await applySuperAdminSchoolScope(supabase, typedPerfil);
+          await applySuperAdminGlobalScope(supabase, typedPerfil);
           setLoading(false);
           return;
         }
@@ -249,7 +212,7 @@ export function AuthProvider({
         setLoading(false);
       }
     },
-    [applySuperAdminSchoolScope, resetAuthState, router]
+    [applySuperAdminGlobalScope, resetAuthState, router]
   );
 
   useEffect(() => {
@@ -285,28 +248,10 @@ export function AuthProvider({
     };
   }, [hydrateAuth, resetAuthState, router]);
 
-  const setActiveEscuelaId = useCallback(
-    async (escuelaId: string) => {
-      if (!perfil || perfil.rol !== "super_admin") return;
-
-      const normalizedId = normalizeUuid(escuelaId);
-      if (!normalizedId || normalizedId === activeEscuelaId) return;
-
-      setLoading(true);
-      setError(null);
-
-      try {
-        const supabase = createClient();
-        await applySuperAdminSchoolScope(supabase, perfil, schoolOptions, normalizedId);
-      } catch (err) {
-        console.error("[AuthContext] Error cambiando alcance de escuela:", err);
-        setError("No se pudo cambiar la escuela activa.");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [activeEscuelaId, applySuperAdminSchoolScope, perfil, schoolOptions]
-  );
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const setActiveEscuelaId = useCallback(async (_escuelaId: string) => {
+    // super_admin opera en alcance global — no se necesita cambiar escuela activa.
+  }, []);
 
   const logout = useCallback(async () => {
     try {

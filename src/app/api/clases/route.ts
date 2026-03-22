@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
-import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import {
+  buildDashboardListServerCacheKey,
+  isFreshDashboardDataRequested,
+} from "@/lib/dashboard-server-cache";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
@@ -28,7 +31,7 @@ type CountRow = {
   total: number | string | null;
 };
 
-const DASHBOARD_LIST_CACHE_TTL_MS = 45 * 1000;
+const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
 
 function parseInteger(value: string | null, fallback: number, min: number, max: number) {
   const parsed = Number(value);

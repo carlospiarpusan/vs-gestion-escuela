@@ -3,7 +3,7 @@
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import {
@@ -236,11 +236,19 @@ function mapIntentosCale(exams: Examen[]): IntentoCale[] {
 
 export default function ExamenesPage() {
   const { perfil } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const isAlumno = perfil?.rol === "alumno";
   const adminSection = useMemo(
-    () => (searchParams.get("section") === "banco" ? "banco" : "analiticas"),
+    () => (searchParams.get("section") === "analiticas" ? "analiticas" : "banco"),
     [searchParams]
+  );
+
+  const switchSection = useCallback(
+    (section: "banco" | "analiticas") => {
+      router.replace(`/dashboard/examenes?section=${section}`, { scroll: false });
+    },
+    [router]
   );
 
   return (
@@ -253,17 +261,40 @@ export default function ExamenesPage() {
           <p className="mt-1 text-sm text-[#86868b]">
             {isAlumno
               ? "Entrena con simulacros reales, revisa explicaciones y mejora antes del examen."
-              : "Controla el banco CALE activo y sigue el rendimiento de los simulacros con analítica para alto volumen."}
+              : "Administra el banco de preguntas y consulta métricas globales de rendimiento."}
           </p>
         </div>
       </div>
 
       {isAlumno ? (
         <AlumnoEntrenamientoView />
-      ) : adminSection === "analiticas" ? (
-        <AnaliticsView />
       ) : (
-        <BancoCaleView />
+        <>
+          <div className="flex gap-2">
+            <button
+              onClick={() => switchSection("banco")}
+              className={`rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors ${
+                adminSection === "banco"
+                  ? "bg-[#0071e3] text-white shadow-sm"
+                  : "bg-[var(--surface-muted)] text-[var(--gray-700)] hover:bg-[var(--surface-soft)]"
+              }`}
+            >
+              Banco CALE
+            </button>
+            <button
+              onClick={() => switchSection("analiticas")}
+              className={`rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors ${
+                adminSection === "analiticas"
+                  ? "bg-[#0071e3] text-white shadow-sm"
+                  : "bg-[var(--surface-muted)] text-[var(--gray-700)] hover:bg-[var(--surface-soft)]"
+              }`}
+            >
+              Métricas globales
+            </button>
+          </div>
+
+          {adminSection === "banco" ? <BancoCaleView /> : <AnaliticsView />}
+        </>
       )}
     </div>
   );

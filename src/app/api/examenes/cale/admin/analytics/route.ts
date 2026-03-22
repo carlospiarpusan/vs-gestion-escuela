@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/api-auth";
-import {
-  buildCaleCategoryTargets,
-  CALE_CATEGORY_BLUEPRINT,
-} from "@/lib/cale";
+import { buildCaleCategoryTargets, CALE_CATEGORY_BLUEPRINT } from "@/lib/cale";
 import { getServerDbPool } from "@/lib/server-db";
 import type {
   CaleAdminAnalyticsResponse,
@@ -75,7 +72,11 @@ function toNumber(value: unknown) {
   return 0;
 }
 
-function buildExamWhere(alias: string, perfil: AllowedPerfil, period: ReturnType<typeof buildPeriod>) {
+function buildExamWhere(
+  alias: string,
+  perfil: AllowedPerfil,
+  period: ReturnType<typeof buildPeriod>
+) {
   const values: Array<string> = [];
   const where = [
     `coalesce(${alias}.modulo_origen, case when ${alias}.notas like 'CALEJSON:%' then 'cale_practica' end) = 'cale_practica'`,
@@ -288,6 +289,8 @@ export async function GET(request: Request) {
       limit 12
     `;
 
+    const isSuperAdmin = authz.perfil.rol === "super_admin";
+
     const [
       summaryRes,
       trendRes,
@@ -304,8 +307,8 @@ export async function GET(request: Request) {
       pool.query(groupedAttemptsQuery, scoped.values),
       pool.query(wrongByCategoryQuery, scoped.values),
       pool.query(toughestQuestionsQuery, scoped.values),
-      pool.query(studentsQuery, scoped.values),
-      pool.query(recentAttemptsQuery, scoped.values),
+      isSuperAdmin ? { rows: [] } : pool.query(studentsQuery, scoped.values),
+      isSuperAdmin ? { rows: [] } : pool.query(recentAttemptsQuery, scoped.values),
     ]);
 
     const summaryRow = summaryRes.rows[0];
@@ -325,12 +328,21 @@ export async function GET(request: Request) {
       const totalPreguntas = toNumber(row.total_preguntas);
       const attempts = toNumber(row.attempts);
       for (const target of buildCaleCategoryTargets(totalPreguntas)) {
-        categoryTargets.set(target.nombre, (categoryTargets.get(target.nombre) || 0) + (target.count * attempts));
+        categoryTargets.set(
+          target.nombre,
+          (categoryTargets.get(target.nombre) || 0) + target.count * attempts
+        );
       }
     }
 
     const wrongByCategory = new Map(
-      (wrongByCategoryRes.rows as Array<{ categoria_nombre: string; wrong_count: number | string; omitted_count: number | string }>).map((row) => [
+      (
+        wrongByCategoryRes.rows as Array<{
+          categoria_nombre: string;
+          wrong_count: number | string;
+          omitted_count: number | string;
+        }>
+      ).map((row) => [
         row.categoria_nombre,
         {
           wrongCount: toNumber(row.wrong_count),
@@ -342,9 +354,10 @@ export async function GET(request: Request) {
     const categories: CaleAnalyticsCategoryRow[] = CALE_CATEGORY_BLUEPRINT.map((item) => {
       const totalSeen = categoryTargets.get(item.nombre) || 0;
       const wrong = wrongByCategory.get(item.nombre) || { wrongCount: 0, omittedCount: 0 };
-      const accuracy = totalSeen > 0
-        ? Math.max(0, Math.round(((totalSeen - wrong.wrongCount) / totalSeen) * 100))
-        : 0;
+      const accuracy =
+        totalSeen > 0
+          ? Math.max(0, Math.round(((totalSeen - wrong.wrongCount) / totalSeen) * 100))
+          : 0;
       return {
         name: item.nombre,
         totalSeen,
@@ -354,17 +367,19 @@ export async function GET(request: Request) {
       };
     });
 
-    let toughestQuestions = (toughestRes.rows as Array<{
-      pregunta_id: string | null;
-      codigo_externo: string | null;
-      categoria_nombre: string;
-      pregunta_texto: string;
-      total_seen: number | string;
-      wrong_count: number | string;
-      omitted_count: number | string;
-      error_rate: number | string;
-      last_seen_at: string | null;
-    }>).map<CaleAnalyticsQuestionRow>((row) => ({
+    let toughestQuestions = (
+      toughestRes.rows as Array<{
+        pregunta_id: string | null;
+        codigo_externo: string | null;
+        categoria_nombre: string;
+        pregunta_texto: string;
+        total_seen: number | string;
+        wrong_count: number | string;
+        omitted_count: number | string;
+        error_rate: number | string;
+        last_seen_at: string | null;
+      }>
+    ).map<CaleAnalyticsQuestionRow>((row) => ({
       preguntaId: row.pregunta_id,
       codigoExterno: row.codigo_externo,
       categoriaNombre: row.categoria_nombre,
@@ -378,17 +393,19 @@ export async function GET(request: Request) {
 
     if (toughestQuestions.length === 0 && totalAttempts > 0) {
       const fallbackRes = await pool.query(toughestFallbackQuery, scoped.values);
-      toughestQuestions = (fallbackRes.rows as Array<{
-        pregunta_id: string | null;
-        codigo_externo: string | null;
-        categoria_nombre: string;
-        pregunta_texto: string;
-        total_seen: number | string;
-        wrong_count: number | string;
-        omitted_count: number | string;
-        error_rate: number | string;
-        last_seen_at: string | null;
-      }>).map((row) => ({
+      toughestQuestions = (
+        fallbackRes.rows as Array<{
+          pregunta_id: string | null;
+          codigo_externo: string | null;
+          categoria_nombre: string;
+          pregunta_texto: string;
+          total_seen: number | string;
+          wrong_count: number | string;
+          omitted_count: number | string;
+          error_rate: number | string;
+          last_seen_at: string | null;
+        }>
+      ).map((row) => ({
         preguntaId: row.pregunta_id,
         codigoExterno: row.codigo_externo,
         categoriaNombre: row.categoria_nombre,
@@ -414,43 +431,46 @@ export async function GET(request: Request) {
         lastAttemptAt: summaryRow?.last_attempt_at ?? null,
         trackedQuestions: toNumber(summaryRow?.tracked_questions),
       },
-      trend: (trendRes.rows as Array<{
-        bucket: string;
-        attempts: number | string;
-        average_score: number | string;
-        pass_rate: number | string;
-      }>).map<CaleAnalyticsTrendPoint>((row) => ({
+      trend: (
+        trendRes.rows as Array<{
+          bucket: string;
+          attempts: number | string;
+          average_score: number | string;
+          pass_rate: number | string;
+        }>
+      ).map<CaleAnalyticsTrendPoint>((row) => ({
         bucket: row.bucket,
         label: row.bucket,
         attempts: toNumber(row.attempts),
         averageScore: toNumber(row.average_score),
         passRate: toNumber(row.pass_rate),
       })),
-      distribution: [
-        "0-59%",
-        "60-79%",
-        "80-89%",
-        "90-100%",
-      ].map<CaleAnalyticsDistributionRow>((label) => {
-        const row = (distributionRes.rows as Array<{ band: string; count: number | string }>).find((item) => item.band === label);
-        return {
-          label,
-          count: toNumber(row?.count),
-        };
-      }),
+      distribution: ["0-59%", "60-79%", "80-89%", "90-100%"].map<CaleAnalyticsDistributionRow>(
+        (label) => {
+          const row = (
+            distributionRes.rows as Array<{ band: string; count: number | string }>
+          ).find((item) => item.band === label);
+          return {
+            label,
+            count: toNumber(row?.count),
+          };
+        }
+      ),
       categories,
       toughestQuestions,
-      studentsToCoach: (studentsRes.rows as Array<{
-        alumno_id: string;
-        alumno_nombre: string;
-        attempts: number | string;
-        average_score: number | string;
-        last_score: number | string;
-        approved_attempts: number | string;
-        failed_attempts: number | string;
-        recent_failures: number | string;
-        last_attempt_at: string | null;
-      }>).map<CaleAnalyticsStudentRow>((row) => ({
+      studentsToCoach: (
+        studentsRes.rows as Array<{
+          alumno_id: string;
+          alumno_nombre: string;
+          attempts: number | string;
+          average_score: number | string;
+          last_score: number | string;
+          approved_attempts: number | string;
+          failed_attempts: number | string;
+          recent_failures: number | string;
+          last_attempt_at: string | null;
+        }>
+      ).map<CaleAnalyticsStudentRow>((row) => ({
         alumnoId: row.alumno_id,
         alumnoNombre: row.alumno_nombre,
         attempts: toNumber(row.attempts),
@@ -461,17 +481,19 @@ export async function GET(request: Request) {
         recentFailures: toNumber(row.recent_failures),
         lastAttemptAt: row.last_attempt_at,
       })),
-      recentAttempts: (recentRes.rows as Array<{
-        id: string;
-        alumno_id: string;
-        alumno_nombre: string;
-        resultado: string;
-        porcentaje: number | string;
-        total_preguntas: number | string;
-        respuestas_correctas: number | string;
-        tiempo_segundos: number | string;
-        fecha_presentacion: string | null;
-      }>).map<CaleAnalyticsAttemptRow>((row) => ({
+      recentAttempts: (
+        recentRes.rows as Array<{
+          id: string;
+          alumno_id: string;
+          alumno_nombre: string;
+          resultado: string;
+          porcentaje: number | string;
+          total_preguntas: number | string;
+          respuestas_correctas: number | string;
+          tiempo_segundos: number | string;
+          fecha_presentacion: string | null;
+        }>
+      ).map<CaleAnalyticsAttemptRow>((row) => ({
         id: row.id,
         alumnoId: row.alumno_id,
         alumnoNombre: row.alumno_nombre,
