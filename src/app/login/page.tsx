@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import LoginPageClient from "@/components/public/LoginPageClient";
 import { buildPublicMetadata } from "@/lib/site-metadata";
 
@@ -15,5 +16,9 @@ export const metadata: Metadata = buildPublicMetadata({
 });
 
 export default function LoginPage() {
-  return <LoginPageClient />;
+  return (
+    <Suspense>
+      <LoginPageClient />
+    </Suspense>
+  );
 }
