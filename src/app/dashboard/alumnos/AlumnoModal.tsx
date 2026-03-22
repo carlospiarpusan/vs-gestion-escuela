@@ -1,7 +1,16 @@
 "use client";
 
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { BookOpen, CalendarDays, DollarSign, FileText, GraduationCap, MapPin, ReceiptText, UserRound } from "lucide-react";
+import {
+  BookOpen,
+  CalendarDays,
+  DollarSign,
+  FileText,
+  GraduationCap,
+  MapPin,
+  ReceiptText,
+  UserRound,
+} from "lucide-react";
 import Modal from "@/components/dashboard/Modal";
 import { DEPARTAMENTOS_COLOMBIA } from "@/lib/colombia";
 import { getContractPrefixHint, normalizeContractNumber } from "@/lib/contract-number";
@@ -67,15 +76,7 @@ function Section({
   );
 }
 
-function Chip({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
+function Chip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -224,9 +225,7 @@ export default function AlumnoModal({
                   <input
                     type="date"
                     value={form.fecha_nacimiento}
-                    onChange={(event) =>
-                      setForm({ ...form, fecha_nacimiento: event.target.value })
-                    }
+                    onChange={(event) => setForm({ ...form, fecha_nacimiento: event.target.value })}
                     className={inputClass}
                   />
                 </div>
@@ -419,14 +418,16 @@ export default function AlumnoModal({
                   <div>
                     <label className={labelClass}>Categoría evaluada *</label>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {Array.from(new Set([...CATEGORIAS_APTITUD, ...form.categorias])).map((cat) => (
-                        <Chip
-                          key={`aptitud-${cat}`}
-                          active={form.categorias.includes(cat)}
-                          label={cat}
-                          onClick={() => toggleCategoria(cat)}
-                        />
-                      ))}
+                      {Array.from(new Set([...CATEGORIAS_APTITUD, ...form.categorias])).map(
+                        (cat) => (
+                          <Chip
+                            key={`aptitud-${cat}`}
+                            active={form.categorias.includes(cat)}
+                            label={cat}
+                            onClick={() => toggleCategoria(cat)}
+                          />
+                        )
+                      )}
                     </div>
                   </div>
 
@@ -604,7 +605,8 @@ export default function AlumnoModal({
                   </div>
                 </div>
                 <div className="mt-4 rounded-[18px] border border-amber-200/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-                  No crea matrícula ni exige categoría. Sirve para horas prácticas adicionales o servicios puntuales.
+                  No crea matrícula ni exige categoría. Sirve para horas prácticas adicionales o
+                  servicios puntuales.
                 </div>
               </Section>
             ) : (
@@ -770,7 +772,13 @@ export default function AlumnoModal({
             )}
 
             <Section
-              title={editing ? "Observaciones" : isAptitudForm || isPracticeForm ? "Pago inicial" : "Abono inicial"}
+              title={
+                editing
+                  ? "Observaciones"
+                  : isAptitudForm || isPracticeForm
+                    ? "Pago inicial"
+                    : "Abono inicial"
+              }
               description={
                 editing
                   ? "Añade notas internas útiles para seguimiento, coordinación o contexto operativo."
@@ -831,13 +839,13 @@ export default function AlumnoModal({
 
           <aside className="space-y-5">
             <section className="apple-panel sticky top-0 px-5 py-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7b8591]">
+              <p className="text-[11px] font-semibold tracking-[0.18em] text-[#7b8591] uppercase">
                 Resumen del registro
               </p>
 
               <div className="mt-4 space-y-4">
                 <div className="rounded-[18px] border border-[var(--surface-border)] bg-[var(--surface-muted)] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8591]">
+                  <p className="text-xs font-semibold tracking-[0.12em] text-[#7b8591] uppercase">
                     Tipo
                   </p>
                   <p className="mt-2 text-sm font-semibold text-[#111214] dark:text-[#f5f5f7]">
@@ -853,7 +861,7 @@ export default function AlumnoModal({
                 </div>
 
                 <div className="rounded-[18px] border border-[var(--surface-border)] bg-[var(--surface-strong)] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8591]">
+                  <p className="text-xs font-semibold tracking-[0.12em] text-[#7b8591] uppercase">
                     Referencia
                   </p>
                   <p className="mt-2 text-sm font-semibold text-[#111214] dark:text-[#f5f5f7]">
@@ -865,7 +873,7 @@ export default function AlumnoModal({
                 </div>
 
                 <div className="rounded-[18px] border border-[var(--surface-border)] bg-[var(--surface-strong)] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8591]">
+                  <p className="text-xs font-semibold tracking-[0.12em] text-[#7b8591] uppercase">
                     Resumen económico
                   </p>
                   <div className="mt-3 space-y-3 text-sm">
@@ -886,7 +894,9 @@ export default function AlumnoModal({
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-[#66707a] dark:text-[#aeb6bf]">Saldo pendiente</span>
+                          <span className="text-[#66707a] dark:text-[#aeb6bf]">
+                            Saldo pendiente
+                          </span>
                           <span className="font-semibold text-amber-600 dark:text-amber-400">
                             ${saldoPendiente.toLocaleString("es-CO")}
                           </span>
@@ -916,7 +926,29 @@ export default function AlumnoModal({
           </aside>
         </div>
 
-        <div className="sticky bottom-0 z-10 -mx-5 border-t border-[var(--surface-border)] bg-[color:var(--surface-strong)]/94 px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 backdrop-blur sm:-mx-7 sm:px-7">
+        <div className="sticky bottom-0 z-10 -mx-5 border-t border-[var(--surface-border)] bg-[color:var(--surface-strong)]/94 px-5 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur sm:-mx-7 sm:px-7">
+          {!editing && (
+            <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[var(--surface-border)] bg-[var(--surface-muted)] px-4 py-3 select-none">
+              <input
+                type="checkbox"
+                checked={form.consentimiento_datos}
+                onChange={(e) => setForm({ ...form, consentimiento_datos: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#0071e3] accent-[#0071e3]"
+              />
+              <span className="text-xs leading-5 text-[#66707a] dark:text-[#aeb6bf]">
+                Autorizo el tratamiento de mis datos personales conforme a la{" "}
+                <a
+                  href="/privacidad"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-[#0071e3] underline dark:text-[#69a9ff]"
+                >
+                  Politica de privacidad
+                </a>{" "}
+                y la Ley 1581 de 2012 de proteccion de datos personales.
+              </span>
+            </label>
+          )}
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
             <button
               type="button"
@@ -928,7 +960,7 @@ export default function AlumnoModal({
             <button
               type="button"
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || (!editing && !form.consentimiento_datos)}
               className="apple-button-primary text-sm disabled:opacity-50"
             >
               {saveLabel}

@@ -54,6 +54,7 @@ const emptyForm = {
   especialidades: [] as string[],
   estado: "activo" as EstadoInstructor,
   color: "#0071e3",
+  consentimiento_datos: false,
 };
 
 export default function InstructoresPage() {
@@ -212,6 +213,7 @@ export default function InstructoresPage() {
       especialidades: row.especialidades ?? (row.especialidad ? [row.especialidad] : []),
       estado: row.estado,
       color: row.color,
+      consentimiento_datos: row.consentimiento_datos ?? true,
     });
     setModalOpen(true);
   };
@@ -328,6 +330,8 @@ export default function InstructoresPage() {
             especialidades: form.especialidades,
             estado: form.estado,
             color: form.color,
+            consentimiento_datos: true,
+            consentimiento_fecha: new Date().toISOString(),
           })
         );
       }
@@ -625,6 +629,30 @@ export default function InstructoresPage() {
             </div>
           </div>
 
+          {/* Consentimiento de datos */}
+          {!editing && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 select-none dark:border-gray-700 dark:bg-[#0a0a0a]">
+              <input
+                type="checkbox"
+                checked={form.consentimiento_datos}
+                onChange={(e) => setForm({ ...form, consentimiento_datos: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#0071e3] accent-[#0071e3]"
+              />
+              <span className="text-xs leading-5 text-[#86868b]">
+                Autorizo el tratamiento de mis datos personales conforme a la{" "}
+                <a
+                  href="/privacidad"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-[#0071e3] underline"
+                >
+                  Politica de privacidad
+                </a>{" "}
+                y la Ley 1581 de 2012 de proteccion de datos personales.
+              </span>
+            </label>
+          )}
+
           {/* Action buttons */}
           <div className="flex justify-end gap-3 pt-2">
             <button
@@ -635,7 +663,7 @@ export default function InstructoresPage() {
             </button>
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || (!editing && !form.consentimiento_datos)}
               className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
             >
               {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Instructor"}

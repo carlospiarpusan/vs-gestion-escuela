@@ -349,6 +349,7 @@ export default function AlumnosPage() {
       tiene_tramitador: Boolean(matricula?.tiene_tramitador),
       tramitador_nombre: matricula?.tramitador_nombre || "",
       tramitador_valor: matricula?.tramitador_valor ? String(matricula.tramitador_valor) : "",
+      consentimiento_datos: alumno.consentimiento_datos ?? true,
     });
     setModalOpen(true);
   };
@@ -490,6 +491,7 @@ export default function AlumnosPage() {
           tiene_tramitador: form.tiene_tramitador,
           tramitador_nombre: form.tramitador_nombre.trim() || null,
           tramitador_valor: form.tiene_tramitador ? tramitadorValorNum || null : null,
+          consentimiento_datos: form.consentimiento_datos,
         }),
       });
 
