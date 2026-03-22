@@ -63,3 +63,69 @@ export function parseStringArray(value: string | null): string[] {
     .map((item) => item.trim())
     .filter(Boolean);
 }
+
+// ---------------------------------------------------------------------------
+// List endpoint helpers (shared across 9+ route handlers)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse standard list query-string parameters (`q`, `page`, `pageSize`).
+ *
+ * @example
+ * ```ts
+ * const { search, page, pageSize } = parseListParams(url);
+ * ```
+ */
+export function parseListParams(url: URL) {
+  return {
+    search: (url.searchParams.get("q") ?? "").trim(),
+    page: parseInteger(url.searchParams.get("page"), 0, 0, 100_000),
+    pageSize: parseInteger(url.searchParams.get("pageSize"), 10, 1, 50),
+  };
+}
+
+/**
+ * Accumulator for building parameterised WHERE clauses.
+ *
+ * @example
+ * ```ts
+ * const wb = createWhereBuilder();
+ * wb.where.push(`t.escuela_id = ${wb.addValue(escuelaId)}`);
+ * const sql = wb.toSql(); // "t.escuela_id = $1"
+ * ```
+ */
+export function createWhereBuilder() {
+  const values: Array<string | number> = [];
+  const where: string[] = [];
+
+  function addValue(value: string | number) {
+    values.push(value);
+    return `$${values.length}`;
+  }
+
+  function toSql() {
+    return where.length > 0 ? where.join(" AND ") : "true";
+  }
+
+  return { values, where, addValue, toSql };
+}
+
+/**
+ * Build `$N` placeholder references for LIMIT / OFFSET, positioned
+ * after the WHERE-clause parameter slots.
+ *
+ * @example
+ * ```ts
+ * const pg = buildPaginationRefs(page, pageSize, wb.values.length);
+ * // sql: `LIMIT ${pg.limitRef} OFFSET ${pg.offsetRef}`
+ * // params: [...wb.values, ...pg.values]
+ * ```
+ */
+export function buildPaginationRefs(page: number, pageSize: number, existingParamCount: number) {
+  const offset = page * pageSize;
+  return {
+    limitRef: `$${existingParamCount + 1}`,
+    offsetRef: `$${existingParamCount + 2}`,
+    values: [pageSize, offset] as [number, number],
+  };
+}

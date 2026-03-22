@@ -30,7 +30,8 @@ export type DashboardIconKey =
   | "payroll"
   | "logbook"
   | "permissions"
-  | "analytics";
+  | "analytics"
+  | "arco";
 
 export type DashboardModuleId =
   | "home"
@@ -53,7 +54,8 @@ export type DashboardModuleId =
   | "payroll"
   | "logbook"
   | "permissions"
-  | "analytics";
+  | "analytics"
+  | "arco";
 
 export type DashboardAreaDescriptor = {
   id: DashboardAreaId;
@@ -387,6 +389,18 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     priority: 148,
     mobilePriority: 3,
     homePriority: 12,
+  },
+  {
+    id: "arco",
+    label: "Solicitudes ARCO",
+    shortLabel: "ARCO",
+    href: "/dashboard/arco",
+    pathPrefix: "/dashboard/arco",
+    description: "Gestiona solicitudes de derechos de datos personales (Ley 1581/2012).",
+    area: "configuration",
+    icon: "arco",
+    roles: ["super_admin", "admin_escuela"],
+    priority: 145,
   },
   {
     id: "payroll",

@@ -7,6 +7,8 @@ import {
   parseJsonBody,
 } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
+import { revalidateServerReadCache } from "@/lib/server-read-cache";
+import { buildDashboardListCacheTags, buildFinanceCacheTags } from "@/lib/server-cache-tags";
 import type { Rol } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = [
@@ -174,6 +176,15 @@ export async function POST(request: Request) {
     );
 
     await client.query("COMMIT");
+
+    const scope = { escuelaId: alumno.escuela_id, sedeId };
+    revalidateServerReadCache([
+      ...buildDashboardListCacheTags("alumnos", scope),
+      ...buildFinanceCacheTags("income", scope),
+      ...buildFinanceCacheTags("portfolio", scope),
+      ...buildFinanceCacheTags("cash", scope),
+    ]);
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     await client.query("ROLLBACK");
