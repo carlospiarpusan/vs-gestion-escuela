@@ -200,6 +200,70 @@ export function buildExpenseColumns(activeSection: ExpenseSection): ExpenseTable
     ];
   }
 
+  if (activeSection === "nomina") {
+    return [
+      { key: "fecha", label: "Fecha" },
+      {
+        key: "proveedor",
+        label: "Colaborador",
+        render: (row) => (
+          <div className="space-y-1">
+            <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {row.proveedor || "Sin nombre"}
+            </p>
+            <p className="text-xs text-[#86868b]">{row.concepto}</p>
+          </div>
+        ),
+      },
+      {
+        key: "monto",
+        label: "Monto",
+        render: (row) => (
+          <span className="font-medium text-red-500">
+            {formatAccountingMoney(Number(row.monto))}
+          </span>
+        ),
+      },
+      {
+        key: "estado_pago",
+        label: "Estado pago",
+        render: (row) => (
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+              row.estado_pago === "pagado"
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                : row.estado_pago === "anulado"
+                  ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                  : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+            }`}
+          >
+            {row.estado_pago}
+          </span>
+        ),
+      },
+      {
+        key: "fecha_vencimiento",
+        label: "Vencimiento",
+        render: (row) => {
+          const dueMeta = getExpenseDueMeta(row.fecha_vencimiento);
+          return (
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                {row.fecha_vencimiento || "—"}
+              </p>
+              <span
+                className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${dueMeta.className}`}
+              >
+                {dueMeta.label}
+              </span>
+            </div>
+          );
+        },
+      },
+      { key: "metodo_pago", label: "Método" },
+    ];
+  }
+
   const baseColumns: ExpenseTableColumn[] = [
     { key: "fecha", label: activeSection === "cuentas" ? "Registro" : "Fecha" },
     {
@@ -229,9 +293,7 @@ export function buildExpenseColumns(activeSection: ExpenseSection): ExpenseTable
       key: "monto",
       label: "Monto",
       render: (row) => (
-        <span className="font-medium text-red-500">
-          {formatAccountingMoney(Number(row.monto))}
-        </span>
+        <span className="font-medium text-red-500">{formatAccountingMoney(Number(row.monto))}</span>
       ),
     },
     { key: "proveedor", label: "Proveedor" },
@@ -294,7 +356,7 @@ export function renderExpenseMobileCard(row: Gasto, activeSection: ExpenseSectio
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[#111214] dark:text-[#f5f5f7]">{row.concepto}</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="mt-1 text-xs tracking-[0.16em] text-[#7b8591] uppercase">
             {row.categoria.replace(/_/g, " ")}
           </p>
           <p className="mt-2 text-xs text-[#66707a] dark:text-[#aeb6bf]">
@@ -330,7 +392,7 @@ export function renderExpenseMobileCard(row: Gasto, activeSection: ExpenseSectio
       {dueMeta ? (
         <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-strong)] px-3 py-2">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+            <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
               Vencimiento
             </p>
             <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">
@@ -351,7 +413,7 @@ export function renderExpenseMobileCard(row: Gasto, activeSection: ExpenseSectio
 function ExpenseMobileMeta({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+      <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
         {label}
       </p>
       <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">{value}</p>
@@ -410,14 +472,14 @@ export function ExpenseSectionPanel({
   const currentSectionMeta =
     EXPENSE_SECTION_ITEMS.find((item) => item.id === activeSection) || EXPENSE_SECTION_ITEMS[0];
   const visibleViewItems =
-    activeSection === "tramitadores" || activeSection === "facturas"
+    activeSection === "tramitadores" || activeSection === "facturas" || activeSection === "nomina"
       ? []
       : activeSection === "cuentas"
-      ? EXPENSE_VIEW_ITEMS.filter(
-          (item) =>
-            item.id === "all" || item.id === "with_invoice" || item.id === "without_invoice"
-        )
-      : EXPENSE_VIEW_ITEMS;
+        ? EXPENSE_VIEW_ITEMS.filter(
+            (item) =>
+              item.id === "all" || item.id === "with_invoice" || item.id === "without_invoice"
+          )
+        : EXPENSE_VIEW_ITEMS;
 
   return (
     <AccountingPanel title={currentSectionMeta.label} description={currentSectionMeta.description}>
@@ -518,7 +580,9 @@ export function ExpenseFacturasSection({
                   </span>
                 </div>
                 <p className="mt-2 text-xs text-[#86868b]">
-                  {item.created_at ? new Date(item.created_at).toLocaleString("es-CO") : "Sin fecha"}
+                  {item.created_at
+                    ? new Date(item.created_at).toLocaleString("es-CO")
+                    : "Sin fecha"}
                   {item.detail ? ` • ${item.detail}` : ""}
                 </p>
               </div>
@@ -693,7 +757,11 @@ export function ExpenseFiltersSection({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <div>
           <label className="apple-label">
-            {activeSection === "tramitadores" ? "Tramitador" : "Categoría"}
+            {activeSection === "tramitadores"
+              ? "Tramitador"
+              : activeSection === "nomina"
+                ? "Sección"
+                : "Categoría"}
           </label>
           {activeSection === "tramitadores" ? (
             <select
@@ -708,6 +776,8 @@ export function ExpenseFiltersSection({
                 </option>
               ))}
             </select>
+          ) : activeSection === "nomina" ? (
+            <input value="Nómina" readOnly className="apple-input" />
           ) : (
             <select
               value={filtroCategoria}
@@ -759,7 +829,11 @@ export function ExpenseFiltersSection({
 
         <div>
           <label className="apple-label">Año</label>
-          <select value={filtroYear} onChange={(e) => onYearChange(e.target.value)} className="apple-input">
+          <select
+            value={filtroYear}
+            onChange={(e) => onYearChange(e.target.value)}
+            className="apple-input"
+          >
             {years.map((year) => (
               <option key={year} value={year}>
                 {year}
@@ -770,7 +844,11 @@ export function ExpenseFiltersSection({
 
         <div>
           <label className="apple-label">Mes</label>
-          <select value={filtroMes} onChange={(e) => onMesChange(e.target.value)} className="apple-input">
+          <select
+            value={filtroMes}
+            onChange={(e) => onMesChange(e.target.value)}
+            className="apple-input"
+          >
             {mesesDelAno.map((mes) => (
               <option key={mes.value || "all"} value={mes.value}>
                 {mes.label}
@@ -819,6 +897,9 @@ export function ExpenseSummarySection({
   onClearSelectedTramitador,
 }: ExpenseSummarySectionProps) {
   if (activeSection === "facturas") return null;
+  if (activeSection === "nomina") {
+    return <ExpenseNominaSummary summary={summary} summaryLoading={summaryLoading} />;
+  }
   if (activeSection === "cuentas") {
     return <ExpensePayablesSummary summary={summary} summaryLoading={summaryLoading} />;
   }
@@ -836,6 +917,91 @@ export function ExpenseSummarySection({
   return <ExpenseLibroSummary summary={summary} summaryLoading={summaryLoading} />;
 }
 
+function ExpenseNominaSummary({
+  summary,
+  summaryLoading,
+}: {
+  summary: ExpenseDashboardResponse | null;
+  summaryLoading: boolean;
+}) {
+  const topCollaborator = summary?.breakdown.topProveedoresGasto[0];
+  const totalNomina = summary?.summary.gastosTotales || 0;
+  const totalPendiente = summary?.payables?.totalPendiente || 0;
+  const totalPagado = Math.max(totalNomina - totalPendiente, 0);
+
+  return (
+    <div className="mb-4 space-y-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AccountingStatCard
+          eyebrow="Nómina"
+          label="Causada del periodo"
+          value={summaryLoading ? "..." : formatAccountingMoney(totalNomina)}
+          detail="Total de pagos a instructores y colaboradores en el rango."
+          tone="danger"
+          icon={<Wallet size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Nómina"
+          label="Pagado"
+          value={summaryLoading ? "..." : formatAccountingMoney(totalPagado)}
+          detail="Monto ya desembolsado dentro de la nómina del periodo."
+          tone="success"
+          icon={<ShieldCheck size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Pendiente"
+          label="Por pagar"
+          value={summaryLoading ? "..." : formatAccountingMoney(totalPendiente)}
+          detail="Saldo abierto de nómina pendiente por salida."
+          tone="warning"
+          icon={<Clock3 size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Colaborador"
+          label="Mayor peso"
+          value={topCollaborator?.concepto || "Sin datos"}
+          detail={summaryLoading ? "..." : formatAccountingMoney(topCollaborator?.total || 0)}
+          tone="default"
+          icon={<BarChart3 size={18} />}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <AccountingMiniList
+          title="Colaboradores principales"
+          description="Quién concentra más valor de nómina en este corte."
+          emptyLabel="No hay movimientos de nómina en este rango."
+          items={(summary?.breakdown.topProveedoresGasto || []).slice(0, 6).map((row) => ({
+            label: row.concepto || "Sin nombre",
+            value: formatAccountingMoney(row.total),
+            meta: `${row.cantidad} pago${row.cantidad === 1 ? "" : "s"}`,
+          }))}
+        />
+        <AccountingMiniList
+          title="Métodos de pago"
+          description="Cómo se está desembolsando la nómina."
+          emptyLabel="No hay métodos registrados para nómina."
+          items={(summary?.breakdown.gastosPorMetodo || []).slice(0, 6).map((row) => ({
+            label: row.metodo_pago || "Sin método",
+            value: formatAccountingMoney(row.total),
+            meta: `${row.cantidad} movimiento${row.cantidad === 1 ? "" : "s"}`,
+          }))}
+        />
+        <AccountingMiniList
+          title="Estado de salida"
+          description="Lectura rápida de vencimientos y pagos pendientes."
+          emptyLabel="No hay saldos pendientes de nómina."
+          items={(summary?.payables?.buckets || []).slice(0, 6).map((row) => ({
+            label: row.bucket,
+            value: formatAccountingMoney(row.total),
+            meta: `${row.cantidad} registro${row.cantidad === 1 ? "" : "s"}`,
+          }))}
+        />
+      </div>
+    </div>
+  );
+}
+
 function ExpenseLibroSummary({
   summary,
   summaryLoading,
@@ -851,7 +1017,9 @@ function ExpenseLibroSummary({
         <AccountingStatCard
           eyebrow="Egreso"
           label="Gasto total"
-          value={summaryLoading ? "..." : formatAccountingMoney(summary?.summary.gastosTotales || 0)}
+          value={
+            summaryLoading ? "..." : formatAccountingMoney(summary?.summary.gastosTotales || 0)
+          }
           detail="Egreso consolidado del rango seleccionado."
           tone="danger"
           icon={<Landmark size={18} />}
@@ -859,7 +1027,9 @@ function ExpenseLibroSummary({
         <AccountingStatCard
           eyebrow="Promedio"
           label="Promedio por gasto"
-          value={summaryLoading ? "..." : formatAccountingMoney(summary?.summary.gastoPromedio || 0)}
+          value={
+            summaryLoading ? "..." : formatAccountingMoney(summary?.summary.gastoPromedio || 0)
+          }
           detail={`${summary?.summary.totalGastos || 0} egreso${(summary?.summary.totalGastos || 0) === 1 ? "" : "s"} en el periodo.`}
           tone="primary"
           icon={<Wallet size={18} />}
@@ -937,7 +1107,9 @@ function ExpensePayablesSummary({
         <AccountingStatCard
           eyebrow="Por pagar"
           label="Total pendiente"
-          value={summaryLoading ? "..." : formatAccountingMoney(summary?.payables?.totalPendiente || 0)}
+          value={
+            summaryLoading ? "..." : formatAccountingMoney(summary?.payables?.totalPendiente || 0)
+          }
           detail="Facturas y egresos pendientes de salida."
           tone="warning"
           icon={<ShieldCheck size={18} />}
@@ -953,7 +1125,9 @@ function ExpensePayablesSummary({
         <AccountingStatCard
           eyebrow="Agenda"
           label="Próximo a vencer"
-          value={summaryLoading ? "..." : formatAccountingMoney(summary?.payables?.vencePronto || 0)}
+          value={
+            summaryLoading ? "..." : formatAccountingMoney(summary?.payables?.vencePronto || 0)
+          }
           detail="Compromisos que vencen en 7 días o menos."
           tone="warning"
           icon={<Clock3 size={18} />}
@@ -1051,7 +1225,9 @@ function ExpenseTramitadoresSummary({
           label={selectedTramitadorRow ? selectedTramitadorRow.nombre : "Tramitadores activos"}
           value={
             selectedTramitadorRow
-              ? formatAccountingMoney(selectedTramitadorRow.pagado + selectedTramitadorRow.pendiente)
+              ? formatAccountingMoney(
+                  selectedTramitadorRow.pagado + selectedTramitadorRow.pendiente
+                )
               : String(tramitadoresActivos)
           }
           detail={
@@ -1079,8 +1255,8 @@ function ExpenseTramitadoresSummary({
       {unnamedTramitadorRow ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/30 dark:bg-amber-900/10 dark:text-amber-300">
           Hay {unnamedTramitadorRow.movimientos} movimiento
-          {unnamedTramitadorRow.movimientos === 1 ? "" : "s"} sin nombre de tramitador. Completa
-          el nombre desde alumnos, matrículas o gastos manuales para no fragmentar la cartera.
+          {unnamedTramitadorRow.movimientos === 1 ? "" : "s"} sin nombre de tramitador. Completa el
+          nombre desde alumnos, matrículas o gastos manuales para no fragmentar la cartera.
         </div>
       ) : null}
 
@@ -1206,7 +1382,9 @@ function TramitadorMetric({
   return (
     <div className="rounded-xl bg-white px-3 py-2 dark:bg-[#1d1d1f]">
       <p className="text-[#86868b]">{label}</p>
-      <p className={`mt-1 font-semibold ${danger ? "text-red-500" : "text-[#1d1d1f] dark:text-[#f5f5f7]"}`}>
+      <p
+        className={`mt-1 font-semibold ${danger ? "text-red-500" : "text-[#1d1d1f] dark:text-[#f5f5f7]"}`}
+      >
         {value}
       </p>
     </div>
@@ -1216,6 +1394,7 @@ function TramitadorMetric({
 export function ExpenseSearchHint({ activeSection }: ExpenseSearchHintProps) {
   if (
     activeSection !== "libro" &&
+    activeSection !== "nomina" &&
     activeSection !== "cuentas" &&
     activeSection !== "tramitadores"
   ) {
@@ -1224,7 +1403,9 @@ export function ExpenseSearchHint({ activeSection }: ExpenseSearchHintProps) {
 
   return (
     <div className="mb-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-xs text-[#86868b] dark:border-gray-800 dark:bg-[#1d1d1f]">
-      {EXPENSE_ADVANCED_SEARCH_HINT}
+      {activeSection === "nomina"
+        ? "Busca por colaborador, concepto, fecha, factura o notas para revisar pagos de nómina sin mezclar otros egresos."
+        : EXPENSE_ADVANCED_SEARCH_HINT}
     </div>
   );
 }
@@ -1245,6 +1426,7 @@ export function ExpenseTableSection({
 }: ExpenseTableSectionProps) {
   if (
     activeSection !== "libro" &&
+    activeSection !== "nomina" &&
     activeSection !== "cuentas" &&
     activeSection !== "tramitadores"
   ) {
@@ -1262,9 +1444,11 @@ export function ExpenseTableSection({
         searchPlaceholder={
           activeSection === "cuentas"
             ? "Buscar por proveedor, concepto, factura o fecha de pago..."
-            : activeSection === "tramitadores"
-              ? "Buscar por tramitador, concepto, factura o fecha..."
-              : "Buscar por concepto, proveedor, factura, categoría, método o notas. Usa fecha: o monto: para filtros exactos."
+            : activeSection === "nomina"
+              ? "Buscar por colaborador, concepto, factura, fecha o notas..."
+              : activeSection === "tramitadores"
+                ? "Buscar por tramitador, concepto, factura o fecha..."
+                : "Buscar por concepto, proveedor, factura, categoría, método o notas. Usa fecha: o monto: para filtros exactos."
         }
         searchTerm={searchTerm}
         onEdit={onEdit}

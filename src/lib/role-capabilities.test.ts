@@ -19,6 +19,8 @@ describe("role capabilities", () => {
     expect(canAuditedRolePerformAction("super_admin", "income", "view")).toBe(false);
     expect(canAuditedRolePerformAction("super_admin", "reports", "view")).toBe(true);
     expect(canAuditedRolePerformAction("super_admin", "exams", "configure")).toBe(true);
+    expect(canAuditedRolePerformAction("super_admin", "subscriptions", "view")).toBe(true);
+    expect(canAuditedRolePerformAction("admin_escuela", "subscriptions", "view")).toBe(false);
   });
 
   it("keeps admin_sede readonly in sedes and administrativos", () => {

@@ -20,6 +20,7 @@ describe("dashboard access control", () => {
     expect(canAccessDashboardPath("super_admin", "/dashboard/ingresos")).toBe(false);
     expect(canAccessDashboardPath("super_admin", "/dashboard/examenes")).toBe(true);
     expect(canAccessDashboardPath("super_admin", "/dashboard/escuelas")).toBe(true);
+    expect(canAccessDashboardPath("super_admin", "/dashboard/suscripciones")).toBe(true);
   });
 
   it("keeps unknown dashboard routes blocked", () => {

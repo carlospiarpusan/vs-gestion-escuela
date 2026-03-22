@@ -21,12 +21,8 @@ describe("dashboard navigation config", () => {
     ]);
     expect(navigation[1]?.modules.map((module) => module.id)).toEqual(["reports"]);
     expect(navigation[2]?.modules.map((module) => module.id)).toEqual(["exams"]);
-    expect(navigation[3]?.modules.map((module) => module.id)).toEqual([
-      "staff",
-      "permissions",
-      "branches",
-    ]);
-    expect(navigation[4]?.modules.map((module) => module.id)).toEqual(["schools"]);
+    expect(navigation[3]?.modules.map((module) => module.id)).toEqual(["permissions"]);
+    expect(navigation[4]?.modules.map((module) => module.id)).toEqual(["schools", "subscriptions"]);
   });
 
   it("groups admin_escuela modules by priority area order", () => {
@@ -70,6 +66,9 @@ describe("dashboard navigation config", () => {
     });
     expect(findDashboardModuleByPath("/dashboard/permisos")).toMatchObject({
       id: "permissions",
+    });
+    expect(findDashboardModuleByPath("/dashboard/suscripciones")).toMatchObject({
+      id: "subscriptions",
     });
     expect(findDashboardModuleByPath("/dashboard/bitacora")).toMatchObject({ id: "logbook" });
   });

@@ -1,3 +1,5 @@
+import type { PlatformSchoolOverview } from "@/lib/platform-school-overviews";
+
 export interface AdminDashboardStats {
   alumnos: number;
   cursosNuevosMes: number;
@@ -40,21 +42,7 @@ export interface SuperAdminDashboardStats {
   ingresosMes: number;
 }
 
-export interface SuperAdminSchoolOverview {
-  id: string;
-  nombre: string;
-  estado: "activa" | "inactiva" | "suspendida";
-  plan: PlanEscuela;
-  max_alumnos: number;
-  max_sedes: number;
-  created_at: string;
-  sedesTotal: number;
-  sedesActivas: number;
-  alumnosTotal: number;
-  adminsActivos: number;
-  hasPrincipalSede: boolean;
-  capacidadPct: number;
-}
+export type SuperAdminSchoolOverview = PlatformSchoolOverview;
 
 export interface SuperAdminDashboardResponse {
   stats: SuperAdminDashboardStats;
@@ -233,4 +221,3 @@ export function buildDashboardSummaryCacheKey(
 ) {
   return `dashboard-summary:${kind}:${scope.id || "anon"}:${scope.rol || "unknown"}:${scope.escuela_id || "global"}:${scope.sede_id || "all"}`;
 }
-import type { PlanEscuela } from "@/types/database";

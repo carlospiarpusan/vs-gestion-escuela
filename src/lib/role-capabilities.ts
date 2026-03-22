@@ -32,6 +32,7 @@ export type RoleCapabilityModuleId =
   | "staff"
   | "branches"
   | "schools"
+  | "subscriptions"
   | "permissions"
   | "account";
 
@@ -77,6 +78,12 @@ export const ROLE_CAPABILITY_MODULES: RoleCapabilityModuleDescriptor[] = [
     id: "schools",
     label: "Escuelas",
     description: "Control global de escuelas, planes, cupos y estado de plataforma.",
+    visibleInAudit: true,
+  },
+  {
+    id: "subscriptions",
+    label: "Suscripciones",
+    description: "Planes, estado de servicio y crecimiento comercial de la red de escuelas.",
     visibleInAudit: true,
   },
   {
@@ -198,7 +205,7 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
     description:
       "Control global de escuelas, estructura general y gobierno general de la plataforma.",
     can: [
-      "Administra escuelas, planes y los controles base en toda la plataforma.",
+      "Administra escuelas, planes, suscripciones y los controles base en toda la plataforma.",
       "Consulta informes globales y el estado general de la red de escuelas.",
       "Crea, edita y elimina preguntas del banco maestro de evaluaciones CALE.",
     ],
@@ -274,6 +281,12 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
       scope: "platform",
       actions: ["view", "create", "edit", "delete", "configure"],
     },
+    subscriptions: {
+      state: "full",
+      scope: "platform",
+      actions: ["view", "edit", "export", "configure"],
+      note: "Gobierna planes, estado de servicio y lectura comercial global de las escuelas.",
+    },
     branches: NONE_CAPABILITY,
     staff: NONE_CAPABILITY,
     instructors: NONE_CAPABILITY,
@@ -312,6 +325,7 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
   admin_escuela: {
     home: { state: "readonly", scope: "school", actions: ["view"] },
     schools: NONE_CAPABILITY,
+    subscriptions: NONE_CAPABILITY,
     branches: {
       state: "full",
       scope: "school",
@@ -403,6 +417,7 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
   admin_sede: {
     home: { state: "readonly", scope: "branch", actions: ["view"] },
     schools: NONE_CAPABILITY,
+    subscriptions: NONE_CAPABILITY,
     branches: {
       state: "readonly",
       scope: "school",
@@ -496,6 +511,7 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
   administrativo: {
     home: { state: "readonly", scope: "branch", actions: ["view"] },
     schools: NONE_CAPABILITY,
+    subscriptions: NONE_CAPABILITY,
     branches: NONE_CAPABILITY,
     staff: NONE_CAPABILITY,
     instructors: {

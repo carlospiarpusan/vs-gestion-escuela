@@ -123,6 +123,10 @@ export function isSchoolPlan(value: string | null | undefined): value is PlanEsc
   return Boolean(value && SCHOOL_PLAN_ORDER.includes(value as PlanEscuela));
 }
 
+export function isPaidSchoolPlan(plan: string | null | undefined) {
+  return isSchoolPlan(plan) && plan !== "gratuito";
+}
+
 export function getSchoolPlanDescriptor(plan: string | null | undefined) {
   return isSchoolPlan(plan) ? SCHOOL_PLAN_DESCRIPTORS[plan] : null;
 }

@@ -279,9 +279,11 @@ export default function GastosPage() {
       if (!perfil?.escuela_id) return;
       const shouldLoadLedger =
         activeSection === "libro" ||
+        activeSection === "nomina" ||
         activeSection === "cuentas" ||
         activeSection === "tramitadores";
       const effectiveEstadoPago = activeSection === "cuentas" ? "pendiente" : filtroEstadoPago;
+      const effectiveCategoria = activeSection === "nomina" ? "nominas" : filtroCategoria;
 
       if (!shouldLoadLedger) {
         setLoading(false);
@@ -300,7 +302,7 @@ export default function GastosPage() {
           view: activeView,
         });
         if (search) params.set("q", search);
-        if (filtroCategoria) params.set("categoria", filtroCategoria);
+        if (effectiveCategoria) params.set("categoria", effectiveCategoria);
         if (filtroMetodo) params.set("metodo", filtroMetodo);
         if (effectiveEstadoPago) params.set("estado", effectiveEstadoPago);
         if (filtroMes) params.set("mes", filtroMes);
@@ -326,8 +328,8 @@ export default function GastosPage() {
               .select("id", { count: "exact", head: true })
               .eq("escuela_id", perfil.escuela_id);
 
-            if (activeSection !== "tramitadores" && filtroCategoria) {
-              countQuery = countQuery.eq("categoria", filtroCategoria);
+            if (activeSection !== "tramitadores" && effectiveCategoria) {
+              countQuery = countQuery.eq("categoria", effectiveCategoria);
             }
             if (filtroMetodo) {
               countQuery = countQuery.eq("metodo_pago", filtroMetodo);
@@ -347,7 +349,7 @@ export default function GastosPage() {
               if (selectedTramitador) {
                 countQuery = countQuery.eq("proveedor", selectedTramitador);
               }
-            } else {
+            } else if (activeSection !== "nomina") {
               countQuery = applyExpenseViewToSupabaseQuery(countQuery, activeView);
             }
             countQuery = applyExpenseSearchToSupabaseQuery(countQuery, expenseSearch);
@@ -367,8 +369,8 @@ export default function GastosPage() {
               .order("created_at", { ascending: false })
               .range(from, to);
 
-            if (activeSection !== "tramitadores" && filtroCategoria) {
-              dataQuery = dataQuery.eq("categoria", filtroCategoria);
+            if (activeSection !== "tramitadores" && effectiveCategoria) {
+              dataQuery = dataQuery.eq("categoria", effectiveCategoria);
             }
             if (filtroMetodo) {
               dataQuery = dataQuery.eq("metodo_pago", filtroMetodo);
@@ -388,7 +390,7 @@ export default function GastosPage() {
               if (selectedTramitador) {
                 dataQuery = dataQuery.eq("proveedor", selectedTramitador);
               }
-            } else {
+            } else if (activeSection !== "nomina") {
               dataQuery = applyExpenseViewToSupabaseQuery(dataQuery, activeView);
             }
             dataQuery = applyExpenseSearchToSupabaseQuery(dataQuery, expenseSearch);
@@ -431,7 +433,6 @@ export default function GastosPage() {
     },
     [
       perfil?.escuela_id,
-      filtroCategoria,
       filtroMetodo,
       filtroEstadoPago,
       filtroMes,
@@ -443,6 +444,7 @@ export default function GastosPage() {
       perfil?.id,
       perfil?.rol,
       perfil?.sede_id,
+      filtroCategoria,
     ]
   );
 
@@ -471,7 +473,10 @@ export default function GastosPage() {
   useEffect(() => {
     if (!perfil?.rol) return;
     const shouldLoadSummary =
-      activeSection === "libro" || activeSection === "cuentas" || activeSection === "tramitadores";
+      activeSection === "libro" ||
+      activeSection === "nomina" ||
+      activeSection === "cuentas" ||
+      activeSection === "tramitadores";
 
     if (!shouldLoadSummary) {
       setSummary(null);
@@ -486,8 +491,11 @@ export default function GastosPage() {
         from: range.from,
         to: range.to,
       });
+      const effectiveCategoria = activeSection === "nomina" ? "nominas" : filtroCategoria;
 
-      if (activeSection !== "tramitadores" && filtroCategoria) params.set("categoria", filtroCategoria);
+      if (activeSection !== "tramitadores" && effectiveCategoria) {
+        params.set("categoria", effectiveCategoria);
+      }
       if (filtroMetodo) params.set("metodo", filtroMetodo);
       if (activeSection === "cuentas") {
         params.set("estado", "pendiente");
@@ -500,7 +508,7 @@ export default function GastosPage() {
         if (selectedTramitador) {
           params.set("contraparte", selectedTramitador);
         }
-      } else if (activeView !== "all") {
+      } else if (activeSection !== "nomina" && activeView !== "all") {
         params.set("view", activeView);
       }
       if (searchTerm) params.set("q", searchTerm);
@@ -935,9 +943,20 @@ export default function GastosPage() {
     setEditing(null);
     restoreDraft({
       ...emptyForm,
-      categoria: activeSection === "tramitadores" ? "tramitador" : emptyForm.categoria,
-      metodo_pago: activeSection === "tramitadores" ? "transferencia" : emptyForm.metodo_pago,
-      estado_pago: activeSection === "tramitadores" ? "pendiente" : emptyForm.estado_pago,
+      categoria:
+        activeSection === "tramitadores"
+          ? "tramitador"
+          : activeSection === "nomina"
+            ? "nominas"
+            : emptyForm.categoria,
+      metodo_pago:
+        activeSection === "tramitadores" || activeSection === "nomina"
+          ? "transferencia"
+          : emptyForm.metodo_pago,
+      estado_pago:
+        activeSection === "tramitadores" || activeSection === "nomina"
+          ? "pendiente"
+          : emptyForm.estado_pago,
       proveedor: activeSection === "tramitadores" ? selectedTramitador : "",
     });
     setError("");
@@ -1204,8 +1223,10 @@ export default function GastosPage() {
           .order("created_at", { ascending: false })
           .range(from, from + pageSize - 1);
 
-        if (activeSection !== "tramitadores" && filtroCategoria)
-          query = query.eq("categoria", filtroCategoria);
+        if (activeSection !== "tramitadores") {
+          const effectiveCategoria = activeSection === "nomina" ? "nominas" : filtroCategoria;
+          if (effectiveCategoria) query = query.eq("categoria", effectiveCategoria);
+        }
         if (filtroMetodo) query = query.eq("metodo_pago", filtroMetodo);
         if (activeSection === "cuentas") {
           query = query.eq("estado_pago", "pendiente");
@@ -1222,7 +1243,7 @@ export default function GastosPage() {
           if (selectedTramitador) {
             query = query.eq("proveedor", selectedTramitador);
           }
-        } else {
+        } else if (activeSection !== "nomina") {
           query = applyExpenseViewToSupabaseQuery(query, activeView);
         }
         if (searchTerm)
@@ -1236,7 +1257,15 @@ export default function GastosPage() {
         if (normalizedBatch.length < pageSize) break;
         from += pageSize;
       }
-      const filenameBase = `gastos-${filtroYear}${filtroMes ? `-${filtroMes}` : ""}`;
+      const filenamePrefix =
+        activeSection === "nomina"
+          ? "nomina"
+          : activeSection === "tramitadores"
+            ? "tramitadores"
+            : activeSection === "cuentas"
+              ? "cuentas-por-pagar"
+              : "gastos";
+      const filenameBase = `${filenamePrefix}-${filtroYear}${filtroMes ? `-${filtroMes}` : ""}`;
       const headers = [
         "Fecha",
         "Vencimiento",
@@ -1271,10 +1300,13 @@ export default function GastosPage() {
 
       await downloadSpreadsheetWorkbook(`${filenameBase}.xls`, [
         {
-          name: "Resumen gastos",
+          name: activeSection === "nomina" ? "Resumen nomina" : "Resumen gastos",
           headers: ["Indicador", "Valor"],
           rows: [
-            ["Gastos totales", summary?.summary?.gastosTotales || 0],
+            [
+              activeSection === "nomina" ? "Nomina causada" : "Gastos totales",
+              summary?.summary?.gastosTotales || 0,
+            ],
             ["Gasto promedio", summary?.summary?.gastoPromedio || 0],
             ["Total de gastos", summary?.summary?.totalGastos || 0],
             ["Gastos recurrentes", summary?.summary?.gastosRecurrentesTotal || 0],
@@ -1282,7 +1314,7 @@ export default function GastosPage() {
           ],
         },
         {
-          name: "Libro de gastos",
+          name: activeSection === "nomina" ? "Libro nomina" : "Libro de gastos",
           headers,
           rows: exportRows,
         },
@@ -1302,14 +1334,14 @@ export default function GastosPage() {
       ? MONTH_OPTIONS.filter((mes) => !mes.value || Number(mes.value) <= new Date().getMonth() + 1)
       : MONTH_OPTIONS;
   const hayFiltros = Boolean(
-    (activeSection !== "tramitadores" && filtroCategoria) ||
+    (activeSection !== "tramitadores" && activeSection !== "nomina" && filtroCategoria) ||
     filtroMetodo ||
     (activeSection !== "cuentas" && filtroEstadoPago) ||
     filtroMes !== defaultMonth ||
     filtroRecurrente ||
     filtroYear !== String(currentYear) ||
     (activeSection === "tramitadores" && selectedTramitador) ||
-    (activeSection !== "tramitadores" && activeView !== "all")
+    (activeSection !== "tramitadores" && activeSection !== "nomina" && activeView !== "all")
   );
   const tramitadorOptions = useMemo(() => buildExpenseTramitadorOptions(summary), [summary]);
   const totalPagina = useMemo(
@@ -1332,7 +1364,9 @@ export default function GastosPage() {
   const headerDescription =
     activeSection === "facturas"
       ? "Soportes del gasto en un solo lugar: carga manual, correo automático e historial de importaciones."
-      : "Libro de egresos, cuentas por pagar y tramitadores. Cada sección trabaja un flujo específico para que la operación contable no se mezcle.";
+      : activeSection === "nomina"
+        ? "Pagos de nómina con lectura propia, sin mezclar instructores y colaboradores con el resto del libro de gastos."
+        : "Libro de egresos, cuentas por pagar y tramitadores. Cada sección trabaja un flujo específico para que la operación contable no se mezcle.";
 
   return (
     <div>
@@ -1349,7 +1383,7 @@ export default function GastosPage() {
                 className="inline-flex items-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
               >
                 <Plus size={16} />
-                Nuevo gasto
+                {activeSection === "nomina" ? "Nueva nómina" : "Nuevo gasto"}
               </button>
               <ExportFormatActions
                 exportingFormat={exportingFormat}

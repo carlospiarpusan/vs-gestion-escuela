@@ -26,6 +26,7 @@ export type DashboardIconKey =
   | "staff"
   | "branches"
   | "schools"
+  | "subscriptions"
   | "logbook"
   | "permissions";
 
@@ -46,6 +47,7 @@ export type DashboardModuleId =
   | "staff"
   | "branches"
   | "schools"
+  | "subscriptions"
   | "logbook"
   | "permissions";
 
@@ -352,6 +354,20 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     priority: 140,
     mobilePriority: 1,
     homePriority: 10,
+  },
+  {
+    id: "subscriptions",
+    label: "Suscripciones",
+    shortLabel: "Suscripciones",
+    href: "/dashboard/suscripciones",
+    pathPrefix: "/dashboard/suscripciones",
+    description: "Planes, estado de servicio y lectura comercial global de la red.",
+    area: "platform",
+    icon: "subscriptions",
+    roles: getDashboardRolesForCapabilityModule("subscriptions"),
+    priority: 145,
+    mobilePriority: 2,
+    homePriority: 20,
   },
   {
     id: "logbook",

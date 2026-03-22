@@ -121,7 +121,7 @@ export type SedeOption = {
   es_principal?: boolean | null;
 };
 
-export type ExpenseSection = "libro" | "cuentas" | "tramitadores" | "facturas";
+export type ExpenseSection = "libro" | "nomina" | "cuentas" | "tramitadores" | "facturas";
 export type ExpenseView =
   | "all"
   | "vehicular"
@@ -175,6 +175,7 @@ export const ADMINISTRATIVE_EXPENSE_CATEGORIES: CategoriaGasto[] = [
   "otros",
 ];
 export const PEOPLE_EXPENSE_CATEGORIES: CategoriaGasto[] = ["nominas", "tramitador"];
+export const PAYROLL_EXPENSE_CATEGORIES: CategoriaGasto[] = ["nominas"];
 export const EXPENSE_SECTION_ITEMS: Array<{
   id: ExpenseSection;
   label: string;
@@ -184,6 +185,11 @@ export const EXPENSE_SECTION_ITEMS: Array<{
     id: "libro",
     label: "Libro de gastos",
     description: "Registro, filtros, factura electrónica y exportación.",
+  },
+  {
+    id: "nomina",
+    label: "Nómina",
+    description: "Pagos a instructores y colaboradores con lectura propia.",
   },
   {
     id: "facturas",
@@ -229,6 +235,7 @@ export const EXPENSE_VIEW_ITEMS: Array<{ id: ExpenseView; label: string; descrip
 
 export function parseExpenseSection(value: string | null): ExpenseSection {
   if (value === "panel" || value === "libro") return "libro";
+  if (value === "nomina") return "nomina";
   if (value === "proveedores" || value === "cuentas") return "cuentas";
   if (value === "tramitadores") return "tramitadores";
   if (value === "facturas" || value === "automatizacion") return "facturas";

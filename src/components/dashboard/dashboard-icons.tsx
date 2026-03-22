@@ -8,6 +8,7 @@ import {
   CalendarRange,
   Car,
   Clock,
+  CreditCard,
   DollarSign,
   FileText,
   Home,
@@ -56,6 +57,8 @@ export function renderDashboardIcon(icon: DashboardIconKey, size = 18): ReactNod
       return <ReceiptText size={size} />;
     case "schools":
       return <Building2 size={size} />;
+    case "subscriptions":
+      return <CreditCard size={size} />;
     case "logbook":
       return <BookOpen size={size} />;
     case "permissions":

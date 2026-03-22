@@ -3,6 +3,7 @@ import {
   SCHOOL_PLAN_DESCRIPTORS,
   SCHOOL_PLAN_ORDER,
   getSchoolPlanDescriptor,
+  isPaidSchoolPlan,
   isSchoolPlan,
 } from "./school-plans";
 
@@ -22,5 +23,11 @@ describe("school plans", () => {
     expect(isSchoolPlan("basico")).toBe(true);
     expect(isSchoolPlan("legacy")).toBe(false);
     expect(getSchoolPlanDescriptor("legacy")).toBeNull();
+  });
+
+  it("distinguishes paid plans from the free tier", () => {
+    expect(isPaidSchoolPlan("gratuito")).toBe(false);
+    expect(isPaidSchoolPlan("basico")).toBe(true);
+    expect(isPaidSchoolPlan("enterprise")).toBe(true);
   });
 });
