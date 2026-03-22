@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import {
   Users,
   UserCheck,
@@ -18,6 +19,9 @@ import {
   Heart,
   Shield,
   Briefcase,
+  Clock,
+  Download,
+  Zap,
 } from "lucide-react";
 import type {
   TipoEmpleadoNomina,
@@ -38,6 +42,7 @@ type NominaRow = {
   id: string;
   escuela_id: string;
   sede_id: string;
+  origen: "nomina" | "gasto_legacy";
   empleado_tipo: TipoEmpleadoNomina;
   empleado_id: string;
   empleado_nombre: string;
@@ -58,6 +63,15 @@ type NominaRow = {
     descripcion: string | null;
     valor: number;
   }>;
+};
+
+type CierreHoras = {
+  id: string;
+  instructor_id: string;
+  total_horas: number;
+  valor_hora: number;
+  monto_total: number;
+  fecha_cierre: string;
 };
 
 type EmpleadoOption = { id: string; nombre: string; sede_id: string };
@@ -141,6 +155,16 @@ function formatMoney(val: number) {
 // ── Componente principal ─────────────────────────────────────────────
 export default function NominasPage() {
   const { perfil, activeEscuelaId } = useAuth();
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreatePayroll = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "payroll", "create")
+    : true;
+  const canEditPayroll = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "payroll", "edit")
+    : true;
+  const canDeletePayroll = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "payroll", "delete")
+    : true;
   const escuelaId = activeEscuelaId ?? perfil?.escuela_id;
   const sedeId = perfil?.sede_id;
 
@@ -151,8 +175,10 @@ export default function NominasPage() {
   const [instructores, setInstructores] = useState<EmpleadoOption[]>([]);
   const [administrativos, setAdministrativos] = useState<EmpleadoOption[]>([]);
   const [sedes, setSedes] = useState<SedeOption[]>([]);
+  const [cierres, setCierres] = useState<CierreHoras[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +212,7 @@ export default function NominasPage() {
       setInstructores(json.instructores ?? []);
       setAdministrativos(json.administrativos ?? []);
       setSedes(json.sedes ?? []);
+      setCierres(json.cierres ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
@@ -200,6 +227,72 @@ export default function NominasPage() {
   // ── Empleados filtrados por tab ───────────────────────────────────
   const empleados = tab === "instructor" ? instructores : administrativos;
   const empleadosSinNomina = empleados.filter((e) => !nominas.some((n) => n.empleado_id === e.id));
+
+  // ── Cierres de horas para instructores sin nómina ────────────────
+  const cierreMap = useMemo(() => {
+    const map = new Map<string, CierreHoras>();
+    for (const c of cierres) map.set(c.instructor_id, c);
+    return map;
+  }, [cierres]);
+
+  const instructoresSinNominaConCierre = useMemo(
+    () => empleadosSinNomina.filter((e) => cierreMap.has(e.id)),
+    [empleadosSinNomina, cierreMap]
+  );
+
+  // ── Importar cierres de horas como borradores de nómina ─────────
+  const importFromCierres = useCallback(async () => {
+    if (!escuelaId || instructoresSinNominaConCierre.length === 0) return;
+    setImporting(true);
+    setError(null);
+    let created = 0;
+    let errCount = 0;
+
+    for (const emp of instructoresSinNominaConCierre) {
+      const cierre = cierreMap.get(emp.id);
+      if (!cierre) continue;
+
+      try {
+        const res = await fetch("/api/nominas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            escuela_id: escuelaId,
+            sede_id: emp.sede_id || sedeId || sedes[0]?.id,
+            empleado_tipo: "instructor",
+            empleado_id: emp.id,
+            empleado_nombre: emp.nombre,
+            periodo_anio: anio,
+            periodo_mes: mes,
+            tipo_contrato: "prestacion_servicios",
+            salario_base: cierre.monto_total,
+            conceptos: CONCEPTOS_INSTRUCTOR.map((c) => ({ ...c })),
+            notas: `Importado de cierre de horas: ${cierre.total_horas}h × ${formatMoney(cierre.valor_hora)}/h`,
+          }),
+        });
+        if (res.ok) created++;
+        else errCount++;
+      } catch {
+        errCount++;
+      }
+    }
+
+    if (errCount > 0) {
+      setError(`Se importaron ${created} nóminas. ${errCount} fallaron.`);
+    }
+
+    setImporting(false);
+    void fetchNominas();
+  }, [
+    escuelaId,
+    sedeId,
+    sedes,
+    anio,
+    mes,
+    instructoresSinNominaConCierre,
+    cierreMap,
+    fetchNominas,
+  ]);
 
   // ── Totales del periodo ───────────────────────────────────────────
   const resumen = useMemo(() => {
@@ -216,6 +309,7 @@ export default function NominasPage() {
 
   // ── Abrir formulario ──────────────────────────────────────────────
   const openNewForm = useCallback(() => {
+    if (!canCreatePayroll) return;
     setEditingId(null);
     setFormEmpleadoId("");
     setFormSedeId(sedeId ?? sedes[0]?.id ?? "");
@@ -227,35 +321,44 @@ export default function NominasPage() {
     );
     setFormNotas("");
     setShowForm(true);
-  }, [tab, sedeId, sedes]);
+  }, [canCreatePayroll, tab, sedeId, sedes]);
 
-  const openEditForm = useCallback((nomina: NominaRow) => {
-    setEditingId(nomina.id);
-    setFormEmpleadoId(nomina.empleado_id);
-    setFormSedeId(nomina.sede_id);
-    setFormSalarioBase(Number(nomina.salario_base));
-    // Reconstruct conceptos from the saved data (skip first "Honorarios"/"Salario base")
-    const conceptosSaved = (nomina.nomina_conceptos ?? [])
-      .filter((c) => c.concepto !== "Honorarios" && c.concepto !== "Salario base")
-      .map((c) => ({
-        tipo: c.tipo,
-        concepto: c.concepto,
-        descripcion: c.descripcion ?? "",
-        valor: Number(c.valor),
-      }));
-    setFormConceptos(
-      conceptosSaved.length > 0
-        ? conceptosSaved
-        : nomina.empleado_tipo === "instructor"
-          ? CONCEPTOS_INSTRUCTOR.map((c) => ({ ...c }))
-          : CONCEPTOS_ADMINISTRATIVO.map((c) => ({ ...c }))
-    );
-    setFormNotas(nomina.notas ?? "");
-    setShowForm(true);
-  }, []);
+  const openEditForm = useCallback(
+    (nomina: NominaRow) => {
+      if (!canEditPayroll) return;
+      setEditingId(nomina.id);
+      setFormEmpleadoId(nomina.empleado_id);
+      setFormSedeId(nomina.sede_id);
+      setFormSalarioBase(Number(nomina.salario_base));
+      // Reconstruct conceptos from the saved data (skip first "Honorarios"/"Salario base")
+      const conceptosSaved = (nomina.nomina_conceptos ?? [])
+        .filter((c) => c.concepto !== "Honorarios" && c.concepto !== "Salario base")
+        .map((c) => ({
+          tipo: c.tipo,
+          concepto: c.concepto,
+          descripcion: c.descripcion ?? "",
+          valor: Number(c.valor),
+        }));
+      setFormConceptos(
+        conceptosSaved.length > 0
+          ? conceptosSaved
+          : nomina.empleado_tipo === "instructor"
+            ? CONCEPTOS_INSTRUCTOR.map((c) => ({ ...c }))
+            : CONCEPTOS_ADMINISTRATIVO.map((c) => ({ ...c }))
+      );
+      setFormNotas(nomina.notas ?? "");
+      setShowForm(true);
+    },
+    [canEditPayroll]
+  );
 
   // ── Guardar nómina ────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
+    if ((!editingId && !canCreatePayroll) || (editingId && !canEditPayroll)) {
+      setError("No tienes permisos para gestionar nóminas.");
+      return;
+    }
+
     if (!escuelaId) return;
     const empleado = empleados.find((e) => e.id === formEmpleadoId);
     if (!empleado && !editingId) {
@@ -327,6 +430,8 @@ export default function NominasPage() {
     formNotas,
     empleados,
     editingId,
+    canCreatePayroll,
+    canEditPayroll,
     fetchNominas,
   ]);
 
@@ -361,6 +466,10 @@ export default function NominasPage() {
   // ── Eliminar ──────────────────────────────────────────────────────
   const handleDelete = useCallback(
     async (nominaId: string, nombre: string) => {
+      if (!canDeletePayroll) {
+        setError("No tienes permisos para eliminar nóminas.");
+        return;
+      }
       if (!confirm(`¿Eliminar la nómina de ${nombre}?`)) return;
       setSaving(true);
       try {
@@ -376,7 +485,7 @@ export default function NominasPage() {
         setSaving(false);
       }
     },
-    [fetchNominas]
+    [canDeletePayroll, fetchNominas]
   );
 
   // ── Navegación de periodo ─────────────────────────────────────────
@@ -421,6 +530,7 @@ export default function NominasPage() {
   const formNeto = formDevengado - formDeducciones;
 
   const nominasFiltradas = nominas.filter((n) => n.empleado_tipo === tab);
+  const hasLegacyRows = nominasFiltradas.some((n) => n.origen === "gasto_legacy");
 
   if (!escuelaId) {
     return (
@@ -440,14 +550,16 @@ export default function NominasPage() {
             Gestión de pagos mensuales a instructores y administrativos.
           </p>
         </div>
-        <button
-          onClick={openNewForm}
-          disabled={empleadosSinNomina.length === 0}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
-        >
-          <Plus size={16} />
-          Nueva nómina
-        </button>
+        {canCreatePayroll ? (
+          <button
+            onClick={openNewForm}
+            disabled={empleadosSinNomina.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
+          >
+            <Plus size={16} />
+            Nueva nómina
+          </button>
+        ) : null}
       </div>
 
       {/* Tabs instructores / administrativos */}
@@ -495,6 +607,36 @@ export default function NominasPage() {
         </button>
       </div>
 
+      {/* Banner cierre de horas disponible */}
+      {tab === "instructor" && instructoresSinNominaConCierre.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-blue-800 dark:bg-blue-900/20">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800/40">
+              <Zap size={18} className="text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                {instructoresSinNominaConCierre.length} cierre
+                {instructoresSinNominaConCierre.length !== 1 ? "s" : ""} de horas disponible
+                {instructoresSinNominaConCierre.length !== 1 ? "s" : ""}
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Hay instructores con horas cerradas en {MESES[mes - 1]} {anio} sin nómina. Importa
+                para crear borradores automáticos.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={importFromCierres}
+            disabled={importing || saving}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {importing ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+            {importing ? "Importando..." : "Importar desde cierre de horas"}
+          </button>
+        </div>
+      )}
+
       {/* Resumen KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/40">
@@ -534,6 +676,14 @@ export default function NominasPage() {
         </div>
       )}
 
+      {hasLegacyRows && !loading && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+          Estás viendo histórico de nómina tomado desde <strong>Gastos</strong> para este periodo.
+          Esos registros se muestran en modo lectura mientras terminas de mover la operación al
+          módulo nuevo de nóminas.
+        </div>
+      )}
+
       {/* Loading */}
       {loading && (
         <div className="flex items-center justify-center py-12">
@@ -567,16 +717,46 @@ export default function NominasPage() {
                 </label>
                 <select
                   value={formEmpleadoId}
-                  onChange={(e) => setFormEmpleadoId(e.target.value)}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setFormEmpleadoId(id);
+                    // Pre-llenar con cierre de horas si existe
+                    if (tab === "instructor" && id) {
+                      const cierre = cierreMap.get(id);
+                      if (cierre && cierre.monto_total > 0) {
+                        setFormSalarioBase(cierre.monto_total);
+                        setFormNotas(
+                          `Cierre de horas: ${cierre.total_horas}h × ${formatMoney(cierre.valor_hora)}/h`
+                        );
+                      }
+                    }
+                  }}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 >
                   <option value="">Seleccionar...</option>
-                  {empleadosSinNomina.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.nombre}
-                    </option>
-                  ))}
+                  {empleadosSinNomina.map((emp) => {
+                    const cierre = cierreMap.get(emp.id);
+                    return (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.nombre}
+                        {cierre
+                          ? ` (${cierre.total_horas}h — ${formatMoney(cierre.monto_total)})`
+                          : ""}
+                      </option>
+                    );
+                  })}
                 </select>
+                {formEmpleadoId && cierreMap.has(formEmpleadoId) && (
+                  <div className="mt-1.5 flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                    <Clock size={12} />
+                    <span>
+                      Cierre de horas:{" "}
+                      <strong>{cierreMap.get(formEmpleadoId)!.total_horas}h</strong> ×{" "}
+                      {formatMoney(cierreMap.get(formEmpleadoId)!.valor_hora)}/h ={" "}
+                      <strong>{formatMoney(cierreMap.get(formEmpleadoId)!.monto_total)}</strong>
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -741,6 +921,7 @@ export default function NominasPage() {
             const st = ESTADO_STYLES[n.estado];
             const devengos = (n.nomina_conceptos ?? []).filter((c) => c.tipo === "devengo");
             const deducciones = (n.nomina_conceptos ?? []).filter((c) => c.tipo === "deduccion");
+            const isLegacy = n.origen === "gasto_legacy";
 
             return (
               <div
@@ -840,15 +1021,21 @@ export default function NominasPage() {
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {n.estado === "borrador" && (
+                    {isLegacy ? (
+                      <span className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                        Histórico desde gastos
+                      </span>
+                    ) : n.estado === "borrador" ? (
                       <>
-                        <button
-                          onClick={() => openEditForm(n)}
-                          disabled={saving}
-                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[#0071e3] hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                        >
-                          <Edit3 size={12} /> Editar
-                        </button>
+                        {canEditPayroll ? (
+                          <button
+                            onClick={() => openEditForm(n)}
+                            disabled={saving}
+                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[#0071e3] hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                          >
+                            <Edit3 size={12} /> Editar
+                          </button>
+                        ) : null}
                         <button
                           onClick={() => changeEstado(n.id, "aprobada")}
                           disabled={saving}
@@ -856,16 +1043,18 @@ export default function NominasPage() {
                         >
                           <Check size={12} /> Aprobar
                         </button>
-                        <button
-                          onClick={() => handleDelete(n.id, n.empleado_nombre)}
-                          disabled={saving}
-                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {canDeletePayroll ? (
+                          <button
+                            onClick={() => handleDelete(n.id, n.empleado_nombre)}
+                            disabled={saving}
+                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        ) : null}
                       </>
-                    )}
-                    {n.estado === "aprobada" && (
+                    ) : null}
+                    {!isLegacy && n.estado === "aprobada" && (
                       <>
                         <button
                           onClick={() => {
@@ -886,7 +1075,7 @@ export default function NominasPage() {
                         </button>
                       </>
                     )}
-                    {n.estado === "pagada" && (
+                    {!isLegacy && n.estado === "pagada" && (
                       <button
                         onClick={() => changeEstado(n.id, "anulada")}
                         disabled={saving}

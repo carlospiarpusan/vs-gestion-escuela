@@ -98,8 +98,8 @@ type IncomeLedgerSectionProps = {
   formatMoney: (value: number) => string;
   onPageChange: (page: number) => void;
   onSearchChange: (term: string) => void;
-  onEdit: (row: IncomeLedgerRow) => void;
-  onDelete: (row: IncomeLedgerRow) => void;
+  onEdit?: (row: IncomeLedgerRow) => void;
+  onDelete?: (row: IncomeLedgerRow) => void;
 };
 
 function renderIncomeLedgerMobileCard(
@@ -111,7 +111,7 @@ function renderIncomeLedgerMobileCard(
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[#111214] dark:text-[#f5f5f7]">{row.concepto}</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="mt-1 text-xs tracking-[0.16em] text-[#7b8591] uppercase">
             {formatIncomeText(row.categoria)}
           </p>
           <p className="mt-2 text-xs text-[#66707a] dark:text-[#aeb6bf]">
@@ -133,7 +133,7 @@ function renderIncomeLedgerMobileCard(
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Método
           </p>
           <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">
@@ -141,7 +141,7 @@ function renderIncomeLedgerMobileCard(
           </p>
         </div>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Factura
           </p>
           <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">
@@ -149,7 +149,7 @@ function renderIncomeLedgerMobileCard(
           </p>
         </div>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Contrato
           </p>
           <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">
@@ -157,7 +157,7 @@ function renderIncomeLedgerMobileCard(
           </p>
         </div>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Documento
           </p>
           <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">
@@ -253,7 +253,11 @@ export function IncomeFiltersSection({
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div>
           <label className={labelCls}>Año</label>
-          <select value={filtroYear} onChange={(e) => onYearChange(e.target.value)} className={inputCls}>
+          <select
+            value={filtroYear}
+            onChange={(e) => onYearChange(e.target.value)}
+            className={inputCls}
+          >
             {years.map((year) => (
               <option key={year} value={year}>
                 {year}
@@ -263,7 +267,11 @@ export function IncomeFiltersSection({
         </div>
         <div>
           <label className={labelCls}>Mes</label>
-          <select value={filtroMes} onChange={(e) => onMesChange(e.target.value)} className={inputCls}>
+          <select
+            value={filtroMes}
+            onChange={(e) => onMesChange(e.target.value)}
+            className={inputCls}
+          >
             {mesesDelAno.map((mes) => (
               <option key={mes.value} value={mes.value}>
                 {mes.label}
@@ -300,7 +308,7 @@ export function IncomeFiltersSection({
             {showAdvancedFiltersMobile ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
         ) : (
-          <span className="inline-flex items-center rounded-full bg-[#111214] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white dark:bg-[#f5f5f7] dark:text-[#111214]">
+          <span className="inline-flex items-center rounded-full bg-[#111214] px-3 py-1 text-[11px] font-semibold tracking-[0.16em] text-white uppercase dark:bg-[#f5f5f7] dark:text-[#111214]">
             Segmentación avanzada visible
           </span>
         )}
@@ -407,7 +415,7 @@ export function IncomeBreakdownSection({
                 key={item.label}
                 className="rounded-[20px] bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]"
               >
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+                <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
                   {item.label}
                 </p>
                 <p className="mt-2 text-sm font-semibold text-[#111214] dark:text-[#f5f5f7]">
@@ -540,7 +548,7 @@ export function IncomeLedgerSection({
     >
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-[20px] bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Movimientos en consulta
           </p>
           <p className="mt-2 text-lg font-semibold text-[#111214] dark:text-[#f5f5f7]">
@@ -551,7 +559,7 @@ export function IncomeLedgerSection({
           </p>
         </div>
         <div className="rounded-[20px] bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Alcance de la vista
           </p>
           <p className="mt-2 text-lg font-semibold text-[#111214] dark:text-[#f5f5f7]">
@@ -562,7 +570,7 @@ export function IncomeLedgerSection({
           </p>
         </div>
         <div className="rounded-[20px] bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Última actualización
           </p>
           <p className="mt-2 text-lg font-semibold text-[#111214] dark:text-[#f5f5f7]">

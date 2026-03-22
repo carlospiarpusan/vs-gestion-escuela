@@ -30,11 +30,18 @@ import {
   normalizeUuid,
   type DashboardSchoolOption,
 } from "@/lib/dashboard-scope";
+import {
+  buildIdleLogoutHref,
+  getIdleLogoutDeadline,
+  IDLE_LOGOUT_ACTIVITY_THROTTLE_MS,
+  IDLE_LOGOUT_LAST_ACTIVITY_KEY,
+  IDLE_LOGOUT_STORAGE_KEY,
+} from "@/lib/session-timeout";
 import { createClient } from "@/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
 import type { Perfil } from "@/types/database";
 
-const APP_TITLE = "AutoEscuelaPro";
+const APP_TITLE = "Condusoft";
 const DASHBOARD_SCHOOL_STORAGE_KEY = "dashboard:selected-school-id";
 
 function persistDashboardSchoolSelection(schoolId: string | null) {
@@ -79,6 +86,9 @@ export function AuthProvider({
 }) {
   const router = useRouter();
   const hasInitialStateRef = useRef(Boolean(initialState?.user && initialState?.perfil));
+  const signOutRedirectRef = useRef<string | null>(null);
+  const idleLogoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActivityAtRef = useRef(0);
 
   const [user, setUser] = useState<AuthUserSnapshot | null>(initialState?.user ?? null);
   const [perfil, setPerfil] = useState<Perfil | null>(initialState?.perfil ?? null);
@@ -92,7 +102,7 @@ export function AuthProvider({
   const [activeEscuelaId, setActiveEscuelaIdState] = useState<string | null>(
     initialState?.activeEscuelaId ?? null
   );
-  const [loading, setLoading] = useState(!hasInitialStateRef.current);
+  const [loading, setLoading] = useState(!Boolean(initialState?.user && initialState?.perfil));
   const [error, setError] = useState<string | null>(null);
 
   const resetAuthState = useCallback(() => {
@@ -103,6 +113,20 @@ export function AuthProvider({
     setSchoolOptions([]);
     setActiveEscuelaIdState(null);
     setError(null);
+  }, []);
+
+  const clearIdleLogoutState = useCallback(() => {
+    if (idleLogoutTimerRef.current) {
+      clearTimeout(idleLogoutTimerRef.current);
+      idleLogoutTimerRef.current = null;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.removeItem(IDLE_LOGOUT_STORAGE_KEY);
+    window.localStorage.removeItem(IDLE_LOGOUT_LAST_ACTIVITY_KEY);
   }, []);
 
   const applySuperAdminGlobalScope = useCallback(
@@ -215,6 +239,23 @@ export function AuthProvider({
     [applySuperAdminGlobalScope, resetAuthState, router]
   );
 
+  const performSignOut = useCallback(
+    async (redirectTo: string) => {
+      signOutRedirectRef.current = redirectTo;
+      clearIdleLogoutState();
+
+      try {
+        const supabase = createClient();
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error("[AuthContext] Error al cerrar sesión:", err);
+        signOutRedirectRef.current = null;
+        router.replace(redirectTo);
+      }
+    },
+    [clearIdleLogoutState, router]
+  );
+
   useEffect(() => {
     document.title = escuelaNombre ?? APP_TITLE;
   }, [escuelaNombre]);
@@ -224,7 +265,9 @@ export function AuthProvider({
     let cancelled = false;
 
     if (!hasInitialStateRef.current) {
-      void hydrateAuth(supabase, undefined, { redirectIfMissing: true, showLoading: true });
+      setTimeout(() => {
+        void hydrateAuth(supabase, undefined, { redirectIfMissing: true, showLoading: true });
+      }, 0);
     }
 
     const {
@@ -234,8 +277,10 @@ export function AuthProvider({
 
       if (event === "SIGNED_OUT" || !session?.user) {
         resetAuthState();
+        clearIdleLogoutState();
         setLoading(false);
-        router.push("/login");
+        router.replace(signOutRedirectRef.current ?? "/login");
+        signOutRedirectRef.current = null;
         return;
       }
 
@@ -246,7 +291,104 @@ export function AuthProvider({
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, [hydrateAuth, resetAuthState, router]);
+  }, [clearIdleLogoutState, hydrateAuth, resetAuthState, router]);
+
+  useEffect(() => {
+    if (!user) {
+      clearIdleLogoutState();
+      return;
+    }
+
+    const scheduleIdleLogout = (deadline: number) => {
+      if (idleLogoutTimerRef.current) {
+        clearTimeout(idleLogoutTimerRef.current);
+      }
+
+      const remainingMs = Math.max(deadline - Date.now(), 0);
+      idleLogoutTimerRef.current = setTimeout(() => {
+        void performSignOut(buildIdleLogoutHref());
+      }, remainingMs);
+    };
+
+    const registerActivity = (force = false) => {
+      if (typeof window === "undefined") return;
+      if (document.visibilityState === "hidden" && !force) return;
+
+      const now = Date.now();
+
+      if (!force && now - lastActivityAtRef.current < IDLE_LOGOUT_ACTIVITY_THROTTLE_MS) {
+        return;
+      }
+
+      lastActivityAtRef.current = now;
+      const deadline = getIdleLogoutDeadline(now);
+      window.localStorage.setItem(IDLE_LOGOUT_LAST_ACTIVITY_KEY, String(now));
+      window.localStorage.setItem(IDLE_LOGOUT_STORAGE_KEY, String(deadline));
+      scheduleIdleLogout(deadline);
+    };
+
+    const syncFromStorage = () => {
+      if (typeof window === "undefined") return;
+
+      const storedDeadline = Number(window.localStorage.getItem(IDLE_LOGOUT_STORAGE_KEY));
+
+      if (!Number.isFinite(storedDeadline) || storedDeadline <= Date.now()) {
+        void performSignOut(buildIdleLogoutHref());
+        return false;
+      }
+
+      scheduleIdleLogout(storedDeadline);
+      return true;
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        const canContinue = syncFromStorage();
+        if (!canContinue) return;
+        registerActivity(true);
+      }
+    };
+
+    const handleActivity = () => {
+      registerActivity();
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== IDLE_LOGOUT_STORAGE_KEY) return;
+
+      if (!event.newValue) {
+        clearIdleLogoutState();
+        return;
+      }
+
+      syncFromStorage();
+    };
+
+    registerActivity(true);
+
+    window.addEventListener("pointerdown", handleActivity, { passive: true });
+    window.addEventListener("keydown", handleActivity);
+    window.addEventListener("touchstart", handleActivity, { passive: true });
+    window.addEventListener("scroll", handleActivity, { passive: true });
+    window.addEventListener("focus", handleVisibilityChange);
+    window.addEventListener("storage", handleStorage);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      if (idleLogoutTimerRef.current) {
+        clearTimeout(idleLogoutTimerRef.current);
+        idleLogoutTimerRef.current = null;
+      }
+
+      window.removeEventListener("pointerdown", handleActivity);
+      window.removeEventListener("keydown", handleActivity);
+      window.removeEventListener("touchstart", handleActivity);
+      window.removeEventListener("scroll", handleActivity);
+      window.removeEventListener("focus", handleVisibilityChange);
+      window.removeEventListener("storage", handleStorage);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [clearIdleLogoutState, performSignOut, user]);
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const setActiveEscuelaId = useCallback(async (_escuelaId: string) => {
@@ -254,15 +396,8 @@ export function AuthProvider({
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.error("[AuthContext] Error al cerrar sesión:", err);
-    } finally {
-      router.push("/");
-    }
-  }, [router]);
+    await performSignOut("/");
+  }, [performSignOut]);
 
   const refreshProfile = useCallback(async () => {
     const supabase = createClient();

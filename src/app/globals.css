@@ -2,392 +2,427 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-    --gray-50: #f7f8fa;
-    --gray-100: #eff3f6;
-    --gray-200: #dde5ec;
-    --gray-300: #c9d4df;
-    --gray-400: #94a3b8;
-    --gray-500: #64748b;
-    --gray-600: #475569;
-    --gray-700: #334155;
-    --gray-800: #1e293b;
-    --gray-900: #0f172a;
+  --gray-50: #f7f8fa;
+  --gray-100: #eff3f6;
+  --gray-200: #dde5ec;
+  --gray-300: #c9d4df;
+  --gray-400: #94a3b8;
+  --gray-500: #64748b;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --gray-800: #1e293b;
+  --gray-900: #0f172a;
 
-    --blue-apple: #2563eb;
-    --blue-hover: #1d4ed8;
-    --brand-50: #eef4ff;
-    --brand-100: #dbeafe;
-    --brand-500: #2563eb;
-    --brand-600: #1d4ed8;
-    --brand-700: #1e40af;
-    --success-50: #ecfdf5;
-    --success-500: #059669;
-    --warning-50: #fffbeb;
-    --warning-500: #d97706;
-    --danger-50: #fef2f2;
-    --danger-500: #dc2626;
+  --blue-apple: #2563eb;
+  --blue-hover: #1d4ed8;
+  --brand-50: #eef4ff;
+  --brand-100: #dbeafe;
+  --brand-500: #2563eb;
+  --brand-600: #1d4ed8;
+  --brand-700: #1e40af;
+  --success-50: #ecfdf5;
+  --success-500: #059669;
+  --warning-50: #fffbeb;
+  --warning-500: #d97706;
+  --danger-50: #fef2f2;
+  --danger-500: #dc2626;
 
-    --material-regular: rgba(255, 255, 255, 0.88);
-    --material-thick: rgba(255, 255, 255, 0.94);
-    --material-ultra-thin: rgba(255, 255, 255, 0.72);
-    --surface-soft: rgba(255, 255, 255, 0.92);
-    --surface-muted: rgba(244, 247, 251, 0.96);
-    --surface-strong: rgba(255, 255, 255, 0.98);
-    --surface-border: rgba(15, 23, 42, 0.08);
-    --surface-border-strong: rgba(15, 23, 42, 0.16);
-    --surface-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
-    --surface-shadow-strong: 0 26px 72px rgba(15, 23, 42, 0.14);
-    --page-top-glow: rgba(37, 99, 235, 0.1);
-    --page-bottom-glow: rgba(15, 23, 42, 0.06);
-    --overlay: rgba(15, 23, 42, 0.42);
+  --material-regular: rgba(255, 255, 255, 0.88);
+  --material-thick: rgba(255, 255, 255, 0.94);
+  --material-ultra-thin: rgba(255, 255, 255, 0.72);
+  --surface-soft: rgba(255, 255, 255, 0.92);
+  --surface-muted: rgba(244, 247, 251, 0.96);
+  --surface-strong: rgba(255, 255, 255, 0.98);
+  --surface-border: rgba(15, 23, 42, 0.08);
+  --surface-border-strong: rgba(15, 23, 42, 0.16);
+  --surface-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+  --surface-shadow-strong: 0 26px 72px rgba(15, 23, 42, 0.14);
+  --page-top-glow: rgba(37, 99, 235, 0.1);
+  --page-bottom-glow: rgba(15, 23, 42, 0.06);
+  --overlay: rgba(15, 23, 42, 0.42);
 
-    --font-sf: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-    --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.809 0.105 251.813);
-    --chart-2: oklch(0.623 0.214 259.815);
-    --chart-3: oklch(0.546 0.245 262.881);
-    --chart-4: oklch(0.488 0.243 264.376);
-    --chart-5: oklch(0.424 0.199 265.638);
-    --radius: 0.8rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+  --font-sf: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.809 0.105 251.813);
+  --chart-2: oklch(0.623 0.214 259.815);
+  --chart-3: oklch(0.546 0.245 262.881);
+  --chart-4: oklch(0.488 0.243 264.376);
+  --chart-5: oklch(0.424 0.199 265.638);
+  --radius: 0.8rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
 
-    --gray-50: #0b1220;
-    --gray-100: #101827;
-    --gray-200: #162132;
-    --gray-300: #1f2d40;
-    --gray-400: #334155;
-    --gray-500: #94a3b8;
-    --gray-600: #cbd5e1;
-    --gray-700: #dbe4f0;
-    --gray-800: #edf2f7;
-    --gray-900: #f8fafc;
+  --gray-50: #0b1220;
+  --gray-100: #101827;
+  --gray-200: #162132;
+  --gray-300: #1f2d40;
+  --gray-400: #334155;
+  --gray-500: #94a3b8;
+  --gray-600: #cbd5e1;
+  --gray-700: #dbe4f0;
+  --gray-800: #edf2f7;
+  --gray-900: #f8fafc;
 
-    --material-regular: rgba(15, 23, 42, 0.84);
-    --material-thick: rgba(10, 16, 28, 0.94);
-    --material-ultra-thin: rgba(15, 23, 42, 0.62);
-    --surface-soft: rgba(15, 23, 42, 0.9);
-    --surface-muted: rgba(11, 18, 32, 0.94);
-    --surface-strong: rgba(16, 24, 39, 0.98);
-    --surface-border: rgba(148, 163, 184, 0.14);
-    --surface-border-strong: rgba(148, 163, 184, 0.22);
-    --surface-shadow: 0 22px 58px rgba(2, 6, 23, 0.48);
-    --surface-shadow-strong: 0 28px 82px rgba(2, 6, 23, 0.62);
-    --page-top-glow: rgba(37, 99, 235, 0.16);
-    --page-bottom-glow: rgba(11, 18, 32, 0.28);
-    --overlay: rgba(2, 6, 23, 0.62);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.809 0.105 251.813);
-    --chart-2: oklch(0.623 0.214 259.815);
-    --chart-3: oklch(0.546 0.245 262.881);
-    --chart-4: oklch(0.488 0.243 264.376);
-    --chart-5: oklch(0.424 0.199 265.638);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+  --material-regular: rgba(15, 23, 42, 0.84);
+  --material-thick: rgba(10, 16, 28, 0.94);
+  --material-ultra-thin: rgba(15, 23, 42, 0.62);
+  --surface-soft: rgba(15, 23, 42, 0.9);
+  --surface-muted: rgba(11, 18, 32, 0.94);
+  --surface-strong: rgba(16, 24, 39, 0.98);
+  --surface-border: rgba(148, 163, 184, 0.14);
+  --surface-border-strong: rgba(148, 163, 184, 0.22);
+  --surface-shadow: 0 22px 58px rgba(2, 6, 23, 0.48);
+  --surface-shadow-strong: 0 28px 82px rgba(2, 6, 23, 0.62);
+  --page-top-glow: rgba(37, 99, 235, 0.16);
+  --page-bottom-glow: rgba(11, 18, 32, 0.28);
+  --overlay: rgba(2, 6, 23, 0.62);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.809 0.105 251.813);
+  --chart-2: oklch(0.623 0.214 259.815);
+  --chart-3: oklch(0.546 0.245 262.881);
+  --chart-4: oklch(0.488 0.243 264.376);
+  --chart-5: oklch(0.424 0.199 265.638);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
 }
 
 @theme inline {
-    --color-background: var(--background);
-    --color-foreground: var(--foreground);
-    --color-gray-50: var(--gray-50);
-    --color-gray-100: var(--gray-100);
-    --color-gray-200: var(--gray-200);
-    --color-gray-300: var(--gray-300);
-    --color-gray-400: var(--gray-400);
-    --color-gray-500: var(--gray-500);
-    --color-gray-600: var(--gray-600);
-    --color-gray-700: var(--gray-700);
-    --color-gray-800: var(--gray-800);
-    --color-gray-900: var(--gray-900);
-    --color-blue-apple: var(--blue-apple);
-    --color-blue-hover: var(--blue-hover);
-    --font-sans: var(--font-sans);
-    --font-display: var(--font-display);
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-gray-50: var(--gray-50);
+  --color-gray-100: var(--gray-100);
+  --color-gray-200: var(--gray-200);
+  --color-gray-300: var(--gray-300);
+  --color-gray-400: var(--gray-400);
+  --color-gray-500: var(--gray-500);
+  --color-gray-600: var(--gray-600);
+  --color-gray-700: var(--gray-700);
+  --color-gray-800: var(--gray-800);
+  --color-gray-900: var(--gray-900);
+  --color-blue-apple: var(--blue-apple);
+  --color-blue-hover: var(--blue-hover);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 * {
-    box-sizing: border-box;
+  box-sizing: border-box;
 }
 
 html {
-    scroll-behavior: smooth;
-    min-height: 100%;
+  scroll-behavior: smooth;
+  min-height: 100%;
 }
 
 body {
-    background:
-        radial-gradient(circle at top, var(--page-top-glow) 0, transparent 30rem),
-        radial-gradient(circle at bottom right, var(--page-bottom-glow) 0, transparent 26rem),
-        linear-gradient(180deg, var(--gray-50) 0%, var(--background) 40%, var(--gray-100) 100%);
-    font-family: var(--font-sf);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    min-height: 100%;
-    overflow-x: hidden;
+  background:
+    radial-gradient(circle at top, var(--page-top-glow) 0, transparent 30rem),
+    radial-gradient(circle at bottom right, var(--page-bottom-glow) 0, transparent 26rem),
+    linear-gradient(180deg, var(--gray-50) 0%, var(--background) 40%, var(--gray-100) 100%);
+  font-family: var(--font-sf);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100%;
+  overflow-x: hidden;
 }
 
 body[data-device-variant="mobile"] {
-    min-height: 100dvh;
-    overflow-y: auto;
-    overscroll-behavior-y: auto;
-    -webkit-overflow-scrolling: touch;
+  min-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 a {
-    -webkit-tap-highlight-color: transparent;
+  -webkit-tap-highlight-color: transparent;
 }
 
 ::selection {
-    background: rgba(0, 113, 227, 0.18);
-    color: var(--foreground);
+  background: rgba(0, 113, 227, 0.18);
+  color: var(--foreground);
 }
 
 .glass {
-    background: var(--material-regular);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  background: var(--material-regular);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 .glass-nav {
-    background: linear-gradient(180deg, var(--material-thick), var(--material-regular));
-    backdrop-filter: saturate(180%) blur(24px);
-    -webkit-backdrop-filter: saturate(180%) blur(24px);
-    border-bottom: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, var(--material-thick), var(--material-regular));
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  border-bottom: 1px solid var(--surface-border);
 }
 
 .text-gradient,
 .gradient-text {
-    background: linear-gradient(135deg, var(--gray-900) 0%, var(--blue-apple) 85%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  background: linear-gradient(135deg, var(--gray-900) 0%, var(--blue-apple) 85%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .dark .text-gradient,
 .dark .gradient-text {
-    background: linear-gradient(135deg, var(--gray-900) 0%, color-mix(in srgb, var(--blue-apple) 72%, white) 90%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  background: linear-gradient(
+    135deg,
+    var(--gray-900) 0%,
+    color-mix(in srgb, var(--blue-apple) 72%, white) 90%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes scaleIn {
-    from {
-        opacity: 0;
-        transform: scale(0.97) translateY(10px);
-    }
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(10px);
+  }
 
-    to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-    }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-fade-in {
-    animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-scale-in {
-    animation: scaleIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: scaleIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .delay-100 {
-    animation-delay: 0.1s;
+  animation-delay: 0.1s;
 }
 
 .delay-200 {
-    animation-delay: 0.2s;
+  animation-delay: 0.2s;
 }
 
 .delay-300 {
-    animation-delay: 0.3s;
+  animation-delay: 0.3s;
 }
 
 .apple-shell {
-    position: relative;
-    isolation: isolate;
+  position: relative;
+  isolation: isolate;
 }
 
 .apple-panel {
-    background: linear-gradient(180deg, var(--surface-strong), color-mix(in srgb, var(--surface-soft) 92%, transparent));
-    border: 1px solid var(--surface-border);
-    border-radius: 22px;
-    box-shadow: var(--surface-shadow);
-    backdrop-filter: saturate(145%) blur(18px);
-    -webkit-backdrop-filter: saturate(145%) blur(18px);
+  background: linear-gradient(
+    180deg,
+    var(--surface-strong),
+    color-mix(in srgb, var(--surface-soft) 92%, transparent)
+  );
+  border: 1px solid var(--surface-border);
+  border-radius: 22px;
+  box-shadow: var(--surface-shadow);
+  backdrop-filter: saturate(145%) blur(18px);
+  -webkit-backdrop-filter: saturate(145%) blur(18px);
 }
 
 .apple-panel-muted {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 96%, transparent), var(--surface-soft));
-    border: 1px solid var(--surface-border);
-    border-radius: 20px;
-    box-shadow: var(--surface-shadow);
-    backdrop-filter: saturate(140%) blur(16px);
-    -webkit-backdrop-filter: saturate(140%) blur(16px);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-muted) 96%, transparent),
+    var(--surface-soft)
+  );
+  border: 1px solid var(--surface-border);
+  border-radius: 20px;
+  box-shadow: var(--surface-shadow);
+  backdrop-filter: saturate(140%) blur(16px);
+  -webkit-backdrop-filter: saturate(140%) blur(16px);
 }
 
 .apple-toolbar {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--material-thick) 95%, transparent), var(--material-regular));
-    border: 1px solid var(--surface-border);
-    box-shadow: 0 16px 42px rgba(15, 23, 42, 0.1);
-    backdrop-filter: saturate(145%) blur(18px);
-    -webkit-backdrop-filter: saturate(145%) blur(18px);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--material-thick) 95%, transparent),
+    var(--material-regular)
+  );
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.1);
+  backdrop-filter: saturate(145%) blur(18px);
+  -webkit-backdrop-filter: saturate(145%) blur(18px);
 }
 
 .apple-input,
 .apple-select,
 .apple-textarea {
-    width: 100%;
-    border-radius: 15px;
-    border: 1px solid var(--surface-border);
-    background: linear-gradient(180deg, var(--surface-strong), color-mix(in srgb, var(--surface-muted) 94%, transparent));
-    color: var(--foreground);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.32),
-        0 1px 2px rgba(15, 23, 42, 0.04);
-    transition:
-        border-color 0.2s ease,
-        box-shadow 0.2s ease,
-        transform 0.2s ease,
-        background 0.2s ease;
+  width: 100%;
+  border-radius: 15px;
+  border: 1px solid var(--surface-border);
+  background: linear-gradient(
+    180deg,
+    var(--surface-strong),
+    color-mix(in srgb, var(--surface-muted) 94%, transparent)
+  );
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease,
+    background 0.2s ease;
 }
 
 .apple-input,
 .apple-select {
-    min-height: 46px;
-    padding: 0.72rem 0.95rem;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+  min-height: 46px;
+  padding: 0.72rem 0.95rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 .apple-textarea {
-    min-height: 112px;
-    padding: 0.82rem 0.95rem;
-    resize: vertical;
-    font-size: 0.875rem;
-    line-height: 1.4rem;
+  min-height: 112px;
+  padding: 0.82rem 0.95rem;
+  resize: vertical;
+  font-size: 0.875rem;
+  line-height: 1.4rem;
 }
 
 .apple-input::placeholder,
 .apple-textarea::placeholder {
-    color: var(--gray-500);
+  color: var(--gray-500);
 }
 
 .apple-input:focus,
 .apple-select:focus,
 .apple-textarea:focus {
-    outline: none;
-    border-color: color-mix(in srgb, var(--blue-apple) 48%, transparent);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.32),
-        0 0 0 4px color-mix(in srgb, var(--blue-apple) 14%, transparent);
+  outline: none;
+  border-color: color-mix(in srgb, var(--blue-apple) 48%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 0 0 4px color-mix(in srgb, var(--blue-apple) 14%, transparent);
 }
 
 .apple-label {
-    display: block;
-    margin-bottom: 0.45rem;
-    font-size: 0.74rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: var(--gray-500);
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--gray-500);
 }
 
 .apple-button-primary,
@@ -395,17 +430,17 @@ a {
 .apple-button-ghost,
 .apple-button-danger,
 .apple-icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    transition:
-        transform 0.2s ease,
-        opacity 0.2s ease,
-        background 0.2s ease,
-        color 0.2s ease,
-        border-color 0.2s ease,
-        box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .apple-button-primary:active,
@@ -413,347 +448,184 @@ a {
 .apple-button-ghost:active,
 .apple-button-danger:active,
 .apple-icon-button:active {
-    transform: scale(0.98);
+  transform: scale(0.98);
 }
 
 .apple-button-primary {
-    border-radius: 16px;
-    padding: 0.7rem 1.15rem;
-    background: linear-gradient(180deg, color-mix(in srgb, #ffffff 6%, var(--brand-500)), var(--brand-600));
-    color: #fff;
-    box-shadow: 0 16px 36px rgba(37, 99, 235, 0.24);
+  border-radius: 16px;
+  padding: 0.7rem 1.15rem;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #ffffff 6%, var(--brand-500)),
+    var(--brand-600)
+  );
+  color: #fff;
+  box-shadow: 0 16px 36px rgba(37, 99, 235, 0.24);
 }
 
 .apple-button-primary:hover {
-    background: linear-gradient(180deg, color-mix(in srgb, #ffffff 10%, var(--brand-500)), var(--brand-700));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #ffffff 10%, var(--brand-500)),
+    var(--brand-700)
+  );
 }
 
 .apple-button-secondary {
-    border-radius: 16px;
-    padding: 0.68rem 1.12rem;
-    border: 1px solid var(--surface-border);
-    background: linear-gradient(180deg, var(--surface-strong), color-mix(in srgb, var(--surface-muted) 96%, transparent));
-    color: var(--foreground);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.28),
-        0 8px 18px rgba(15, 23, 42, 0.04);
+  border-radius: 16px;
+  padding: 0.68rem 1.12rem;
+  border: 1px solid var(--surface-border);
+  background: linear-gradient(
+    180deg,
+    var(--surface-strong),
+    color-mix(in srgb, var(--surface-muted) 96%, transparent)
+  );
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 8px 18px rgba(15, 23, 42, 0.04);
 }
 
 .apple-button-secondary:hover,
 .apple-icon-button:hover,
 .apple-button-ghost:hover {
-    border-color: var(--surface-border-strong);
-    background: linear-gradient(180deg, var(--surface-strong), var(--material-regular));
+  border-color: var(--surface-border-strong);
+  background: linear-gradient(180deg, var(--surface-strong), var(--material-regular));
 }
 
 .apple-button-ghost {
-    border-radius: 16px;
-    padding: 0.62rem 0.95rem;
-    color: var(--gray-600);
+  border-radius: 16px;
+  padding: 0.62rem 0.95rem;
+  color: var(--gray-600);
 }
 
 .apple-button-danger {
-    border-radius: 16px;
-    padding: 0.7rem 1.15rem;
-    background: linear-gradient(180deg, #ef4444, var(--danger-500));
-    color: #fff;
-    box-shadow: 0 14px 32px rgba(220, 38, 38, 0.18);
+  border-radius: 16px;
+  padding: 0.7rem 1.15rem;
+  background: linear-gradient(180deg, #ef4444, var(--danger-500));
+  color: #fff;
+  box-shadow: 0 14px 32px rgba(220, 38, 38, 0.18);
 }
 
 .apple-button-danger:hover {
-    background: linear-gradient(180deg, #f87171, #b91c1c);
+  background: linear-gradient(180deg, #f87171, #b91c1c);
 }
 
 .apple-icon-button {
-    width: 36px;
-    height: 36px;
-    border-radius: 14px;
-    border: 1px solid var(--surface-border);
-    background: color-mix(in srgb, var(--surface-strong) 96%, transparent);
-    color: var(--gray-600);
+  width: 36px;
+  height: 36px;
+  border-radius: 14px;
+  border: 1px solid var(--surface-border);
+  background: color-mix(in srgb, var(--surface-strong) 96%, transparent);
+  color: var(--gray-600);
 }
 
 .apple-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.32rem 0.65rem;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--brand-50) 92%, transparent);
-    color: var(--brand-600);
-    border: 1px solid color-mix(in srgb, var(--brand-500) 14%, transparent);
-    font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.32rem 0.65rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-50) 92%, transparent);
+  color: var(--brand-600);
+  border: 1px solid color-mix(in srgb, var(--brand-500) 14%, transparent);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .apple-divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--surface-border), transparent);
-}
-
-.apple-segmented {
-    display: inline-flex;
-    gap: 0.3rem;
-    padding: 0.3rem;
-    border-radius: 999px;
-    border: 1px solid var(--surface-border);
-    background: linear-gradient(180deg, var(--surface-muted), var(--material-regular));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
-}
-
-.apple-segmented-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
-    min-height: 2.25rem;
-    padding: 0 0.95rem;
-    border-radius: 999px;
-    color: var(--gray-500);
-    font-size: 0.875rem;
-    font-weight: 600;
-    transition:
-        background 0.2s ease,
-        color 0.2s ease,
-        box-shadow 0.2s ease,
-        transform 0.2s ease;
-}
-
-.apple-segmented-button:hover {
-    color: var(--foreground);
-}
-
-.apple-segmented-button[data-active="true"] {
-    background: linear-gradient(180deg, var(--surface-strong), var(--surface-soft));
-    color: var(--foreground);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.32),
-        0 12px 24px rgba(15, 23, 42, 0.08);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--surface-border), transparent);
 }
 
 .apple-auth-shell {
-    position: relative;
-    min-height: 100vh;
-    overflow: hidden;
-}
-
-.apple-auth-shell::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-        radial-gradient(circle at top left, rgba(0, 113, 227, 0.14), transparent 26rem),
-        radial-gradient(circle at bottom right, rgba(130, 184, 255, 0.18), transparent 24rem);
-    pointer-events: none;
-}
-
-.apple-auth-card {
-    position: relative;
-    z-index: 1;
-    background: linear-gradient(180deg, var(--surface-strong), color-mix(in srgb, var(--surface-soft) 95%, transparent));
-    border: 1px solid var(--surface-border);
-    border-radius: 28px;
-    box-shadow: var(--surface-shadow-strong);
-    backdrop-filter: saturate(145%) blur(20px);
-    -webkit-backdrop-filter: saturate(145%) blur(20px);
-}
-
-body[data-device-variant="mobile"] .apple-panel,
-body[data-device-variant="mobile"] .apple-panel-muted,
-body[data-device-variant="mobile"] .apple-toolbar {
-    border-radius: 20px;
-}
-
-body[data-device-variant="mobile"] .apple-input,
-body[data-device-variant="mobile"] .apple-select {
-    min-height: 50px;
-    font-size: 16px;
-}
-
-body[data-device-variant="mobile"] .apple-textarea {
-    font-size: 16px;
-}
-
-body[data-device-variant="mobile"] .apple-button-primary,
-body[data-device-variant="mobile"] .apple-button-secondary,
-body[data-device-variant="mobile"] .apple-button-danger {
-    min-height: 48px;
-}
-
-body[data-device-variant="mobile"] .apple-auth-shell {
-    min-height: 100dvh;
-    padding-top: max(1rem, env(safe-area-inset-top));
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
-}
-
-body[data-device-variant="mobile"] .apple-auth-card {
-    border-radius: 24px;
-}
-
-body[data-device-variant="mobile"] .dashboard-mobile-shell .apple-overlay {
-    padding-bottom: env(safe-area-inset-bottom);
-}
-
-body[data-device-variant="mobile"] .dashboard-mobile-shell,
-body[data-device-variant="mobile"] .dashboard-mobile-shell .dashboard-scroll-shell {
-    overscroll-behavior-y: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-.apple-table-shell {
-    position: relative;
-    overflow-x: auto;
-    overflow-y: hidden;
-    border-radius: 26px;
-    border: 1px solid var(--surface-border);
-    background: linear-gradient(180deg, var(--surface-strong), var(--surface-soft));
-    box-shadow: var(--surface-shadow);
-    scrollbar-gutter: stable both-edges;
-    overscroll-behavior-x: contain;
-}
-
-.apple-table-shell thead tr {
-    background: linear-gradient(180deg, rgba(245, 245, 247, 0.96), rgba(255, 255, 255, 0.82));
-}
-
-.dark .apple-table-shell thead tr {
-    background: linear-gradient(180deg, rgba(34, 34, 36, 0.96), rgba(28, 28, 30, 0.82));
-}
-
-.dashboard-scroll-shell,
-.table-scroll-area,
-.table-scroll-sync {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--gray-500) 48%, transparent) transparent;
-    -webkit-overflow-scrolling: touch;
-}
-
-.dashboard-scroll-shell {
-    overscroll-behavior-y: contain;
-    scroll-behavior: smooth;
-    scrollbar-gutter: stable;
-}
-
-.table-scroll-sync {
-    border: 1px solid var(--surface-border);
-    background: linear-gradient(180deg, var(--surface-strong), var(--surface-muted));
-}
-
-.dashboard-scroll-shell::-webkit-scrollbar,
-.table-scroll-area::-webkit-scrollbar,
-.table-scroll-sync::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-}
-
-.dashboard-scroll-shell::-webkit-scrollbar-track,
-.table-scroll-area::-webkit-scrollbar-track,
-.table-scroll-sync::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.dashboard-scroll-shell::-webkit-scrollbar-thumb,
-.table-scroll-area::-webkit-scrollbar-thumb,
-.table-scroll-sync::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    border: 2px solid transparent;
-    background: color-mix(in srgb, var(--gray-500) 42%, transparent);
-    background-clip: padding-box;
-}
-
-.dashboard-scroll-shell::-webkit-scrollbar-thumb:hover,
-.table-scroll-area::-webkit-scrollbar-thumb:hover,
-.table-scroll-sync::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--gray-500) 62%, transparent);
-    background-clip: padding-box;
-}
-
-.apple-overlay {
-    background: color-mix(in srgb, var(--overlay) 88%, transparent);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--overlay) 88%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .apple-brand-mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 18px;
-    background: linear-gradient(135deg, var(--gray-900), var(--brand-600));
-    color: #fff;
-    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--gray-900), var(--brand-600));
+  color: #fff;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
 }
 
 .dark .apple-brand-mark {
-    background: linear-gradient(135deg, var(--brand-100), #ffffff);
-    color: #0f172a;
+  background: linear-gradient(135deg, var(--brand-100), #ffffff);
+  color: #0f172a;
 }
 
 .apple-kicker {
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--gray-500);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray-500);
 }
 
 .apple-copy {
-    color: var(--gray-600);
+  color: var(--gray-600);
 }
 
 .apple-link {
-    color: var(--blue-apple);
-    font-weight: 600;
-    transition: color 0.2s ease, transform 0.2s ease;
+  color: var(--blue-apple);
+  font-weight: 600;
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .apple-link:hover {
-    color: var(--blue-hover);
+  color: var(--blue-hover);
 }
 
 .apple-highlight-panel {
-    background: linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--brand-50) 88%, var(--surface-strong)),
-        color-mix(in srgb, var(--surface-soft) 94%, transparent)
-    );
-    border: 1px solid color-mix(in srgb, var(--brand-500) 16%, var(--surface-border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--brand-50) 88%, var(--surface-strong)),
+    color-mix(in srgb, var(--surface-soft) 94%, transparent)
+  );
+  border: 1px solid color-mix(in srgb, var(--brand-500) 16%, var(--surface-border));
 }
 
 .apple-tone-default {
-    background: color-mix(in srgb, var(--surface-muted) 95%, transparent);
-    color: var(--gray-600);
+  background: color-mix(in srgb, var(--surface-muted) 95%, transparent);
+  color: var(--gray-600);
 }
 
 .apple-tone-primary {
-    background: color-mix(in srgb, var(--brand-500) 10%, transparent);
-    color: var(--brand-600);
+  background: color-mix(in srgb, var(--brand-500) 10%, transparent);
+  color: var(--brand-600);
 }
 
 .apple-tone-success {
-    background: color-mix(in srgb, var(--success-50) 92%, transparent);
-    color: var(--success-500);
+  background: color-mix(in srgb, var(--success-50) 92%, transparent);
+  color: var(--success-500);
 }
 
 .apple-tone-warning {
-    background: color-mix(in srgb, var(--warning-50) 92%, transparent);
-    color: var(--warning-500);
+  background: color-mix(in srgb, var(--warning-50) 92%, transparent);
+  color: var(--warning-500);
 }
 
 .apple-tone-danger {
-    background: color-mix(in srgb, var(--danger-50) 92%, transparent);
-    color: var(--danger-500);
+  background: color-mix(in srgb, var(--danger-50) 92%, transparent);
+  color: var(--danger-500);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
   body {
     @apply bg-background text-foreground;
-    }
+  }
   html {
     @apply font-sans;
-    }
+  }
 }

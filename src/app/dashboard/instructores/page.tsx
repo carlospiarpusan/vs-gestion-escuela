@@ -27,6 +27,7 @@ import {
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
 import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import { fetchSchoolCategories } from "@/lib/school-categories";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type { Instructor, EstadoInstructor } from "@/types/database";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -57,6 +58,16 @@ const emptyForm = {
 
 export default function InstructoresPage() {
   const { perfil } = useAuth();
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreateInstructor = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "instructors", "create")
+    : true;
+  const canEditInstructor = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "instructors", "edit")
+    : true;
+  const canDeleteInstructor = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "instructors", "delete")
+    : true;
 
   // --- State -----------------------------------------------------------
   const [data, setData] = useState<Instructor[]>([]);
@@ -181,6 +192,7 @@ export default function InstructoresPage() {
 
   /** Open the modal in "create" mode with a blank form. */
   const openCreate = () => {
+    if (!canCreateInstructor) return;
     setEditing(null);
     restoreDraft(emptyForm);
     setModalOpen(true);
@@ -188,6 +200,7 @@ export default function InstructoresPage() {
 
   /** Open the modal in "edit" mode, pre-filling the form with existing data. */
   const openEdit = (row: Instructor) => {
+    if (!canEditInstructor) return;
     setEditing(row);
     setForm({
       nombre: row.nombre,
@@ -205,6 +218,7 @@ export default function InstructoresPage() {
 
   /** Open the delete-confirmation dialog for the given instructor. */
   const openDelete = (row: Instructor) => {
+    if (!canDeleteInstructor) return;
     setDeleting(row);
     setDeleteOpen(true);
   };
@@ -222,6 +236,11 @@ export default function InstructoresPage() {
   // --- Save (create / update) -------------------------------------------
 
   const handleSave = async () => {
+    if ((!editing && !canCreateInstructor) || (editing && !canEditInstructor)) {
+      toast.error("No tienes permisos para gestionar instructores.");
+      return;
+    }
+
     const result = instructorSchema.safeParse(form);
     if (!result.success) {
       toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
@@ -340,6 +359,10 @@ export default function InstructoresPage() {
 
   const handleDelete = async () => {
     if (!deleting) return;
+    if (!canDeleteInstructor) {
+      toast.error("No tienes permisos para eliminar instructores.");
+      return;
+    }
     setSaving(true);
 
     try {
@@ -438,12 +461,14 @@ export default function InstructoresPage() {
           </h2>
           <p className="mt-0.5 text-sm text-[#86868b]">Gestiona los instructores de tu escuela</p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
-        >
-          <Plus size={16} /> Nuevo Instructor
-        </button>
+        {canCreateInstructor ? (
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
+          >
+            <Plus size={16} /> Nuevo Instructor
+          </button>
+        ) : null}
       </div>
 
       {/* Data table */}
@@ -464,8 +489,8 @@ export default function InstructoresPage() {
           onPageChange={handlePageChange}
           onSearchChange={handleSearchChange}
           pageSize={PAGE_SIZE}
-          onEdit={openEdit}
-          onDelete={openDelete}
+          onEdit={canEditInstructor ? openEdit : undefined}
+          onDelete={canDeleteInstructor ? openDelete : undefined}
         />
       </div>
 

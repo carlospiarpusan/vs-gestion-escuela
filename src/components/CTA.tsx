@@ -6,11 +6,13 @@ export default function CTA() {
       <div className="mx-auto max-w-[980px] px-6 text-left">
         <div className="apple-panel overflow-hidden p-8 sm:p-10">
           <span className="apple-badge">Listo para ordenar tu operación</span>
-          <h2 className="mt-5 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-6xl">
-            Tu autoescuela puede pasar de varias herramientas sueltas a una operación más clara esta misma semana.
+          <h2 className="text-foreground mt-5 text-3xl font-semibold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
+            Condusoft puede llevar tu autoescuela de hojas sueltas a una operación clara esta misma
+            semana.
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-8 text-[var(--gray-500)] sm:text-xl">
-            Si hoy repartes alumnos, agenda, cartera, caja, gastos y vehículos entre distintas hojas o chats, aquí ya tienes una base mucho más ordenada para trabajar en escritorio y móvil.
+            Si hoy repartes alumnos, agenda, cartera, caja, gastos y vehículos entre distintas hojas
+            o chats, aquí ya tienes una base mucho más ordenada para trabajar en escritorio y móvil.
           </p>
 
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">

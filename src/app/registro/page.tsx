@@ -5,10 +5,10 @@ import { buildPublicMetadata } from "@/lib/site-metadata";
 export const metadata: Metadata = buildPublicMetadata({
   title: "Crear cuenta",
   description:
-    "Crea tu cuenta en AutoEscuela Pro y configura tu autoescuela en Colombia con alumnos, sedes, agenda, finanzas y flota desde una sola plataforma.",
+    "Crea tu cuenta en Condusoft y configura tu autoescuela en Colombia con alumnos, sedes, agenda, finanzas y flota desde una sola plataforma.",
   path: "/registro",
   keywords: [
-    "crear cuenta autoescuela pro",
+    "crear cuenta condusoft",
     "software para autoescuelas registro",
     "plataforma para escuelas de conducción en Colombia",
   ],

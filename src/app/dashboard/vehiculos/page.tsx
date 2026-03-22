@@ -14,6 +14,7 @@ import {
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type {
   Vehiculo,
   TipoVehiculo,
@@ -149,7 +150,25 @@ export default function VehiculosPage() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<"vehiculos" | "bitacora">("vehiculos");
   const isInstructor = perfil?.rol === "instructor";
-  const canManageVehiculos = !isInstructor;
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreateVehicle = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "vehicles", "create")
+    : !isInstructor;
+  const canEditVehicle = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "vehicles", "edit")
+    : !isInstructor;
+  const canDeleteVehicle = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "vehicles", "delete")
+    : !isInstructor;
+  const canCreateLogbook = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "logbook", "create")
+    : true;
+  const canEditLogbook = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "logbook", "edit")
+    : true;
+  const canDeleteLogbook = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "logbook", "delete")
+    : !isInstructor;
 
   // ── Vehículos state ──────────────────────────────────
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
@@ -253,7 +272,8 @@ export default function VehiculosPage() {
             sedeId: perfil?.sede_id,
           },
           params,
-          loader: () => fetchJsonWithRetry<VehiculosListResponse>(`/api/vehiculos?${params.toString()}`),
+          loader: () =>
+            fetchJsonWithRetry<VehiculosListResponse>(`/api/vehiculos?${params.toString()}`),
         });
 
         if (fetchId !== vehiculosFetchIdRef.current) return;
@@ -296,7 +316,9 @@ export default function VehiculosPage() {
           },
           params,
           loader: () =>
-            fetchJsonWithRetry<MantenimientoListResponse>(`/api/mantenimiento?${params.toString()}`),
+            fetchJsonWithRetry<MantenimientoListResponse>(
+              `/api/mantenimiento?${params.toString()}`
+            ),
         });
 
         if (fetchId !== mantenimientoFetchIdRef.current) return;
@@ -315,31 +337,36 @@ export default function VehiculosPage() {
     [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
   );
 
-  const fetchHistorialVehiculo = useCallback(async (vehiculoId: string) => {
-    try {
-      const params = new URLSearchParams({
-        vehiculo_id: vehiculoId,
-        page: "0",
-        pageSize: "200",
-      });
-      const payload = await getDashboardListCached<MantenimientoListResponse>({
-        name: "vehiculos-historial",
-        scope: {
-          id: perfil?.id,
-          rol: perfil?.rol,
-          escuelaId: perfil?.escuela_id,
-          sedeId: perfil?.sede_id,
-        },
-        params,
-        loader: () =>
-          fetchJsonWithRetry<MantenimientoListResponse>(`/api/mantenimiento?${params.toString()}`),
-      });
-      setHistorialRegistros(payload.rows || []);
-    } catch {
-      setHistorialRegistros([]);
-      toast.error("No se pudo cargar el historial del vehículo.");
-    }
-  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
+  const fetchHistorialVehiculo = useCallback(
+    async (vehiculoId: string) => {
+      try {
+        const params = new URLSearchParams({
+          vehiculo_id: vehiculoId,
+          page: "0",
+          pageSize: "200",
+        });
+        const payload = await getDashboardListCached<MantenimientoListResponse>({
+          name: "vehiculos-historial",
+          scope: {
+            id: perfil?.id,
+            rol: perfil?.rol,
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          params,
+          loader: () =>
+            fetchJsonWithRetry<MantenimientoListResponse>(
+              `/api/mantenimiento?${params.toString()}`
+            ),
+        });
+        setHistorialRegistros(payload.rows || []);
+      } catch {
+        setHistorialRegistros([]);
+        toast.error("No se pudo cargar el historial del vehículo.");
+      }
+    },
+    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
+  );
 
   useEffect(() => {
     if (!perfil?.escuela_id) return;
@@ -358,11 +385,13 @@ export default function VehiculosPage() {
 
   // ── Vehiculos CRUD ───────────────────────────────────
   const openCreateV = () => {
+    if (!canCreateVehicle) return;
     setEditingV(null);
     restoreVehiculoDraft(emptyVForm);
     setModalVOpen(true);
   };
   const openEditV = (row: Vehiculo) => {
+    if (!canEditVehicle) return;
     setEditingV(row);
     setFormV({
       marca: row.marca,
@@ -379,11 +408,13 @@ export default function VehiculosPage() {
     setModalVOpen(true);
   };
   const openDeleteV = (row: Vehiculo) => {
+    if (!canDeleteVehicle) return;
     setDeletingV(row);
     setDeleteVOpen(true);
   };
 
   const handleSaveV = async () => {
+    if (editingV ? !canEditVehicle : !canCreateVehicle) return;
     const result = vehiculoSchema.safeParse(formV);
     if (!result.success) {
       toast.error(result.error.issues[0]?.message || "Error en el formulario del vehículo.");
@@ -452,6 +483,7 @@ export default function VehiculosPage() {
   };
 
   const handleDeleteV = async () => {
+    if (!canDeleteVehicle) return;
     if (!deletingV) return;
     setSavingV(true);
     try {
@@ -480,6 +512,7 @@ export default function VehiculosPage() {
 
   // ── Mantenimiento CRUD ───────────────────────────────
   const openCreateM = () => {
+    if (!canCreateLogbook) return;
     setEditingM(null);
     restoreMantenimientoDraft({
       ...emptyMForm,
@@ -488,6 +521,7 @@ export default function VehiculosPage() {
     setModalMOpen(true);
   };
   const openEditM = (row: MantenimientoVehiculo) => {
+    if (!canEditLogbook) return;
     setEditingM(row);
     setFormM({
       vehiculo_id: row.vehiculo_id,
@@ -506,6 +540,7 @@ export default function VehiculosPage() {
     setModalMOpen(true);
   };
   const openDeleteM = (row: MantenimientoVehiculo) => {
+    if (!canDeleteLogbook) return;
     setDeletingM(row);
     setDeleteMOpen(true);
   };
@@ -525,6 +560,7 @@ export default function VehiculosPage() {
   );
 
   const handleSaveM = async () => {
+    if (editingM ? !canEditLogbook : !canCreateLogbook) return;
     const result = mantenimientoSchema.safeParse(formM);
     if (!result.success) {
       toast.error(result.error.issues[0]?.message || "Error en el registro de mantenimiento.");
@@ -621,6 +657,7 @@ export default function VehiculosPage() {
   };
 
   const handleDeleteM = async () => {
+    if (!canDeleteLogbook) return;
     if (!deletingM) return;
     setSavingM(true);
     try {
@@ -769,7 +806,7 @@ export default function VehiculosPage() {
     },
   ];
 
-  const canOpenCreate = tab === "bitacora" || canManageVehiculos;
+  const canOpenCreate = tab === "vehiculos" ? canCreateVehicle : canCreateLogbook;
 
   return (
     <div>
@@ -780,7 +817,9 @@ export default function VehiculosPage() {
           <p className="mt-0.5 text-sm text-[#86868b]">
             {isInstructor
               ? "Consulta y registra la bitácora de vehículos"
-              : "Gestiona la flota y la bitácora de vehículos"}
+              : canCreateVehicle || canEditVehicle
+                ? "Gestiona la flota y la bitácora de vehículos"
+                : "Consulta la flota y registra la bitácora sin editar vehículos"}
           </p>
         </div>
         {canOpenCreate && (
@@ -823,8 +862,8 @@ export default function VehiculosPage() {
             loading={loadingV}
             searchPlaceholder="Buscar por marca o matrícula..."
             searchKeys={["marca", "modelo", "matricula"]}
-            onEdit={canManageVehiculos ? openEditV : undefined}
-            onDelete={canManageVehiculos ? openDeleteV : undefined}
+            onEdit={canEditVehicle ? openEditV : undefined}
+            onDelete={canDeleteVehicle ? openDeleteV : undefined}
             extraActions={(row: VehiculoConBitacora) => (
               <button
                 onClick={() => {
@@ -851,11 +890,15 @@ export default function VehiculosPage() {
             loading={loadingM}
             searchPlaceholder="Buscar por vehículo, descripción o fecha..."
             searchKeys={["descripcion", "fecha", "vehiculo_nombre"] as (keyof MantenimientoRow)[]}
-            onEdit={(row: MantenimientoRow) => {
-              if (isInstructor && row.instructor_id !== currentInstructorId) return;
-              openEditM(row);
-            }}
-            onDelete={canManageVehiculos ? openDeleteM : undefined}
+            onEdit={
+              canEditLogbook
+                ? (row: MantenimientoRow) => {
+                    if (isInstructor && row.instructor_id !== currentInstructorId) return;
+                    openEditM(row);
+                  }
+                : undefined
+            }
+            onDelete={canDeleteLogbook ? openDeleteM : undefined}
           />
         </div>
       )}

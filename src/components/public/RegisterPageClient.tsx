@@ -91,7 +91,7 @@ export default function RegisterPageClient() {
     <AuthWorkspace
       badge="Configuración inicial"
       title="Crea tu cuenta"
-      description="Registra tu autoescuela y deja lista la estructura básica para empezar a operar en Colombia."
+      description="Registra tu autoescuela en Condusoft y deja lista la estructura básica para empezar a operar en Colombia."
       backLabel="Volver al inicio"
       helperTitle="Una base sólida para tu escuela"
       highlights={[
@@ -101,7 +101,8 @@ export default function RegisterPageClient() {
         },
         {
           title: "Control por módulos",
-          description: "Alumnos, pagos, agenda, gastos y flota quedan listos dentro del mismo sistema.",
+          description:
+            "Alumnos, pagos, agenda, gastos y flota quedan listos dentro del mismo sistema.",
         },
         {
           title: "Escalamiento limpio",
@@ -188,7 +189,7 @@ export default function RegisterPageClient() {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--gray-500)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+              className="absolute top-1/2 right-2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--gray-500)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
               aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
             >
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}

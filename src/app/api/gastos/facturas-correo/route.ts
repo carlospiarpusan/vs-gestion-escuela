@@ -12,11 +12,16 @@ import {
   getEmailInvoiceIntegrationState,
   saveEmailInvoiceIntegration,
 } from "@/lib/email-invoice-sync";
+import {
+  getAuditedRolesForCapabilityAction,
+  getAuditedRolesForCapabilityModule,
+} from "@/lib/role-capabilities";
 import type { Rol } from "@/types/database";
 
 export const runtime = "nodejs";
 
-const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
+const ALLOWED_ROLES: Rol[] = getAuditedRolesForCapabilityModule("automation");
+const CONFIGURE_ROLES: Rol[] = getAuditedRolesForCapabilityAction("automation", "configure");
 
 const integrationSchema = z.object({
   escuela_id: z.string().uuid().optional(),
@@ -70,7 +75,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authorization = await authorizeApiRequest(ALLOWED_ROLES);
+  const authorization = await authorizeApiRequest(CONFIGURE_ROLES);
   if (!authorization.ok) return authorization.response;
 
   const { perfil } = authorization;
@@ -127,7 +132,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const authorization = await authorizeApiRequest(ALLOWED_ROLES);
+  const authorization = await authorizeApiRequest(CONFIGURE_ROLES);
   if (!authorization.ok) return authorization.response;
 
   const { perfil } = authorization;

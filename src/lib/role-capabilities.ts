@@ -265,14 +265,15 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
     description:
       "Rol operativo para ejecución diaria y finanzas del día a día, sin permisos estructurales.",
     can: [
-      "Gestiona alumnos, instructores, clases, vehículos, ingresos y gastos de su alcance.",
-      "Puede generar cierres mensuales desde Horas y operar automatización de facturas.",
+      "Gestiona alumnos, clases, ingresos, gastos y bitácora operativa de su sede.",
+      "Puede generar cierres mensuales desde Horas, registrar nómina y sincronizar facturas.",
       "Consulta exámenes, cartera, caja diaria e informes para seguimiento operativo.",
     ],
     cannot: [
       "No puede crear, editar ni eliminar sedes.",
       "No puede crear, editar ni eliminar administrativos.",
-      "No puede cambiar valor hora ni editar el banco maestro CALE.",
+      "No puede crear instructores, cambiar valor hora ni editar el banco maestro CALE.",
+      "No puede configurar credenciales de automatización ni eliminar histórico operativo o financiero.",
     ],
   },
 };
@@ -531,29 +532,29 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
     branches: NONE_CAPABILITY,
     staff: NONE_CAPABILITY,
     instructors: {
-      state: "scoped",
+      state: "readonly",
       scope: "branch",
-      actions: ["view", "create", "edit", "delete"],
+      actions: ["view"],
     },
     students: {
       state: "scoped",
       scope: "branch",
-      actions: ["view", "create", "edit", "delete", "export"],
+      actions: ["view", "create", "edit", "export"],
     },
     classes: {
       state: "scoped",
       scope: "branch",
-      actions: ["view", "create", "edit", "delete", "export"],
+      actions: ["view", "create", "edit", "export"],
     },
     vehicles: {
-      state: "scoped",
+      state: "readonly",
       scope: "branch",
-      actions: ["view", "create", "edit", "delete", "export"],
+      actions: ["view"],
     },
     logbook: {
       state: "scoped",
       scope: "branch",
-      actions: ["view", "create", "edit", "delete"],
+      actions: ["view", "create", "edit"],
     },
     hours: {
       state: "scoped",
@@ -576,7 +577,7 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
     income: {
       state: "scoped",
       scope: "branch",
-      actions: ["view", "create", "edit", "delete", "export"],
+      actions: ["view", "create", "edit", "export"],
     },
     portfolio: {
       state: "readonly",
@@ -591,12 +592,12 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
     expenses: {
       state: "scoped",
       scope: "branch",
-      actions: ["view", "create", "edit", "delete", "export"],
+      actions: ["view", "create", "edit", "export"],
     },
     automation: {
       state: "scoped",
       scope: "branch",
-      actions: ["view", "sync", "configure"],
+      actions: ["view", "sync"],
     },
     reports: {
       state: "readonly",

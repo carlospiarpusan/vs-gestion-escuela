@@ -7,14 +7,45 @@ import {
   ensureSedeScope,
   parseJsonBody,
 } from "@/lib/api-auth";
+import {
+  getAuditedRolesForCapabilityAction,
+  getAuditedRolesForCapabilityModule,
+} from "@/lib/role-capabilities";
 import type { Rol } from "@/types/database";
 
 // ── Roles con acceso al módulo de nóminas ────────────────────────────
-const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
+const VIEW_ROLES: Rol[] = getAuditedRolesForCapabilityModule("payroll");
+const CREATE_ROLES: Rol[] = getAuditedRolesForCapabilityAction("payroll", "create");
+const EDIT_ROLES: Rol[] = getAuditedRolesForCapabilityAction("payroll", "edit");
+const DELETE_ROLES: Rol[] = getAuditedRolesForCapabilityAction("payroll", "delete");
+
+type LegacyPayrollExpenseRow = {
+  id: string;
+  sede_id: string;
+  concepto: string;
+  monto: number | string | null;
+  fecha: string;
+  estado_pago: "pendiente" | "pagado" | "anulado";
+  proveedor: string | null;
+  notas: string | null;
+};
+
+function inferLegacyPayrollEmployeeType(row: Pick<LegacyPayrollExpenseRow, "concepto" | "notas">) {
+  const haystack = `${row.concepto} ${row.notas ?? ""}`.toLowerCase();
+  if (
+    haystack.includes("cierre_horas_instructor") ||
+    haystack.includes("horas instructor") ||
+    haystack.includes("instructor")
+  ) {
+    return "instructor" as const;
+  }
+
+  return "administrativo" as const;
+}
 
 // ── GET: listar nóminas de un periodo ────────────────────────────────
 export async function GET(request: Request) {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const authz = await authorizeApiRequest(VIEW_ROLES);
   if (!authz.ok) return authz.response;
 
   const perfil = authz.perfil;
@@ -81,8 +112,113 @@ export async function GET(request: Request) {
       .order("es_principal", { ascending: false }),
   ]);
 
+  // Cargar cierres de horas del periodo para instructores
+  let cierres: Array<{
+    id: string;
+    instructor_id: string;
+    total_horas: number;
+    valor_hora: number;
+    monto_total: number;
+    fecha_cierre: string;
+  }> = [];
+
+  try {
+    const { data: cierresData } = await supabase
+      .from("cierres_horas_instructores")
+      .select("id, instructor_id, total_horas, valor_hora, monto_total, fecha_cierre")
+      .eq("escuela_id", escuelaId)
+      .eq("periodo_anio", anio)
+      .eq("periodo_mes", mes);
+
+    cierres = (cierresData ?? []).map((c) => ({
+      id: c.id,
+      instructor_id: c.instructor_id,
+      total_horas: Number(c.total_horas),
+      valor_hora: Number(c.valor_hora),
+      monto_total: Number(c.monto_total),
+      fecha_cierre: c.fecha_cierre,
+    }));
+  } catch {
+    // cierres vacío si no existe la tabla o falla
+  }
+
+  let nominas = (data ?? []).map((row) => ({
+    ...row,
+    origen: "nomina" as const,
+  }));
+
+  if (nominas.length === 0) {
+    const periodStart = `${anio}-${String(mes).padStart(2, "0")}-01`;
+    const periodEnd = new Date(anio, mes, 0).toISOString().slice(0, 10);
+
+    const { data: legacyExpenses } = await supabase
+      .from("gastos")
+      .select("id, sede_id, concepto, monto, fecha, estado_pago, proveedor, notas")
+      .eq("escuela_id", escuelaId)
+      .eq("categoria", "nominas")
+      .gte("fecha", periodStart)
+      .lte("fecha", periodEnd)
+      .order("fecha", { ascending: false });
+
+    const legacyRows = ((legacyExpenses ?? []) as LegacyPayrollExpenseRow[])
+      .filter((row) => {
+        if (sedeId && perfil.rol !== "admin_escuela" && perfil.rol !== "super_admin") {
+          return row.sede_id === sedeId;
+        }
+
+        return true;
+      })
+      .filter((row) => inferLegacyPayrollEmployeeType(row) === (empleadoTipo ?? "instructor"))
+      .map((row) => {
+        const legacyType = inferLegacyPayrollEmployeeType(row);
+        const amount = Number(row.monto ?? 0);
+        const employeeName = row.proveedor?.trim() || row.concepto;
+
+        return {
+          id: row.id,
+          escuela_id: escuelaId,
+          sede_id: row.sede_id,
+          empleado_tipo: legacyType,
+          empleado_id: `legacy-${row.id}`,
+          empleado_nombre: employeeName,
+          periodo_anio: anio,
+          periodo_mes: mes,
+          tipo_contrato:
+            legacyType === "instructor"
+              ? ("prestacion_servicios" as const)
+              : ("contrato_laboral" as const),
+          salario_base: amount,
+          total_devengado: amount,
+          total_deducciones: 0,
+          neto_pagar: amount,
+          estado:
+            row.estado_pago === "pagado"
+              ? ("pagada" as const)
+              : row.estado_pago === "anulado"
+                ? ("anulada" as const)
+                : ("aprobada" as const),
+          fecha_pago: row.estado_pago === "pagado" ? row.fecha : null,
+          notas: row.notas
+            ? `Histórico desde gastos. ${row.notas}`
+            : "Histórico desde gastos. Este registro viene del módulo anterior de nómina.",
+          nomina_conceptos: [
+            {
+              id: `legacy-concept-${row.id}`,
+              tipo: "devengo" as const,
+              concepto: row.concepto,
+              descripcion: "Registro histórico migrado desde gastos",
+              valor: amount,
+            },
+          ],
+          origen: "gasto_legacy" as const,
+        };
+      });
+
+    nominas = legacyRows;
+  }
+
   return NextResponse.json({
-    nominas: data ?? [],
+    nominas,
     instructores: (instructoresRes.data ?? []).map((i) => ({
       id: i.id,
       nombre: `${i.nombre} ${i.apellidos}`,
@@ -94,6 +230,7 @@ export async function GET(request: Request) {
       sede_id: a.sede_id,
     })),
     sedes: sedesRes.data ?? [],
+    cierres,
     periodo: { anio, mes },
   });
 }
@@ -122,7 +259,7 @@ const nominaCreateSchema = z.object({
 
 // ── POST: crear una nómina nueva ─────────────────────────────────────
 export async function POST(request: Request) {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const authz = await authorizeApiRequest(CREATE_ROLES);
   if (!authz.ok) return authz.response;
 
   const parsed = await parseJsonBody(request, nominaCreateSchema);
@@ -238,7 +375,7 @@ const nominaUpdateSchema = z.object({
 
 // ── PATCH: actualizar nómina (estado, pago, conceptos) ───────────────
 export async function PATCH(request: Request) {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const authz = await authorizeApiRequest(EDIT_ROLES);
   if (!authz.ok) return authz.response;
 
   const parsed = await parseJsonBody(request, nominaUpdateSchema);
@@ -340,7 +477,7 @@ export async function PATCH(request: Request) {
 
 // ── DELETE: eliminar nómina en borrador ──────────────────────────────
 export async function DELETE(request: Request) {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const authz = await authorizeApiRequest(DELETE_ROLES);
   if (!authz.ok) return authz.response;
 
   const url = new URL(request.url);

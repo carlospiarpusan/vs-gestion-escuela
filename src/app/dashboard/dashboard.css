@@ -1,0 +1,195 @@
+/* Dashboard-specific UI components to reduce render-blocking CSS on landing pages */
+
+.apple-table-shell {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 26px;
+  border: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, var(--surface-strong), var(--surface-soft));
+  box-shadow: var(--surface-shadow);
+  scrollbar-gutter: stable both-edges;
+  overscroll-behavior-x: contain;
+}
+
+.apple-table-shell thead tr {
+  background: linear-gradient(180deg, rgba(245, 245, 247, 0.96), rgba(255, 255, 255, 0.82));
+}
+
+.dark .apple-table-shell thead tr {
+  background: linear-gradient(180deg, rgba(34, 34, 36, 0.96), rgba(28, 28, 30, 0.82));
+}
+
+.dashboard-scroll-shell,
+.table-scroll-area,
+.table-scroll-sync {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--gray-500) 48%, transparent) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dashboard-scroll-shell {
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+.table-scroll-sync {
+  border: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, var(--surface-strong), var(--surface-muted));
+}
+
+.dashboard-scroll-shell::-webkit-scrollbar,
+.table-scroll-area::-webkit-scrollbar,
+.table-scroll-sync::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.dashboard-scroll-shell::-webkit-scrollbar-track,
+.table-scroll-area::-webkit-scrollbar-track,
+.table-scroll-sync::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dashboard-scroll-shell::-webkit-scrollbar-thumb,
+.table-scroll-area::-webkit-scrollbar-thumb,
+.table-scroll-sync::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: color-mix(in srgb, var(--gray-500) 42%, transparent);
+  background-clip: padding-box;
+}
+
+.dashboard-scroll-shell::-webkit-scrollbar-thumb:hover,
+.table-scroll-area::-webkit-scrollbar-thumb:hover,
+.table-scroll-sync::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--gray-500) 62%, transparent);
+  background-clip: padding-box;
+}
+
+.apple-segmented {
+  display: inline-flex;
+  gap: 0.3rem;
+  padding: 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, var(--surface-muted), var(--material-regular));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.apple-segmented-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.25rem;
+  padding: 0 0.95rem;
+  border-radius: 999px;
+  color: var(--gray-500);
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.apple-segmented-button:hover {
+  color: var(--foreground);
+}
+
+.apple-segmented-button[data-active="true"] {
+  background: linear-gradient(180deg, var(--surface-strong), var(--surface-soft));
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
+.apple-input,
+.apple-select,
+.apple-textarea {
+  width: 100%;
+  border-radius: 15px;
+  border: 1px solid var(--surface-border);
+  background: linear-gradient(
+    180deg,
+    var(--surface-strong),
+    color-mix(in srgb, var(--surface-muted) 94%, transparent)
+  );
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease,
+    background 0.2s ease;
+}
+
+.apple-input,
+.apple-select {
+  min-height: 46px;
+  padding: 0.72rem 0.95rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.apple-textarea {
+  min-height: 112px;
+  padding: 0.82rem 0.95rem;
+  resize: vertical;
+  font-size: 0.875rem;
+  line-height: 1.4rem;
+}
+
+.apple-input::placeholder,
+.apple-textarea::placeholder {
+  color: var(--gray-500);
+}
+
+.apple-input:focus,
+.apple-select:focus,
+.apple-textarea:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--blue-apple) 48%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 0 0 4px color-mix(in srgb, var(--blue-apple) 14%, transparent);
+}
+
+.apple-label {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--gray-500);
+}
+
+.apple-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.32rem 0.65rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-50) 92%, transparent);
+  color: var(--brand-600);
+  border: 1px solid color-mix(in srgb, var(--brand-500) 14%, transparent);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+body[data-device-variant="mobile"] .apple-input,
+body[data-device-variant="mobile"] .apple-select {
+  min-height: 50px;
+  font-size: 16px;
+}
+
+body[data-device-variant="mobile"] .apple-textarea {
+  font-size: 16px;
+}

@@ -64,6 +64,9 @@ type ExpenseFacturasSectionProps = {
   emailLoading: boolean;
   emailSyncing: boolean;
   emailSaving: boolean;
+  canCreateExpense: boolean;
+  canConfigureAutomation: boolean;
+  canSyncAutomation: boolean;
   onOpenImportModal: () => void;
   onOpenIntegration: () => void;
   onSync: () => void;
@@ -119,8 +122,8 @@ type ExpenseTableSectionProps = {
   totalCount: number;
   currentPage: number;
   searchTerm: string;
-  onEdit: (row: Gasto) => void;
-  onDelete: (row: Gasto) => void;
+  onEdit?: (row: Gasto) => void;
+  onDelete?: (row: Gasto) => void;
   onPageChange: (page: number) => void;
   onSearchChange: (term: string) => void;
   pageSize: number;
@@ -496,6 +499,9 @@ export function ExpenseFacturasSection({
   emailLoading,
   emailSyncing,
   emailSaving,
+  canCreateExpense,
+  canConfigureAutomation,
+  canSyncAutomation,
   onOpenImportModal,
   onOpenIntegration,
   onSync,
@@ -519,14 +525,16 @@ export function ExpenseFacturasSection({
                 importación manual vive aquí para no competir con el libro operativo.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onOpenImportModal}
-              className="inline-flex items-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
-            >
-              <ReceiptText size={16} />
-              Importar factura
-            </button>
+            {canCreateExpense ? (
+              <button
+                type="button"
+                onClick={onOpenImportModal}
+                className="inline-flex items-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
+              >
+                <ReceiptText size={16} />
+                Importar factura
+              </button>
+            ) : null}
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -616,18 +624,20 @@ export function ExpenseFacturasSection({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onOpenIntegration}
-              className="inline-flex items-center gap-2 rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 px-3 py-2 text-sm text-[#0071e3] dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10"
-            >
-              <Link2 size={15} />
-              {emailIntegration ? "Editar conexión" : "Conectar"}
-            </button>
+            {canConfigureAutomation ? (
+              <button
+                type="button"
+                onClick={onOpenIntegration}
+                className="inline-flex items-center gap-2 rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 px-3 py-2 text-sm text-[#0071e3] dark:border-[#0071e3]/30 dark:bg-[#0071e3]/10"
+              >
+                <Link2 size={15} />
+                {emailIntegration ? "Editar conexión" : "Conectar"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onSync}
-              disabled={!emailIntegration || emailSyncing || emailLoading}
+              disabled={!canSyncAutomation || !emailIntegration || emailSyncing || emailLoading}
               className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-[#1d1d1f] disabled:opacity-50 dark:border-gray-700 dark:text-[#f5f5f7]"
             >
               <RefreshCw size={15} className={emailSyncing ? "animate-spin" : ""} />
@@ -636,13 +646,13 @@ export function ExpenseFacturasSection({
             <button
               type="button"
               onClick={onOpenHistoricalSearch}
-              disabled={!emailIntegration || emailSyncing || emailLoading}
+              disabled={!canSyncAutomation || !emailIntegration || emailSyncing || emailLoading}
               className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-[#1d1d1f] disabled:opacity-50 dark:border-gray-700 dark:text-[#f5f5f7]"
             >
               <Clock3 size={15} />
               Buscar antiguas
             </button>
-            {emailIntegration ? (
+            {canConfigureAutomation && emailIntegration ? (
               <button
                 type="button"
                 onClick={onDisconnect}

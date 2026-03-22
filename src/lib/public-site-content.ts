@@ -27,18 +27,23 @@ export type PublicFaqItem = {
 };
 
 export const HOME_KEYWORDS = [
+  "condusoft",
+  "condusoft.co",
   "software para autoescuelas en Colombia",
   "software para escuelas de conducción",
+  "CEA Colombia",
+  "software CEA",
+  "centro de enseñanza automovilística",
   "gestión de autoescuelas",
   "plataforma para escuelas de conducción",
-  "software CEA Colombia",
   "sistema para autoescuelas",
+  "software para centros de enseñanza automovilística",
 ];
 
 export const heroHighlights = [
-  "Deja de perder dinero: Control absoluto sobre alumnos, clases y horas operativas.",
-  "Dile adiós al caos financiero: Separa y domina tus ingresos, cartera y caja diaria.",
-  "Protege tu flota: Gestión proactiva de vehículos y mantenimientos en un solo clic.",
+  "Condusoft centraliza alumnos, matrículas, clases y horas operativas en una sola vista.",
+  "Separa ingresos, cartera, caja diaria y gastos para entender la realidad financiera de tu escuela.",
+  "Controla vehículos, mantenimientos, sedes y automatización sin depender de hojas sueltas o chats.",
 ];
 
 export const availableFeatures: PublicFeatureArea[] = [
@@ -131,9 +136,9 @@ export const trustPoints: PublicTrustPoint[] = [
 
 export const faqItems: PublicFaqItem[] = [
   {
-    question: "¿Para qué tipo de autoescuela sirve AutoEscuela Pro?",
+    question: "¿Para qué tipo de autoescuela sirve Condusoft?",
     answer:
-      "Está pensado para escuelas de conducción en Colombia que necesitan controlar alumnos, clases, pagos, cartera, gastos, flota y operación diaria desde una sola plataforma.",
+      "Condusoft está pensado para autoescuelas, CEA y escuelas de conducción en Colombia que necesitan controlar alumnos, clases, pagos, cartera, gastos, flota y operación diaria desde una sola plataforma.",
   },
   {
     question: "¿Funciona para varias sedes?",

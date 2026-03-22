@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import AuthWorkspace from "@/components/public/AuthWorkspace";
+import { IDLE_LOGOUT_REASON, IDLE_LOGOUT_MINUTES } from "@/lib/session-timeout";
 
 export default function LoginPageClient() {
   const router = useRouter();
@@ -14,6 +15,8 @@ export default function LoginPageClient() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const searchParams = useSearchParams();
+  const loggedOutByInactivity = searchParams.get("reason") === IDLE_LOGOUT_REASON;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,7 +76,7 @@ export default function LoginPageClient() {
     <AuthWorkspace
       badge="Acceso seguro"
       title="Inicia sesión"
-      description="Entra a tu panel para revisar operación, pagos, alumnos, evaluaciones y el día a día de tu autoescuela."
+      description="Entra a Condusoft para revisar operación, pagos, alumnos, evaluaciones y el día a día de tu autoescuela."
       backLabel="Inicio"
       highlights={[
         {
@@ -90,6 +93,13 @@ export default function LoginPageClient() {
         },
       ]}
     >
+      {loggedOutByInactivity && !error && (
+        <div className="mb-4 rounded-2xl border border-amber-200/70 bg-amber-50/80 p-3 text-center text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+          Cerramos tu sesión por inactividad después de {IDLE_LOGOUT_MINUTES} minutos. Vuelve a
+          entrar para seguir trabajando.
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 rounded-2xl border border-red-200/70 bg-red-50/80 p-3 text-center text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
           {error}
@@ -131,7 +141,7 @@ export default function LoginPageClient() {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--gray-500)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+              className="absolute top-1/2 right-2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--gray-500)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
               aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
             >
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}

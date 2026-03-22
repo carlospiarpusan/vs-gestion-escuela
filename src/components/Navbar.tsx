@@ -56,14 +56,14 @@ export default function Navbar() {
               className="z-50 flex items-center gap-3 transition-opacity hover:opacity-85"
             >
               <span className="apple-brand-mark flex h-9 w-9 items-center justify-center text-sm font-semibold">
-                A
+                C
               </span>
               <div className="min-w-0">
                 <span className="text-foreground block text-[16px] font-semibold tracking-tight">
-                  AutoEscuela<span className="gradient-text">Pro</span>
+                  Condu<span className="gradient-text">soft</span>
                 </span>
                 <span className="apple-kicker hidden sm:block">
-                  Software para autoescuelas en Colombia
+                  condusoft.co · Software para autoescuelas en Colombia
                 </span>
               </div>
             </Link>
@@ -109,7 +109,11 @@ export default function Navbar() {
               >
                 Empezar
               </Link>
-              <button onClick={() => setMenuOpen(!menuOpen)} className="apple-icon-button">
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="apple-icon-button"
+                aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
+              >
                 <AnimatePresence mode="wait">
                   {menuOpen ? (
                     <motion.div
@@ -154,7 +158,7 @@ export default function Navbar() {
               onClick={(event) => event.stopPropagation()}
             >
               <div className="mb-4">
-                <p className="apple-kicker">AutoEscuelas en Colombia</p>
+                <p className="apple-kicker">Condusoft para autoescuelas en Colombia</p>
                 <p className="apple-copy mt-1 text-sm">
                   Entra directo a funciones, implementación, FAQ y planes sin perder contexto del
                   producto.

@@ -19,7 +19,7 @@ export default function Pricing() {
         <SectionIntro
           badge="Planes para autoescuelas"
           title="Elige el plan según la etapa real de tu escuela"
-          description="AutoEscuela Pro no se presenta como una tarifa genérica. Ordena la operación de tu escuela según su tamaño, su estructura y el nivel de control que hoy necesita."
+          description="Condusoft no se presenta como una tarifa genérica. Ordena la operación de tu escuela según su tamaño, su estructura y el nivel de control que hoy necesita."
           aside={
             <div className="apple-panel-muted max-w-sm px-5 py-5">
               <p className="text-[11px] font-semibold tracking-[0.16em] text-[var(--gray-500)] uppercase">

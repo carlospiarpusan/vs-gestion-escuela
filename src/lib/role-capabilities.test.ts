@@ -39,7 +39,18 @@ describe("role capabilities", () => {
   it("keeps administrativo away from structural modules but active in daily operation", () => {
     expect(canAuditedRolePerformAction("administrativo", "staff", "create")).toBe(false);
     expect(canAuditedRolePerformAction("administrativo", "branches", "view")).toBe(false);
+    expect(canAuditedRolePerformAction("administrativo", "instructors", "create")).toBe(false);
+    expect(canAuditedRolePerformAction("administrativo", "instructors", "edit")).toBe(false);
+    expect(canAuditedRolePerformAction("administrativo", "students", "delete")).toBe(false);
+    expect(canAuditedRolePerformAction("administrativo", "classes", "delete")).toBe(false);
+    expect(canAuditedRolePerformAction("administrativo", "vehicles", "edit")).toBe(false);
+    expect(canAuditedRolePerformAction("administrativo", "logbook", "create")).toBe(true);
+    expect(canAuditedRolePerformAction("administrativo", "logbook", "delete")).toBe(false);
+    expect(canAuditedRolePerformAction("administrativo", "expenses", "delete")).toBe(false);
+    expect(canAuditedRolePerformAction("administrativo", "payroll", "create")).toBe(true);
+    expect(canAuditedRolePerformAction("administrativo", "payroll", "delete")).toBe(false);
     expect(canAuditedRolePerformAction("administrativo", "income", "create")).toBe(true);
+    expect(canAuditedRolePerformAction("administrativo", "automation", "configure")).toBe(false);
     expect(canAuditedRolePerformAction("administrativo", "automation", "sync")).toBe(true);
   });
 

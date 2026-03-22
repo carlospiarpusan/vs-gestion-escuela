@@ -41,6 +41,7 @@ import {
 } from "@/lib/dashboard-client-cache";
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
 import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import { fetchExpenseDashboard } from "@/lib/finance/expense-service";
 import type { ExpenseDashboardResponse } from "@/lib/finance/types";
 import { downloadSpreadsheetWorkbook } from "@/lib/spreadsheet-export";
@@ -107,6 +108,31 @@ const HistoricalSearchModal = dynamic(() => import("./HistoricalSearchModal"), {
 export default function GastosPage() {
   // --- Auth & state ---
   const { perfil } = useAuth();
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreateExpense = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "expenses", "create")
+    : true;
+  const canEditExpense = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "expenses", "edit")
+    : true;
+  const canDeleteExpense = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "expenses", "delete")
+    : true;
+  const canCreatePayroll = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "payroll", "create")
+    : true;
+  const canEditPayroll = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "payroll", "edit")
+    : true;
+  const canDeletePayroll = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "payroll", "delete")
+    : true;
+  const canConfigureAutomation = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "automation", "configure")
+    : true;
+  const canSyncAutomation = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "automation", "sync")
+    : true;
   const searchParams = useSearchParams();
   const defaultMonth = String(currentMonth).padStart(2, "0");
   const [data, setData] = useState<Gasto[]>([]);
@@ -637,6 +663,7 @@ export default function GastosPage() {
   }, [perfil?.escuela_id, perfil?.sede_id]);
 
   const openEmailIntegrationModal = () => {
+    if (!canConfigureAutomation) return;
     setEmailNotice("");
     setEmailError("");
     setEmailForm(buildDefaultEmailForm(sedesOptions, emailIntegration));
@@ -656,6 +683,7 @@ export default function GastosPage() {
   };
 
   const handleSaveEmailIntegration = async () => {
+    if (!canConfigureAutomation) return;
     if (!perfil?.escuela_id) {
       setEmailError("No se encontro una escuela activa para conectar el correo.");
       return;
@@ -717,6 +745,7 @@ export default function GastosPage() {
   };
 
   const handleDeleteEmailIntegration = async () => {
+    if (!canConfigureAutomation) return;
     if (!emailIntegration) return;
 
     setEmailSaving(true);
@@ -744,12 +773,14 @@ export default function GastosPage() {
   };
 
   const openHistoricalEmailSearchModal = () => {
+    if (!canSyncAutomation) return;
     setEmailError("");
     setEmailNotice("");
     setEmailHistoryModalOpen(true);
   };
 
   const handleSyncEmailIntegration = async () => {
+    if (!canSyncAutomation) return;
     if (!emailIntegration) return;
 
     setEmailSyncing(true);
@@ -787,6 +818,7 @@ export default function GastosPage() {
   };
 
   const handleHistoricalEmailSync = async () => {
+    if (!canSyncAutomation) return;
     if (!emailIntegration) return;
 
     const monthsBack = Number(emailHistoryMonths);
@@ -940,6 +972,8 @@ export default function GastosPage() {
 
   /** Open the modal in "create" mode with a blank form. */
   const openCreate = () => {
+    const canCreateActiveSection = activeSection === "nomina" ? canCreatePayroll : canCreateExpense;
+    if (!canCreateActiveSection) return;
     setEditing(null);
     restoreDraft({
       ...emptyForm,
@@ -965,6 +999,7 @@ export default function GastosPage() {
   };
 
   const openImportModal = () => {
+    if (!canCreateExpense) return;
     setLinkedNotice("");
     resetInvoiceImport();
     setImportModalOpen(true);
@@ -972,6 +1007,8 @@ export default function GastosPage() {
 
   /** Open the modal in "edit" mode, pre-filling the form with the selected row. */
   const openEdit = (row: Gasto) => {
+    const canEditActiveSection = activeSection === "nomina" ? canEditPayroll : canEditExpense;
+    if (!canEditActiveSection) return;
     if (row.mantenimiento_id) {
       setLinkedNotice("Este gasto viene de bitácora/vehículos. Edítalo desde ese módulo.");
       return;
@@ -1002,6 +1039,8 @@ export default function GastosPage() {
 
   /** Open the delete-confirmation dialog for the given row. */
   const openDelete = (row: Gasto) => {
+    const canDeleteActiveSection = activeSection === "nomina" ? canDeletePayroll : canDeleteExpense;
+    if (!canDeleteActiveSection) return;
     if (row.mantenimiento_id) {
       setLinkedNotice(
         "Este gasto está sincronizado con bitácora/vehículos. Elimínalo desde ese módulo."
@@ -1053,6 +1092,7 @@ export default function GastosPage() {
   };
 
   const handleImportInvoice = async () => {
+    if (!canCreateExpense) return;
     if (!invoicePreview) {
       setInvoiceImportError("Primero debes cargar una factura electronica valida.");
       return;
@@ -1118,6 +1158,14 @@ export default function GastosPage() {
    * Wrapped in try/catch to handle unexpected network errors gracefully.
    */
   const handleSave = async () => {
+    const canSaveActiveSection = editing
+      ? activeSection === "nomina"
+        ? canEditPayroll
+        : canEditExpense
+      : activeSection === "nomina"
+        ? canCreatePayroll
+        : canCreateExpense;
+    if (!canSaveActiveSection) return;
     // Validate required fields.
     if (!form.concepto || !form.monto) {
       setError("Concepto y monto son obligatorios.");
@@ -1176,6 +1224,8 @@ export default function GastosPage() {
    * Wrapped in try/catch so network failures surface in the UI.
    */
   const handleDelete = async () => {
+    const canDeleteActiveSection = activeSection === "nomina" ? canDeletePayroll : canDeleteExpense;
+    if (!canDeleteActiveSection) return;
     if (!deleting) return;
     setSaving(true);
     try {
@@ -1344,6 +1394,9 @@ export default function GastosPage() {
     (activeSection !== "tramitadores" && activeSection !== "nomina" && activeView !== "all")
   );
   const tramitadorOptions = useMemo(() => buildExpenseTramitadorOptions(summary), [summary]);
+  const canCreateActiveSection = activeSection === "nomina" ? canCreatePayroll : canCreateExpense;
+  const canEditActiveSection = activeSection === "nomina" ? canEditPayroll : canEditExpense;
+  const canDeleteActiveSection = activeSection === "nomina" ? canDeletePayroll : canDeleteExpense;
   const totalPagina = useMemo(
     () => data.reduce((sum, row) => sum + Number(row.monto || 0), 0),
     [data]
@@ -1377,14 +1430,16 @@ export default function GastosPage() {
         actions={
           activeSection === "facturas" ? null : (
             <>
-              <button
-                type="button"
-                onClick={openCreate}
-                className="inline-flex items-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
-              >
-                <Plus size={16} />
-                {activeSection === "nomina" ? "Nueva nómina" : "Nuevo gasto"}
-              </button>
+              {canCreateActiveSection ? (
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
+                >
+                  <Plus size={16} />
+                  {activeSection === "nomina" ? "Nueva nómina" : "Nuevo gasto"}
+                </button>
+              ) : null}
               <ExportFormatActions
                 exportingFormat={exportingFormat}
                 disabled={loading || data.length === 0}
@@ -1421,6 +1476,9 @@ export default function GastosPage() {
           emailLoading={emailLoading}
           emailSyncing={emailSyncing}
           emailSaving={emailSaving}
+          canCreateExpense={canCreateExpense}
+          canConfigureAutomation={canConfigureAutomation}
+          canSyncAutomation={canSyncAutomation}
           onOpenImportModal={openImportModal}
           onOpenIntegration={openEmailIntegrationModal}
           onSync={handleSyncEmailIntegration}
@@ -1503,8 +1561,8 @@ export default function GastosPage() {
         totalCount={totalCount}
         currentPage={currentPage}
         searchTerm={searchTerm}
-        onEdit={openEdit}
-        onDelete={openDelete}
+        onEdit={canEditActiveSection ? openEdit : undefined}
+        onDelete={canDeleteActiveSection ? openDelete : undefined}
         onPageChange={handlePageChange}
         onSearchChange={handleSearchChange}
         pageSize={PAGE_SIZE}

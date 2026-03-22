@@ -46,27 +46,28 @@ export default function Hero() {
           >
             <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-400 backdrop-blur-sm">
               <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              El estándar para autoescuelas en Colombia
+              Condusoft.co · Software para autoescuelas en Colombia
             </span>
           </div>
 
           <h1
             className="animate-fade-in-up mt-8 max-w-3xl text-[2.5rem] font-bold tracking-tight text-white sm:text-5xl md:text-6xl lg:text-[4.2rem] lg:leading-[1.1]"
-            style={{ animationDuration: "1s", animationDelay: "0.1s" }}
+            style={{ animationDuration: "0.6s" }}
           >
-            Toma el control{" "}
+            Condusoft,{" "}
             <span className="bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-              total
+              software para autoescuelas
             </span>{" "}
-            de tu autoescuela.
+            en Colombia.
           </h1>
 
           <p
             className="animate-fade-in-up mt-6 max-w-2xl text-[16px] leading-relaxed text-slate-300 sm:text-lg sm:leading-8 md:text-xl"
             style={{ animationDuration: "1s", animationDelay: "0.2s" }}
           >
-            Cámbiate a una operación predecible. Gestiona alumnos, agenda, flota y finanzas desde un
-            solo lugar, eliminando el caos del papel y los Excel dispersos.
+            Gestiona alumnos, matrículas, clases, ingresos, cartera, gastos, flota y sedes desde una
+            sola plataforma. Condusoft está diseñado para escuelas de conducción que quieren operar
+            mejor, vender con orden y crecer sin caos.
           </p>
 
           <div

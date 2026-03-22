@@ -5,10 +5,10 @@ import { buildPublicMetadata } from "@/lib/site-metadata";
 export const metadata: Metadata = buildPublicMetadata({
   title: "Iniciar sesión",
   description:
-    "Accede a AutoEscuela Pro para controlar alumnos, clases, ingresos, cartera, gastos y operación diaria de tu autoescuela en Colombia.",
+    "Accede a Condusoft para controlar alumnos, clases, ingresos, cartera, gastos y operación diaria de tu autoescuela en Colombia.",
   path: "/login",
   keywords: [
-    "iniciar sesión autoescuela pro",
+    "iniciar sesión condusoft",
     "login software para autoescuelas",
     "panel para escuelas de conducción",
   ],

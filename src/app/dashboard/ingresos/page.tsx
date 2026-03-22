@@ -21,6 +21,7 @@ import {
 } from "@/lib/dashboard-client-cache";
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
 import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import { fetchIncomeDashboard } from "@/lib/finance/income-service";
 import type { IncomeDashboardResponse, IncomeLedgerRow } from "@/lib/finance/types";
 import { type IncomeView, INCOME_VIEW_ITEMS } from "@/lib/income-view";
@@ -56,6 +57,16 @@ const DeleteConfirm = dynamic(() => import("@/components/dashboard/DeleteConfirm
 export default function IngresosPage() {
   const { perfil } = useAuth();
   const isMobile = useIsMobileVariant();
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreateIncome = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "income", "create")
+    : true;
+  const canEditIncome = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "income", "edit")
+    : true;
+  const canDeleteIncome = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "income", "delete")
+    : true;
   const fmt = (v: number) => formatAccountingMoney(Number(v || 0));
   const defaultMonth = String(currentMonth).padStart(2, "0");
 
@@ -80,13 +91,13 @@ export default function IngresosPage() {
   const hasAdvancedFilters = Boolean(filtroMetodo || filtroCategoria || filtroEstado);
   const hayFiltros = Boolean(
     filtroAlumno ||
-      filtroMetodo ||
-      filtroCategoria ||
-      filtroEstado ||
-      filtroView !== "all" ||
-      filtroYear !== String(currentYear) ||
-      filtroMes !== defaultMonth ||
-      searchTerm
+    filtroMetodo ||
+    filtroCategoria ||
+    filtroEstado ||
+    filtroView !== "all" ||
+    filtroYear !== String(currentYear) ||
+    filtroMes !== defaultMonth ||
+    searchTerm
   );
 
   useEffect(() => {
@@ -147,7 +158,9 @@ export default function IngresosPage() {
               fetchAllSupabaseRows<MatriculaOption>((from, to) =>
                 supabase
                   .from("matriculas_alumno")
-                  .select("id, alumno_id, numero_contrato, categorias, valor_total, fecha_inscripcion")
+                  .select(
+                    "id, alumno_id, numero_contrato, categorias, valor_total, fecha_inscripcion"
+                  )
                   .eq("escuela_id", escuelaId)
                   .order("fecha_inscripcion", { ascending: false })
                   .order("created_at", { ascending: false })
@@ -211,7 +224,9 @@ export default function IngresosPage() {
       } catch (err: unknown) {
         if (fetchId !== fetchIdRef.current) return;
         setReport(null);
-        setFetchError(err instanceof Error ? err.message : "No se pudo cargar el libro de ingresos.");
+        setFetchError(
+          err instanceof Error ? err.message : "No se pudo cargar el libro de ingresos."
+        );
       } finally {
         if (fetchId === fetchIdRef.current) setLoading(false);
       }
@@ -238,7 +253,8 @@ export default function IngresosPage() {
   const ledger = report?.ledger;
   const breakdown = report?.breakdown;
   const totalCount = ledger?.totalCount || 0;
-  const selectedViewMeta = INCOME_VIEW_ITEMS.find((item) => item.id === filtroView) || INCOME_VIEW_ITEMS[0];
+  const selectedViewMeta =
+    INCOME_VIEW_ITEMS.find((item) => item.id === filtroView) || INCOME_VIEW_ITEMS[0];
   const generatedAtLabel = report?.generatedAt
     ? new Intl.DateTimeFormat("es-CO", {
         dateStyle: "medium",
@@ -253,22 +269,30 @@ export default function IngresosPage() {
     {
       label: "Línea líder",
       value: leadingLine?.nombre || "Sin datos suficientes",
-      meta: leadingLine ? `${fmt(leadingLine.total)} en ${leadingLine.cantidad} movimientos` : "Aún no hay suficientes movimientos en el rango.",
+      meta: leadingLine
+        ? `${fmt(leadingLine.total)} en ${leadingLine.cantidad} movimientos`
+        : "Aún no hay suficientes movimientos en el rango.",
     },
     {
       label: "Método dominante",
       value: formatIncomeText(leadingMethod?.metodo_pago),
-      meta: leadingMethod ? `${fmt(leadingMethod.total)} procesados por este medio` : "Sin datos de medios de pago en el rango.",
+      meta: leadingMethod
+        ? `${fmt(leadingMethod.total)} procesados por este medio`
+        : "Sin datos de medios de pago en el rango.",
     },
     {
       label: "Categoría principal",
       value: formatIncomeText(leadingCategory?.categoria),
-      meta: leadingCategory ? `${fmt(leadingCategory.total)} generados en esta categoría` : "Sin datos de categorías en el rango.",
+      meta: leadingCategory
+        ? `${fmt(leadingCategory.total)} generados en esta categoría`
+        : "Sin datos de categorías en el rango.",
     },
     {
       label: "Concepto que más recauda",
       value: leadingConcept?.concepto || "Sin datos suficientes",
-      meta: leadingConcept ? `${fmt(leadingConcept.total)} en ${leadingConcept.cantidad} movimientos` : "No hay conceptos dominantes para mostrar.",
+      meta: leadingConcept
+        ? `${fmt(leadingConcept.total)} en ${leadingConcept.cantidad} movimientos`
+        : "No hay conceptos dominantes para mostrar.",
     },
   ];
 
@@ -299,97 +323,104 @@ export default function IngresosPage() {
 
   const [exportingFormat, setExportingFormat] = useState<"csv" | "xls" | null>(null);
 
-  const handleExport = useCallback(async (format: "csv" | "xls") => {
-    if (!perfil?.escuela_id) return;
-    setExportingFormat(format);
+  const handleExport = useCallback(
+    async (format: "csv" | "xls") => {
+      if (!perfil?.escuela_id) return;
+      setExportingFormat(format);
 
-    const { from, to } = getMonthDateRange(Number(filtroYear), filtroMes);
-    const params = new URLSearchParams({
-      from,
-      to,
-      page: "0",
-      pageSize: "10000",
-    });
-    if (searchTerm) params.set("q", searchTerm);
-    if (filtroAlumno) params.set("alumno_id", filtroAlumno);
-    if (filtroMetodo) params.set("metodo", filtroMetodo);
-    if (filtroCategoria) params.set("categoria", filtroCategoria);
-    if (filtroEstado) params.set("estado", filtroEstado);
-    if (filtroView !== "all") params.set("view", filtroView);
+      const { from, to } = getMonthDateRange(Number(filtroYear), filtroMes);
+      const params = new URLSearchParams({
+        from,
+        to,
+        page: "0",
+        pageSize: "10000",
+      });
+      if (searchTerm) params.set("q", searchTerm);
+      if (filtroAlumno) params.set("alumno_id", filtroAlumno);
+      if (filtroMetodo) params.set("metodo", filtroMetodo);
+      if (filtroCategoria) params.set("categoria", filtroCategoria);
+      if (filtroEstado) params.set("estado", filtroEstado);
+      if (filtroView !== "all") params.set("view", filtroView);
 
-    try {
-      const payload = await fetchIncomeDashboard(params, { useCache: false });
-      const rows = payload.ledger?.rows || [];
-      if (rows.length === 0) return;
-      const filenameBase = `libro-ingresos-${filtroYear}${filtroMes ? `-${filtroMes}` : ""}`;
-      const ledgerHeaders = [
-        "Fecha",
-        "Categoría",
-        "Concepto",
-        "Monto",
-        "Estado",
-        "Método",
-        "Factura",
-        "Contraparte",
-        "Documento",
-      ];
-      const ledgerRows = rows.map((r) => [
-        r.fecha,
-        r.categoria.replace(/_/g, " "),
-        r.concepto,
-        r.monto,
-        r.estado,
-        r.metodo_pago || "",
-        r.numero_factura || "",
-        r.contraparte || "",
-        r.documento || "",
-      ]);
+      try {
+        const payload = await fetchIncomeDashboard(params, { useCache: false });
+        const rows = payload.ledger?.rows || [];
+        if (rows.length === 0) return;
+        const filenameBase = `libro-ingresos-${filtroYear}${filtroMes ? `-${filtroMes}` : ""}`;
+        const ledgerHeaders = [
+          "Fecha",
+          "Categoría",
+          "Concepto",
+          "Monto",
+          "Estado",
+          "Método",
+          "Factura",
+          "Contraparte",
+          "Documento",
+        ];
+        const ledgerRows = rows.map((r) => [
+          r.fecha,
+          r.categoria.replace(/_/g, " "),
+          r.concepto,
+          r.monto,
+          r.estado,
+          r.metodo_pago || "",
+          r.numero_factura || "",
+          r.contraparte || "",
+          r.documento || "",
+        ]);
 
-      if (format === "csv") {
-        downloadCsv(`${filenameBase}.csv`, ledgerHeaders, ledgerRows);
-        return;
+        if (format === "csv") {
+          downloadCsv(`${filenameBase}.csv`, ledgerHeaders, ledgerRows);
+          return;
+        }
+
+        await downloadSpreadsheetWorkbook(`${filenameBase}.xls`, [
+          {
+            name: "Resumen",
+            headers: ["Indicador", "Valor"],
+            rows: [
+              ["Ingresos cobrados", payload.summary?.ingresosCobrados || 0],
+              ["Pendiente por cobrar", payload.summary?.ingresosPendientes || 0],
+              ["Ingresos anulados", payload.summary?.ingresosAnulados || 0],
+              ["Ticket promedio", payload.summary?.ticketPromedio || 0],
+              [
+                "Cobranza efectiva (%)",
+                Number((payload.summary?.cobranzaPorcentaje || 0).toFixed(2)),
+              ],
+              ["Movimientos cobrados", payload.summary?.movimientosCobrados || 0],
+              ["Registros con saldo pendiente", payload.summary?.movimientosPendientes || 0],
+            ],
+          },
+          {
+            name: "Libro de ingresos",
+            headers: ledgerHeaders,
+            rows: ledgerRows,
+          },
+        ]);
+      } catch {
+        // silent
+      } finally {
+        setExportingFormat(null);
       }
-
-      await downloadSpreadsheetWorkbook(`${filenameBase}.xls`, [
-        {
-          name: "Resumen",
-          headers: ["Indicador", "Valor"],
-          rows: [
-            ["Ingresos cobrados", payload.summary?.ingresosCobrados || 0],
-            ["Pendiente por cobrar", payload.summary?.ingresosPendientes || 0],
-            ["Ingresos anulados", payload.summary?.ingresosAnulados || 0],
-            ["Ticket promedio", payload.summary?.ticketPromedio || 0],
-            ["Cobranza efectiva (%)", Number((payload.summary?.cobranzaPorcentaje || 0).toFixed(2))],
-            ["Movimientos cobrados", payload.summary?.movimientosCobrados || 0],
-            ["Registros con saldo pendiente", payload.summary?.movimientosPendientes || 0],
-          ],
-        },
-        {
-          name: "Libro de ingresos",
-          headers: ledgerHeaders,
-          rows: ledgerRows,
-        },
-      ]);
-    } catch {
-      // silent
-    } finally {
-      setExportingFormat(null);
-    }
-  }, [
-    perfil?.escuela_id,
-    filtroYear,
-    filtroMes,
-    searchTerm,
-    filtroAlumno,
-    filtroMetodo,
-    filtroCategoria,
-    filtroEstado,
-    filtroView,
-  ]);
+    },
+    [
+      perfil?.escuela_id,
+      filtroYear,
+      filtroMes,
+      searchTerm,
+      filtroAlumno,
+      filtroMetodo,
+      filtroCategoria,
+      filtroEstado,
+      filtroView,
+    ]
+  );
 
   // ─── Handlers ───────────────────────────────────────────────────
 
   const openCreate = () => {
+    if (!canCreateIncome) return;
     setEditing(null);
     restoreDraft(emptyForm);
     setError("");
@@ -397,6 +428,7 @@ export default function IngresosPage() {
   };
 
   const openEdit = (row: IncomeLedgerRow) => {
+    if (!canEditIncome) return;
     setEditing(row);
     setForm({
       alumno_id: "",
@@ -417,6 +449,7 @@ export default function IngresosPage() {
   };
 
   const openDelete = (row: IncomeLedgerRow) => {
+    if (!canDeleteIncome) return;
     setDeleting(row);
     setDeleteOpen(true);
   };
@@ -431,6 +464,7 @@ export default function IngresosPage() {
   };
 
   const handleSave = async () => {
+    if (editing ? !canEditIncome : !canCreateIncome) return;
     if (!form.concepto || !form.monto) {
       setError("Concepto y monto son obligatorios.");
       return;
@@ -529,6 +563,7 @@ export default function IngresosPage() {
   };
 
   const handleDelete = async () => {
+    if (!canDeleteIncome) return;
     if (!deleting) return;
     setSaving(true);
     try {
@@ -577,14 +612,16 @@ export default function IngresosPage() {
         description="Supervisa el recaudo del periodo, entiende de dónde entra el dinero y baja al libro operativo solo cuando necesites editar o exportar movimientos."
         actions={
           <>
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex items-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
-            >
-              <Plus size={16} />
-              Registrar ingreso
-            </button>
+            {canCreateIncome ? (
+              <button
+                type="button"
+                onClick={openCreate}
+                className="inline-flex items-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
+              >
+                <Plus size={16} />
+                Registrar ingreso
+              </button>
+            ) : null}
             <ExportFormatActions
               exportingFormat={exportingFormat}
               disabled={loading || totalCount === 0}
@@ -595,11 +632,7 @@ export default function IngresosPage() {
         }
       />
 
-      <IncomeOverviewSection
-        loading={loading}
-        summary={summary}
-        formatMoney={fmt}
-      />
+      <IncomeOverviewSection loading={loading} summary={summary} formatMoney={fmt} />
 
       <IncomeViewSection
         value={filtroView}
@@ -680,8 +713,8 @@ export default function IngresosPage() {
           setSearchTerm(term);
           setCurrentPage(0);
         }}
-        onEdit={openEdit}
-        onDelete={openDelete}
+        onEdit={canEditIncome ? openEdit : undefined}
+        onDelete={canDeleteIncome ? openDelete : undefined}
       />
 
       <IngresoModal

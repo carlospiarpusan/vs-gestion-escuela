@@ -4,7 +4,13 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import PerformanceVitals from "@/components/PerformanceVitals";
 import { DeviceVariantProvider } from "@/contexts/DeviceVariantContext";
-import { SITE_NAME, siteUrl } from "@/lib/site-metadata";
+import {
+  googleSiteVerification,
+  SITE_DESCRIPTION,
+  SITE_NAME,
+  SITE_SHARE_IMAGE_PATH,
+  siteUrl,
+} from "@/lib/site-metadata";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -20,29 +26,62 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: siteUrl,
   title: {
-    default: `${SITE_NAME} | Software para autoescuelas en Colombia`,
+    default: `${SITE_NAME} | Software líder para autoescuelas en Colombia (CEA)`,
     template: `%s | ${SITE_NAME}`,
   },
-  description:
-    "Software para autoescuelas y escuelas de conducción en Colombia. Controla alumnos, clases, ingresos, cartera, gastos, flota y operación diaria desde una sola plataforma.",
+  description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
+  authors: [{ name: SITE_NAME, url: siteUrl.toString() }],
+  publisher: SITE_NAME,
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  category: "software",
+  verification: {
+    google: googleSiteVerification ?? undefined,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    nocache: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
   alternates: {
     canonical: "/",
+    languages: {
+      "es-CO": "/",
+    },
   },
   openGraph: {
-    title: `${SITE_NAME} | Software para autoescuelas en Colombia`,
-    description:
-      "Plataforma para escuelas de conducción en Colombia con alumnos, agenda, finanzas, flota y operación diaria en un solo sistema.",
+    title: `${SITE_NAME} | Gestión profesional de autoescuelas en Colombia`,
+    description: SITE_DESCRIPTION,
     url: "/",
     siteName: SITE_NAME,
     locale: "es_CO",
     type: "website",
+    images: [
+      {
+        url: SITE_SHARE_IMAGE_PATH,
+        width: 1200,
+        height: 630,
+        alt: `${SITE_NAME} | Software para autoescuelas en Colombia`,
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: `${SITE_NAME} | Software para autoescuelas en Colombia`,
-    description:
-      "Gestión de autoescuelas en Colombia con alumnos, agenda, ingresos, cartera, gastos y flota.",
+    title: `${SITE_NAME} | Software líder para autoescuelas en Colombia`,
+    description: SITE_DESCRIPTION,
+    images: [SITE_SHARE_IMAGE_PATH],
+    creator: "@condusoft",
   },
 };
 
@@ -59,6 +98,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" data-device-variant="desktop">
+      <head>
+        <link rel="preconnect" href="https://va.vercel-scripts.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://vitals.vercel-insights.com" crossOrigin="anonymous" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         data-device-variant="desktop"

@@ -26,6 +26,7 @@ import {
 } from "@/lib/dashboard-client-cache";
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
 import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type { Clase, TipoClase, EstadoClase, Alumno, Instructor, Vehiculo } from "@/types/database";
 import { Plus } from "lucide-react";
 
@@ -59,6 +60,16 @@ type ClasesListResponse = {
 export default function ClasesPage() {
   const { perfil } = useAuth();
   const escuelaId = perfil?.escuela_id ?? null;
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreateClass = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "classes", "create")
+    : true;
+  const canEditClass = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "classes", "edit")
+    : true;
+  const canDeleteClass = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "classes", "delete")
+    : true;
 
   // Estado principal: lista de clases con nombres resueltos
   const [data, setData] = useState<ClaseRow[]>([]);
@@ -193,6 +204,7 @@ export default function ClasesPage() {
 
   /** Abre el modal en modo creacion con el formulario vacio */
   const openCreate = () => {
+    if (!canCreateClass) return;
     setEditing(null);
     setForm(emptyForm);
     setError("");
@@ -201,6 +213,7 @@ export default function ClasesPage() {
 
   /** Abre el modal en modo edicion con los datos de la clase seleccionada */
   const openEdit = (row: Clase) => {
+    if (!canEditClass) return;
     setEditing(row);
     setForm({
       alumno_id: row.alumno_id,
@@ -219,6 +232,7 @@ export default function ClasesPage() {
 
   /** Abre el dialogo de confirmacion de borrado */
   const openDelete = (row: Clase) => {
+    if (!canDeleteClass) return;
     setDeleting(row);
     setDeleteOpen(true);
   };
@@ -229,6 +243,7 @@ export default function ClasesPage() {
    * para capturar errores de red inesperados.
    */
   const handleSave = async () => {
+    if (editing ? !canEditClass : !canCreateClass) return;
     // Validacion de campos obligatorios
     if (!form.alumno_id || !form.fecha || !form.hora_inicio || !form.hora_fin) {
       setError("Alumno, fecha, hora inicio y hora fin son obligatorios.");
@@ -331,6 +346,7 @@ export default function ClasesPage() {
    * Envuelto en try/catch para manejar errores de red o de la base de datos.
    */
   const handleDelete = async () => {
+    if (!canDeleteClass) return;
     if (!deleting) return;
     setSaving(true);
 
@@ -427,12 +443,14 @@ export default function ClasesPage() {
           </h2>
           <p className="mt-2 text-lg font-medium text-[#86868b]">Programa y gestiona las clases</p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
-        >
-          <Plus size={16} /> Nueva Clase
-        </button>
+        {canCreateClass ? (
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
+          >
+            <Plus size={16} /> Nueva Clase
+          </button>
+        ) : null}
       </div>
 
       {/* Tabla principal de clases */}
@@ -448,8 +466,8 @@ export default function ClasesPage() {
           loading={loading}
           searchPlaceholder="Buscar por fecha, tipo, estado..."
           searchTerm={searchTerm}
-          onEdit={openEdit}
-          onDelete={openDelete}
+          onEdit={canEditClass ? openEdit : undefined}
+          onDelete={canDeleteClass ? openDelete : undefined}
           serverSide
           totalCount={totalCount}
           currentPage={currentPage}

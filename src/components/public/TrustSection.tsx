@@ -21,8 +21,8 @@ export default function TrustSection() {
             Decisiones basadas en datos, no en intuición
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg">
-            AutoEscuela Pro no es una herramienta más. Es la base tecnológica diseñada
-            específicamente para elevar los estándares de las escuelas líderes.
+            Condusoft no es una herramienta genérica. Es una base operativa diseñada específicamente
+            para autoescuelas y escuelas de conducción en Colombia.
           </p>
         </div>
 

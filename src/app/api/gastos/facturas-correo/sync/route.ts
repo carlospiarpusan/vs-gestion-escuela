@@ -7,11 +7,12 @@ import {
   resolveEscuelaIdForRequest,
 } from "@/lib/api-auth";
 import { syncEmailInvoiceIntegrationBySchool } from "@/lib/email-invoice-sync";
+import { getAuditedRolesForCapabilityAction } from "@/lib/role-capabilities";
 import type { Rol } from "@/types/database";
 
 export const runtime = "nodejs";
 
-const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
+const ALLOWED_ROLES: Rol[] = getAuditedRolesForCapabilityAction("automation", "sync");
 
 const syncSchema = z.object({
   escuela_id: z.string().uuid().optional(),

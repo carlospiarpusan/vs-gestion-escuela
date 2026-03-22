@@ -1,22 +1,29 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Features from "@/components/Features";
-import HowItWorks from "@/components/HowItWorks";
-import Pricing from "@/components/Pricing";
-import CTA from "@/components/CTA";
-import Footer from "@/components/Footer";
-import FAQ from "@/components/public/FAQ";
-import TrustSection from "@/components/public/TrustSection";
-import { faqItems, HOME_KEYWORDS } from "@/lib/public-site-content";
-import { buildPublicMetadata, SITE_NAME, siteUrl } from "@/lib/site-metadata";
+
+const HowItWorks = dynamic(() => import("@/components/HowItWorks"));
+const Pricing = dynamic(() => import("@/components/Pricing"));
+const CTA = dynamic(() => import("@/components/CTA"));
+const Footer = dynamic(() => import("@/components/Footer"));
+const FAQ = dynamic(() => import("@/components/public/FAQ"));
+const TrustSection = dynamic(() => import("@/components/public/TrustSection"));
+import { faqItems } from "@/lib/public-site-content";
+import {
+  buildPublicMetadata,
+  SITE_DESCRIPTION,
+  SITE_KEYWORDS,
+  SITE_NAME,
+  siteUrl,
+} from "@/lib/site-metadata";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "Software para autoescuelas en Colombia",
-  description:
-    "Software para autoescuelas y escuelas de conducción en Colombia. Gestiona alumnos, matrículas, clases, ingresos, cartera, gastos, flota y sedes desde una sola plataforma.",
+  title: "Condusoft | El mejor software para autoescuelas en Colombia (CEA)",
+  description: SITE_DESCRIPTION,
   path: "/",
-  keywords: HOME_KEYWORDS,
+  keywords: SITE_KEYWORDS,
 });
 
 export default function Home() {
@@ -24,17 +31,53 @@ export default function Home() {
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "WebSite",
+        "@id": `${siteUrl}#website`,
+        url: siteUrl.toString(),
+        name: SITE_NAME,
+        description: SITE_DESCRIPTION,
+        inLanguage: "es-CO",
+        publisher: { "@id": `${siteUrl}#organization` },
+        potentialAction: [
+          {
+            "@type": "SearchAction",
+            target: {
+              "@type": "EntryPoint",
+              urlTemplate: `${siteUrl}?s={search_term_string}`,
+            },
+            "query-input": "required name=search_term_string",
+          },
+        ],
+      },
+      {
         "@type": "Organization",
         "@id": `${siteUrl}#organization`,
         name: SITE_NAME,
+        alternateName: "Condusoft.co",
         url: siteUrl.toString(),
-        areaServed: "CO",
+        logo: {
+          "@type": "ImageObject",
+          url: `${siteUrl}icon.png`,
+        },
+        sameAs: ["https://www.linkedin.com/company/condusoft", "https://facebook.com/condusoftco"],
+        areaServed: {
+          "@type": "Country",
+          name: "Colombia",
+        },
+        contactPoint: {
+          "@type": "ContactPoint",
+          telephone: "+57XXXXXXXXXX",
+          contactType: "sales",
+          areaServed: "CO",
+          availableLanguage: "Spanish",
+        },
         knowsAbout: [
           "Software para autoescuelas",
           "Escuelas de conducción",
           "Gestión de alumnos",
           "Gestión financiera",
           "Gestión de flota",
+          "Centros de Enseñanza Automovilística (CEA)",
         ],
       },
       {
@@ -44,14 +87,17 @@ export default function Home() {
         applicationCategory: "BusinessApplication",
         operatingSystem: "Web",
         areaServed: "CO",
+        brand: {
+          "@type": "Brand",
+          name: SITE_NAME,
+        },
         offers: {
           "@type": "Offer",
           price: "0",
           priceCurrency: "COP",
-          description: "Demo guiada y evaluación comercial según la operación de la autoescuela.",
+          description: "Planes flexibles según el tamaño de la autoescuela.",
         },
-        description:
-          "Software para autoescuelas y escuelas de conducción en Colombia con alumnos, matrículas, clases, ingresos, cartera, gastos, flota y sedes.",
+        description: SITE_DESCRIPTION,
         url: siteUrl.toString(),
       },
       {
@@ -76,13 +122,15 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <Navbar />
-      <Hero />
-      <Features />
-      <HowItWorks />
-      <TrustSection />
-      <Pricing />
-      <FAQ />
-      <CTA />
+      <main id="main-content">
+        <Hero />
+        <Features />
+        <HowItWorks />
+        <TrustSection />
+        <Pricing />
+        <FAQ />
+        <CTA />
+      </main>
       <Footer />
     </div>
   );

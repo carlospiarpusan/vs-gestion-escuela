@@ -22,11 +22,11 @@ export default function Features() {
             Funciones del producto
           </span>
           <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">
-            Visibilidad real, sin promesas vacías
+            Qué hace hoy Condusoft y qué viene después
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg">
-            Todo lo que necesitas para operar hoy mismo, más nuestra visión de mejoras continuas
-            diseñadas inteligentemente.
+            Google y tus clientes deben ver lo mismo que ya existe en el producto: operación real
+            hoy, y mejoras futuras claramente separadas.
           </p>
         </div>
 

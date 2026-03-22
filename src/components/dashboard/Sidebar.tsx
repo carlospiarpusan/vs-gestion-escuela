@@ -33,7 +33,8 @@ export default function Sidebar({
   const collapsedDesktop = collapsed && !open;
   const scopeControlContent =
     typeof scopeControl === "function" ? scopeControl({ compact: collapsedDesktop }) : scopeControl;
-  const footerContent = typeof footer === "function" ? footer({ compact: collapsedDesktop }) : footer;
+  const footerContent =
+    typeof footer === "function" ? footer({ compact: collapsedDesktop }) : footer;
 
   const renderModuleLink = (
     module: (typeof navigation)[number]["modules"][number],
@@ -49,9 +50,7 @@ export default function Sidebar({
         aria-current={active ? "page" : undefined}
         title={compact ? module.label : undefined}
         className={`group flex items-center gap-3 rounded-2xl transition-all ${
-          compact
-            ? "justify-center px-2 py-3"
-            : "px-4 py-3"
+          compact ? "justify-center px-2 py-3" : "px-4 py-3"
         } ${
           active
             ? "bg-[linear-gradient(135deg,var(--brand-600),var(--brand-500))] text-white shadow-[0_18px_34px_rgba(37,99,235,0.22)]"
@@ -106,17 +105,17 @@ export default function Sidebar({
         aria-label="Menú de navegación"
       >
         <div className="apple-panel flex h-full flex-col overflow-hidden">
-          <div className={`flex items-center justify-between ${collapsedDesktop ? "px-3 py-4" : "px-5 py-4"}`}>
+          <div
+            className={`flex items-center justify-between ${collapsedDesktop ? "px-3 py-4" : "px-5 py-4"}`}
+          >
             {collapsedDesktop ? (
               <span className="apple-brand-mark mx-auto flex h-10 w-10 items-center justify-center text-sm font-semibold">
                 A
               </span>
             ) : (
               <div>
-                <p className="apple-kicker">
-                  AutoEscuela Pro
-                </p>
-                <span className="text-lg font-semibold tracking-tight text-foreground">
+                <p className="apple-kicker">Condusoft</p>
+                <span className="text-foreground text-lg font-semibold tracking-tight">
                   Operación ordenada
                 </span>
               </div>
@@ -145,9 +144,7 @@ export default function Sidebar({
               <section key={area.id}>
                 {!collapsedDesktop && area.id !== "overview" ? (
                   <div className="mb-2 px-2">
-                    <p className="apple-kicker">
-                      {area.label}
-                    </p>
+                    <p className="apple-kicker">{area.label}</p>
                     <p className="apple-copy mt-1 text-xs leading-5">{area.description}</p>
                   </div>
                 ) : null}
@@ -159,7 +156,9 @@ export default function Sidebar({
             ))}
           </nav>
 
-          {footerContent ? <div className="border-t border-[var(--surface-border)] pt-3">{footerContent}</div> : null}
+          {footerContent ? (
+            <div className="border-t border-[var(--surface-border)] pt-3">{footerContent}</div>
+          ) : null}
         </div>
       </aside>
     </>

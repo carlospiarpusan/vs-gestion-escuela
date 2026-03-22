@@ -11,7 +11,229 @@ import {
 import { createEscuelaSchema } from "@/lib/schemas";
 import { getServerDbPool } from "@/lib/server-db";
 import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
+import { getServerReadCached, revalidateServerReadCache } from "@/lib/server-read-cache";
+import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 
+type EscuelaEnriquecida = {
+  id: string;
+  nombre: string;
+  cif: string | null;
+  telefono: string | null;
+  email: string | null;
+  direccion: string | null;
+  categorias: string[] | null;
+  plan: string;
+  estado: string;
+  max_alumnos: number;
+  max_sedes: number;
+  fecha_alta: string | null;
+  created_at: string;
+  alumnos_activos: number;
+  sedes_activas: number;
+  sedes_total: number;
+  instructores_activos: number;
+  admin_nombre: string | null;
+  admin_email: string | null;
+  admin_ultimo_acceso: string | null;
+  ingresos_mes: number;
+  clases_mes: number;
+};
+
+/* ------------------------------------------------------------------ */
+/*  GET  /api/escuelas — listado enriquecido para superadmin           */
+/* ------------------------------------------------------------------ */
+export async function GET() {
+  const authz = await authorizeApiRequest(["super_admin"]);
+  if (!authz.ok) return authz.response;
+
+  try {
+    const pool = getServerDbPool();
+    const cacheKey = `platform:escuelas-enriched:${authz.perfil.id}`;
+
+    const escuelas = await getServerReadCached<EscuelaEnriquecida[]>({
+      key: cacheKey,
+      ttlMs: 60_000,
+      tags: [...buildDashboardListCacheTags("escuelas"), "superadmin"],
+      loader: async () => {
+        const result = await pool.query<EscuelaEnriquecida>(
+          `
+          with sedes_agg as (
+            select
+              escuela_id,
+              count(*)::int as sedes_total,
+              count(*) filter (where estado = 'activa')::int as sedes_activas
+            from public.sedes
+            group by escuela_id
+          ),
+          alumnos_agg as (
+            select
+              escuela_id,
+              count(*)::int as alumnos_activos
+            from public.alumnos
+            where tipo_registro = 'regular'
+              and estado in ('activo', 'pre_registrado')
+            group by escuela_id
+          ),
+          instructores_agg as (
+            select
+              escuela_id,
+              count(*)::int as instructores_activos
+            from public.instructores
+            where estado = 'activo'
+            group by escuela_id
+          ),
+          admin_agg as (
+            select distinct on (escuela_id)
+              escuela_id,
+              nombre as admin_nombre,
+              email as admin_email,
+              ultimo_acceso as admin_ultimo_acceso
+            from public.perfiles
+            where rol = 'admin_escuela' and activo = true
+            order by escuela_id, created_at asc
+          ),
+          ingresos_agg as (
+            select
+              escuela_id,
+              coalesce(sum(monto), 0)::numeric as ingresos_mes
+            from public.ingresos
+            where estado = 'cobrado'
+              and fecha >= date_trunc('month', current_date)
+              and fecha < date_trunc('month', current_date) + interval '1 month'
+            group by escuela_id
+          ),
+          clases_agg as (
+            select
+              escuela_id,
+              count(*)::int as clases_mes
+            from public.clases
+            where fecha >= date_trunc('month', current_date)
+              and fecha < date_trunc('month', current_date) + interval '1 month'
+            group by escuela_id
+          )
+          select
+            e.id,
+            e.nombre,
+            e.cif,
+            e.telefono,
+            e.email,
+            e.direccion,
+            e.categorias,
+            e.plan,
+            e.estado,
+            e.max_alumnos,
+            e.max_sedes,
+            e.fecha_alta::text,
+            e.created_at::text,
+            coalesce(al.alumnos_activos, 0)::int as alumnos_activos,
+            coalesce(s.sedes_activas, 0)::int as sedes_activas,
+            coalesce(s.sedes_total, 0)::int as sedes_total,
+            coalesce(i.instructores_activos, 0)::int as instructores_activos,
+            ad.admin_nombre,
+            ad.admin_email,
+            ad.admin_ultimo_acceso::text,
+            coalesce(ing.ingresos_mes, 0)::numeric as ingresos_mes,
+            coalesce(cl.clases_mes, 0)::int as clases_mes
+          from public.escuelas e
+          left join sedes_agg s on s.escuela_id = e.id
+          left join alumnos_agg al on al.escuela_id = e.id
+          left join instructores_agg i on i.escuela_id = e.id
+          left join admin_agg ad on ad.escuela_id = e.id
+          left join ingresos_agg ing on ing.escuela_id = e.id
+          left join clases_agg cl on cl.escuela_id = e.id
+          order by e.created_at desc
+          `
+        );
+        return result.rows.map((r) => ({
+          ...r,
+          max_alumnos: Number(r.max_alumnos),
+          max_sedes: Number(r.max_sedes),
+          alumnos_activos: Number(r.alumnos_activos),
+          sedes_activas: Number(r.sedes_activas),
+          sedes_total: Number(r.sedes_total),
+          instructores_activos: Number(r.instructores_activos),
+          ingresos_mes: Number(r.ingresos_mes),
+          clases_mes: Number(r.clases_mes),
+        }));
+      },
+    });
+
+    return NextResponse.json({ escuelas });
+  } catch (error) {
+    console.error("Error al cargar escuelas enriquecidas:", error);
+    return NextResponse.json({ error: "No se pudieron cargar las escuelas." }, { status: 500 });
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  PATCH  /api/escuelas — edición rápida de escuela                   */
+/* ------------------------------------------------------------------ */
+export async function PATCH(request: Request) {
+  const authz = await authorizeApiRequest(["super_admin"]);
+  if (!authz.ok) return authz.response;
+
+  try {
+    const body = await request.json();
+    const escuelaId = body.id;
+
+    if (!escuelaId || typeof escuelaId !== "string") {
+      return NextResponse.json({ error: "ID de escuela requerido." }, { status: 400 });
+    }
+
+    const updates: string[] = [];
+    const values: (string | number | string[] | null)[] = [];
+    let idx = 1;
+
+    const allowedFields: Record<string, (v: unknown) => string | number | string[] | null> = {
+      nombre: (v) => String(v).trim(),
+      cif: (v) => String(v).trim(),
+      telefono: (v) => (v ? String(v).trim() : null),
+      email: (v) => (v ? String(v).trim().toLowerCase() : null),
+      direccion: (v) => (v ? String(v).trim() : null),
+      plan: (v) => String(v),
+      estado: (v) => String(v),
+      max_alumnos: (v) => Math.max(1, Math.round(Number(v))),
+      max_sedes: (v) => Math.max(1, Math.round(Number(v))),
+      categorias: (v) => (Array.isArray(v) ? v : []),
+    };
+
+    for (const [field, transform] of Object.entries(allowedFields)) {
+      if (body[field] !== undefined) {
+        updates.push(`${field} = $${idx++}`);
+        values.push(transform(body[field]));
+      }
+    }
+
+    if (updates.length === 0) {
+      return NextResponse.json({ error: "Sin campos para actualizar." }, { status: 400 });
+    }
+
+    values.push(escuelaId);
+    const pool = getServerDbPool();
+    const result = await pool.query(
+      `update public.escuelas set ${updates.join(", ")} where id = $${idx} returning id`,
+      values
+    );
+
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Escuela no encontrada." }, { status: 404 });
+    }
+
+    revalidateServerReadCache([...buildDashboardListCacheTags("escuelas"), "superadmin"]);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error al actualizar escuela:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error al actualizar." },
+      { status: 500 }
+    );
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  POST  /api/escuelas — crear escuela + admin (existente)            */
+/* ------------------------------------------------------------------ */
 export async function POST(request: Request) {
   let createdAuthUserId: string | null = null;
 

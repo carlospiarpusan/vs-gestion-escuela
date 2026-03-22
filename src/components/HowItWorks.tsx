@@ -6,7 +6,7 @@ const steps = [
     number: "01",
     title: "Crea tu cuenta o solicita una demo",
     description:
-      "Empieza con una prueba guiada del sistema o crea la cuenta para dejar lista la base de tu autoescuela.",
+      "Empieza con una prueba guiada de Condusoft o crea la cuenta para dejar lista la base de tu autoescuela.",
   },
   {
     number: "02",
@@ -26,13 +26,13 @@ export default function HowItWorks() {
   return (
     <section
       id="how-it-works"
-      className="relative overflow-hidden bg-background py-16 sm:py-24 md:py-32"
+      className="bg-background relative overflow-hidden py-16 sm:py-24 md:py-32"
     >
       <div className="mx-auto max-w-[980px] px-6">
         <SectionIntro
           badge="Implementación simple"
           title="Una puesta en marcha pensada para autoescuelas que necesitan operar rápido"
-          description="La propuesta no es llenarte de configuración. Es dejar la base lista para empezar a controlar alumnos, agenda, finanzas y flota con una estructura clara."
+          description="Condusoft no busca llenarte de configuración. Busca dejar la base lista para controlar alumnos, agenda, finanzas y flota con una estructura clara."
         />
 
         <div className="grid gap-5">
@@ -41,11 +41,11 @@ export default function HowItWorks() {
               key={step.number}
               className="apple-panel-muted grid gap-5 rounded-[28px] p-5 sm:grid-cols-[96px_minmax(0,1fr)] sm:p-6"
             >
-              <div className="text-5xl font-bold tracking-tighter text-[color:color-mix(in_srgb,var(--brand-400)_16%,white)] dark:text-[color:color-mix(in_srgb,var(--brand-400)_34%,black)] sm:text-6xl">
+              <div className="text-5xl font-bold tracking-tighter text-[color:color-mix(in_srgb,var(--brand-400)_16%,white)] sm:text-6xl dark:text-[color:color-mix(in_srgb,var(--brand-400)_34%,black)]">
                 {step.number}
               </div>
               <div>
-                <h3 className="text-2xl font-semibold text-foreground">{step.title}</h3>
+                <h3 className="text-foreground text-2xl font-semibold">{step.title}</h3>
                 <p className="apple-copy mt-3 text-sm leading-7 sm:text-[15px]">
                   {step.description}
                 </p>

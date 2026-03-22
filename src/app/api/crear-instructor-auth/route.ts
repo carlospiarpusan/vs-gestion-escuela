@@ -12,16 +12,14 @@ import {
   isAuthUserAlreadyRegisteredError,
 } from "@/lib/api-auth";
 import { createInstructorSchema } from "@/lib/schemas";
+import { getAuditedRolesForCapabilityAction } from "@/lib/role-capabilities";
 import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
+
+const CREATOR_ROLES = getAuditedRolesForCapabilityAction("instructors", "create");
 
 export async function POST(request: Request) {
   try {
-    const authz = await authorizeApiRequest([
-      "super_admin",
-      "admin_escuela",
-      "admin_sede",
-      "administrativo",
-    ]);
+    const authz = await authorizeApiRequest(CREATOR_ROLES);
     if (!authz.ok) return authz.response;
 
     const limiter = await rateLimit(
