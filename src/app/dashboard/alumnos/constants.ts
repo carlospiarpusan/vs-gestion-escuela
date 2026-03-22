@@ -128,6 +128,7 @@ export const emptyForm = {
   tiene_tramitador: false,
   tramitador_nombre: "",
   tramitador_valor: "",
+  consentimiento_datos: false,
 };
 
 export const emptyMatriculaForm = {

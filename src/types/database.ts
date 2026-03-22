@@ -146,6 +146,8 @@ export interface Alumno {
   tiene_tramitador: boolean;
   tramitador_nombre: string | null;
   tramitador_valor: number | null;
+  consentimiento_datos: boolean;
+  consentimiento_fecha: string | null;
   created_at: string;
 }
 
@@ -182,6 +184,8 @@ export interface Instructor {
   especialidades: string[] | null;
   estado: EstadoInstructor;
   color: string;
+  consentimiento_datos: boolean;
+  consentimiento_fecha: string | null;
   created_at: string;
 }
 
@@ -478,6 +482,21 @@ export interface NominaConcepto {
   created_at: string;
 }
 
+// ── Planes Config ───────────────────────────────────────────────────
+export interface PlanConfig {
+  id: PlanEscuela;
+  nombre: string;
+  descripcion: string | null;
+  precio_mensual: number;
+  max_alumnos_default: number;
+  max_sedes_default: number;
+  caracteristicas: string[];
+  activo: boolean;
+  updated_by: string | null;
+  updated_at: string;
+  created_at: string;
+}
+
 export interface Evaluacion {
   id: string;
   titulo: string;
@@ -494,5 +513,25 @@ export interface Pregunta {
   opciones: string[];
   respuesta_correcta: number;
   orden: number;
+  created_at: string;
+}
+
+// ── Solicitudes ARCO (Habeas Data) ──────────────────────────────────
+export type TipoSolicitudArco = "acceso" | "rectificacion" | "cancelacion" | "oposicion";
+export type EstadoSolicitudArco = "pendiente" | "en_proceso" | "completada" | "rechazada";
+
+export interface SolicitudArco {
+  id: string;
+  escuela_id: string | null;
+  tipo: TipoSolicitudArco;
+  nombre: string;
+  dni: string;
+  email: string;
+  telefono: string | null;
+  descripcion: string;
+  estado: EstadoSolicitudArco;
+  respuesta: string | null;
+  responded_at: string | null;
+  responded_by: string | null;
   created_at: string;
 }

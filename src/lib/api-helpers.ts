@@ -1,106 +1,131 @@
 /**
- * Shared helpers for API route handlers.
+ * Shared utility functions for API routes.
  *
- * Extracts common patterns (parsing, WHERE-clause building, pagination)
- * that were duplicated across 7+ API routes.
- *
- * @module lib/api-helpers
+ * These helpers are used across multiple route handlers for parsing
+ * query-string parameters and coercing database values.
  */
 
-// ── Parsing ──────────────────────────────────────────────────────────
-
-/** Safely parse an integer from a query-string value with clamping. */
-export function parseInteger(value: string | null, fallback: number, min: number, max: number) {
+/**
+ * Parse a string value as an integer, clamped to [`min`, `max`].
+ *
+ * Returns `fallback` when the value is `null`, empty, or not a finite number.
+ *
+ * @example
+ * ```ts
+ * const page = parseInteger(searchParams.get("page"), 1, 1, 1000);
+ * const limit = parseInteger(searchParams.get("limit"), 20, 1, 100);
+ * ```
+ */
+export function parseInteger(
+  value: string | null,
+  fallback: number,
+  min: number,
+  max: number
+): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.floor(parsed)));
 }
 
-/** Coerce an unknown value to a number, treating falsy as 0. */
-export function toNumber(value: unknown) {
+/**
+ * Coerce an unknown value to a number.
+ *
+ * Treats falsy values (`null`, `undefined`, `""`, `0`) as `0`.
+ * Useful for normalizing numeric columns that may come back as
+ * strings from the database driver.
+ *
+ * @example
+ * ```ts
+ * const total = toNumber(row.total_pagado);
+ * ```
+ */
+export function toNumber(value: unknown): number {
   return Number(value || 0);
 }
 
-/** Split a comma-separated query param into a trimmed string array. */
-export function parseStringArray(value: string | null) {
+/**
+ * Split a comma-separated query-string value into a trimmed,
+ * non-empty string array.
+ *
+ * Returns an empty array when `value` is `null` or contains only
+ * whitespace / commas.
+ *
+ * @example
+ * ```ts
+ * const estados = parseStringArray(searchParams.get("estados"));
+ * // "activo, retirado" -> ["activo", "retirado"]
+ * // null               -> []
+ * ```
+ */
+export function parseStringArray(value: string | null): string[] {
   return (value ?? "")
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
 }
 
-// ── WHERE-clause builder ─────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// List endpoint helpers (shared across 9+ route handlers)
+// ---------------------------------------------------------------------------
 
-export type WhereBuilder = {
-  /** Parameterised values accumulated so far. */
-  values: Array<string | number>;
-  /** WHERE fragments (joined with AND). */
-  where: string[];
-  /** Push a value and return its `$N` placeholder. */
-  addValue: (value: string | number) => string;
-  /** Build the final `WHERE …` clause string (empty-safe). */
-  toSql: () => string;
-};
+/**
+ * Parse standard list query-string parameters (`q`, `page`, `pageSize`).
+ *
+ * @example
+ * ```ts
+ * const { search, page, pageSize } = parseListParams(url);
+ * ```
+ */
+export function parseListParams(url: URL) {
+  return {
+    search: (url.searchParams.get("q") ?? "").trim(),
+    page: parseInteger(url.searchParams.get("page"), 0, 0, 100_000),
+    pageSize: parseInteger(url.searchParams.get("pageSize"), 10, 1, 50),
+  };
+}
 
-/** Create a reusable WHERE-clause builder with parameterised placeholders. */
-export function createWhereBuilder(): WhereBuilder {
+/**
+ * Accumulator for building parameterised WHERE clauses.
+ *
+ * @example
+ * ```ts
+ * const wb = createWhereBuilder();
+ * wb.where.push(`t.escuela_id = ${wb.addValue(escuelaId)}`);
+ * const sql = wb.toSql(); // "t.escuela_id = $1"
+ * ```
+ */
+export function createWhereBuilder() {
   const values: Array<string | number> = [];
   const where: string[] = [];
 
-  const addValue = (value: string | number) => {
+  function addValue(value: string | number) {
     values.push(value);
     return `$${values.length}`;
-  };
+  }
 
-  const toSql = () => (where.length > 0 ? where.join(" AND ") : "TRUE");
+  function toSql() {
+    return where.length > 0 ? where.join(" AND ") : "true";
+  }
 
   return { values, where, addValue, toSql };
 }
 
-// ── Pagination ───────────────────────────────────────────────────────
-
-export type PaginationRefs = {
-  offset: number;
-  limitRef: string;
-  offsetRef: string;
-  /** Append pageSize and offset to the builder's values array. */
-  values: [number, number];
-};
-
 /**
- * Compute LIMIT / OFFSET placeholders for a parameterised query.
+ * Build `$N` placeholder references for LIMIT / OFFSET, positioned
+ * after the WHERE-clause parameter slots.
  *
- * Call **after** all WHERE values have been pushed so the placeholder
- * indices are correct.
+ * @example
+ * ```ts
+ * const pg = buildPaginationRefs(page, pageSize, wb.values.length);
+ * // sql: `LIMIT ${pg.limitRef} OFFSET ${pg.offsetRef}`
+ * // params: [...wb.values, ...pg.values]
+ * ```
  */
-export function buildPaginationRefs(
-  page: number,
-  pageSize: number,
-  currentValueCount: number
-): PaginationRefs {
+export function buildPaginationRefs(page: number, pageSize: number, existingParamCount: number) {
   const offset = page * pageSize;
   return {
-    offset,
-    limitRef: `$${currentValueCount + 1}`,
-    offsetRef: `$${currentValueCount + 2}`,
-    values: [pageSize, offset],
-  };
-}
-
-// ── Standard list-endpoint params ────────────────────────────────────
-
-export type ListParams = {
-  search: string;
-  page: number;
-  pageSize: number;
-};
-
-/** Extract the standard pagination + search params from a URL. */
-export function parseListParams(url: URL, defaults: { pageSize?: number } = {}): ListParams {
-  const pageSize = defaults.pageSize ?? 10;
-  return {
-    search: (url.searchParams.get("q") ?? "").trim(),
-    page: parseInteger(url.searchParams.get("page"), 0, 0, 100_000),
-    pageSize: parseInteger(url.searchParams.get("pageSize"), pageSize, 1, 50),
+    limitRef: `$${existingParamCount + 1}`,
+    offsetRef: `$${existingParamCount + 2}`,
+    values: [pageSize, offset] as [number, number],
   };
 }

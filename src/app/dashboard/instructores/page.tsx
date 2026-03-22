@@ -12,19 +12,33 @@
  */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
+import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
-import { useDashboardList } from "@/hooks/useDashboardList";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
+import {
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
+import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
+import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import { fetchSchoolCategories } from "@/lib/school-categories";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type { Instructor, EstadoInstructor } from "@/types/database";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { instructorSchema } from "./schemas";
+
+const PAGE_SIZE = 10;
+
+type InstructoresListResponse = {
+  totalCount: number;
+  rows: Instructor[];
+};
 
 /** Allowed activity states for an instructor record. */
 const estados: EstadoInstructor[] = ["activo", "inactivo"];
@@ -40,12 +54,35 @@ const emptyForm = {
   especialidades: [] as string[],
   estado: "activo" as EstadoInstructor,
   color: "#0071e3",
+  consentimiento_datos: false,
 };
 
 export default function InstructoresPage() {
-  const list = useDashboardList<Instructor>({ resource: "instructores" });
-  const { perfil } = list;
+  const { perfil } = useAuth();
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreateInstructor = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "instructors", "create")
+    : true;
+  const canEditInstructor = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "instructors", "edit")
+    : true;
+  const canDeleteInstructor = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "instructors", "delete")
+    : true;
 
+  // --- State -----------------------------------------------------------
+  const [data, setData] = useState<Instructor[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
+  const fetchIdRef = useRef(0);
+  const [tableError, setTableError] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editing, setEditing] = useState<Instructor | null>(null);
+  const [deleting, setDeleting] = useState<Instructor | null>(null);
+  const [saving, setSaving] = useState(false);
   const [categoriasEscuela, setCategoriasEscuela] = useState<string[]>([]);
   const {
     value: form,
@@ -53,10 +90,69 @@ export default function InstructoresPage() {
     restoreDraft,
     clearDraft,
   } = useDraftForm("dashboard:instructores:form", emptyForm, {
-    persist: list.modalOpen && !list.editing,
+    persist: modalOpen && !editing,
   });
 
-  // --- Load school categories ─────────────────────────────────────────
+  // --- Data fetching ----------------------------------------------------
+
+  /** Fetch paginated instructors from Supabase, ordered by most-recent first. */
+  const fetchData = useCallback(
+    async (page = 0, search = "") => {
+      if (!perfil?.escuela_id) return;
+
+      const fetchId = ++fetchIdRef.current;
+      setLoading(true);
+      setTableError("");
+
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+        });
+
+        if (search.trim()) params.set("q", search.trim());
+
+        const payload = await getDashboardListCached<InstructoresListResponse>({
+          name: "instructores-table",
+          scope: {
+            id: perfil.id,
+            rol: perfil.rol,
+            escuelaId: perfil.escuela_id,
+            sedeId: perfil.sede_id,
+          },
+          params,
+          loader: () =>
+            fetchJsonWithRetry<InstructoresListResponse>(`/api/instructores?${params.toString()}`),
+        });
+
+        if (fetchId !== fetchIdRef.current) return;
+
+        setData(payload.rows || []);
+        setTotalCount(payload.totalCount || 0);
+      } catch (fetchError: unknown) {
+        if (fetchId !== fetchIdRef.current) return;
+        setData([]);
+        setTotalCount(0);
+        setTableError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : "No se pudieron cargar los instructores."
+        );
+      } finally {
+        if (fetchId === fetchIdRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [perfil]
+  );
+
+  // Re-fetch whenever page, search, or profile changes.
+  useEffect(() => {
+    if (!perfil) return;
+    void fetchData(currentPage, searchTerm);
+  }, [fetchData, perfil, currentPage, searchTerm]);
+
   useEffect(() => {
     if (!perfil?.escuela_id) return;
 
@@ -82,14 +178,31 @@ export default function InstructoresPage() {
     };
   }, [perfil?.escuela_id]);
 
-  // --- Modal helpers ──────────────────────────────────────────────────
+  /** Callback del DataTable server-side: cambio de página */
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
 
+  /** Callback del DataTable server-side: cambio de búsqueda */
+  const handleSearchChange = useCallback((term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(0);
+  }, []);
+
+  // --- Modal helpers ----------------------------------------------------
+
+  /** Open the modal in "create" mode with a blank form. */
   const openCreate = () => {
+    if (!canCreateInstructor) return;
+    setEditing(null);
     restoreDraft(emptyForm);
-    list.openCreate();
+    setModalOpen(true);
   };
 
+  /** Open the modal in "edit" mode, pre-filling the form with existing data. */
   const openEdit = (row: Instructor) => {
+    if (!canEditInstructor) return;
+    setEditing(row);
     setForm({
       nombre: row.nombre,
       apellidos: row.apellidos,
@@ -100,10 +213,19 @@ export default function InstructoresPage() {
       especialidades: row.especialidades ?? (row.especialidad ? [row.especialidad] : []),
       estado: row.estado,
       color: row.color,
+      consentimiento_datos: row.consentimiento_datos ?? true,
     });
-    list.openEdit(row);
+    setModalOpen(true);
   };
 
+  /** Open the delete-confirmation dialog for the given instructor. */
+  const openDelete = (row: Instructor) => {
+    if (!canDeleteInstructor) return;
+    setDeleting(row);
+    setDeleteOpen(true);
+  };
+
+  /** Toggle a category in the especialidades array. */
   const toggleEspecialidad = (cat: string) => {
     setForm((prev) => ({
       ...prev,
@@ -113,22 +235,28 @@ export default function InstructoresPage() {
     }));
   };
 
-  // --- Save (create / update) ─────────────────────────────────────────
+  // --- Save (create / update) -------------------------------------------
 
   const handleSave = async () => {
+    if ((!editing && !canCreateInstructor) || (editing && !canEditInstructor)) {
+      toast.error("No tienes permisos para gestionar instructores.");
+      return;
+    }
+
     const result = instructorSchema.safeParse(form);
     if (!result.success) {
       toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
       return;
     }
-    list.setSaving(true);
+    setSaving(true);
 
+    // Use first selected specialty as the legacy single-value field
     const especialidadPrincipal = form.especialidades[0];
 
     try {
       const supabase = createClient();
 
-      if (list.editing) {
+      if (editing) {
         await runSupabaseMutationWithRetry(() =>
           supabase
             .from("instructores")
@@ -144,12 +272,12 @@ export default function InstructoresPage() {
               estado: form.estado,
               color: form.color,
             })
-            .eq("id", list.editing!.id)
+            .eq("id", editing.id)
         );
       } else {
         if (!perfil) {
           toast.error("No se encontró el perfil activo para guardar.");
-          list.setSaving(false);
+          setSaving(false);
           return;
         }
 
@@ -167,10 +295,11 @@ export default function InstructoresPage() {
 
         if (!sedeId) {
           toast.error("No se encontró una sede asignada. Contacta al administrador.");
-          list.setSaving(false);
+          setSaving(false);
           return;
         }
 
+        // Crear cuenta de acceso para el instructor (email=cédula, password=cédula)
         const authJson = await fetchJsonWithRetry<{ user_id: string }>(
           "/api/crear-instructor-auth",
           {
@@ -201,54 +330,79 @@ export default function InstructoresPage() {
             especialidades: form.especialidades,
             estado: form.estado,
             color: form.color,
+            consentimiento_datos: true,
+            consentimiento_fecha: new Date().toISOString(),
           })
         );
       }
 
       clearDraft(emptyForm);
-      list.setSaving(false);
-      list.setModalOpen(false);
-      toast.success(list.editing ? "Instructor actualizado" : "Instructor creado");
-      await list.revalidateAndRefresh();
+      setSaving(false);
+      setModalOpen(false);
+      toast.success(editing ? "Instructor actualizado" : "Instructor creado");
+      invalidateDashboardClientCaches();
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: {
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
+      void fetchData(currentPage, searchTerm);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al guardar.";
       toast.error(message);
-      list.setSaving(false);
+      setSaving(false);
     }
   };
 
-  // --- Delete ─────────────────────────────────────────────────────────
+  // --- Delete -----------------------------------------------------------
 
   const handleDelete = async () => {
-    if (!list.deleting) return;
-    list.setSaving(true);
+    if (!deleting) return;
+    if (!canDeleteInstructor) {
+      toast.error("No tienes permisos para eliminar instructores.");
+      return;
+    }
+    setSaving(true);
 
     try {
       const supabase = createClient();
-      const { error: err } = await supabase
-        .from("instructores")
-        .delete()
-        .eq("id", list.deleting.id);
+      const { error: err } = await supabase.from("instructores").delete().eq("id", deleting.id);
 
       if (err) {
         toast.error(err.message);
-        list.setSaving(false);
+        setSaving(false);
         return;
       }
 
-      list.setSaving(false);
-      list.setDeleteOpen(false);
-      list.setDeleting(null);
+      setSaving(false);
+      setDeleteOpen(false);
+      setDeleting(null);
       toast.success("Instructor eliminado");
-      await list.revalidateAndRefresh();
+      invalidateDashboardClientCaches();
+      await revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: {
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
+      void fetchData(currentPage, searchTerm);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al eliminar.";
       toast.error(message);
-      list.setSaving(false);
+      setSaving(false);
     }
   };
 
-  // --- Table columns ──────────────────────────────────────────────────
+  // --- Table column definitions -----------------------------------------
 
   const columns = [
     {
@@ -299,7 +453,7 @@ export default function InstructoresPage() {
 
   const inputCls = "apple-input";
 
-  // --- Render ─────────────────────────────────────────────────────────
+  // --- Render -----------------------------------------------------------
 
   return (
     <div>
@@ -311,42 +465,44 @@ export default function InstructoresPage() {
           </h2>
           <p className="mt-0.5 text-sm text-[#86868b]">Gestiona los instructores de tu escuela</p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
-        >
-          <Plus size={16} /> Nuevo Instructor
-        </button>
+        {canCreateInstructor ? (
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
+          >
+            <Plus size={16} /> Nuevo Instructor
+          </button>
+        ) : null}
       </div>
 
       {/* Data table */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
-        {list.tableError && (
+        {tableError && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
-            {list.tableError}
+            {tableError}
           </div>
         )}
         <DataTable
           columns={columns}
-          data={list.data}
-          loading={list.loading}
+          data={data}
+          loading={loading}
           searchPlaceholder="Buscar por nombre o cédula..."
           serverSide
-          totalCount={list.totalCount}
-          currentPage={list.currentPage}
-          onPageChange={list.handlePageChange}
-          onSearchChange={list.handleSearchChange}
-          pageSize={list.pageSize}
-          onEdit={openEdit}
-          onDelete={list.openDelete}
+          totalCount={totalCount}
+          currentPage={currentPage}
+          onPageChange={handlePageChange}
+          onSearchChange={handleSearchChange}
+          pageSize={PAGE_SIZE}
+          onEdit={canEditInstructor ? openEdit : undefined}
+          onDelete={canDeleteInstructor ? openDelete : undefined}
         />
       </div>
 
       {/* Create / Edit modal */}
       <Modal
-        open={list.modalOpen}
-        onClose={() => list.setModalOpen(false)}
-        title={list.editing ? "Editar Instructor" : "Nuevo Instructor"}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? "Editar Instructor" : "Nuevo Instructor"}
         maxWidth="max-w-xl"
       >
         <div className="space-y-4">
@@ -473,20 +629,44 @@ export default function InstructoresPage() {
             </div>
           </div>
 
+          {/* Consentimiento de datos */}
+          {!editing && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 select-none dark:border-gray-700 dark:bg-[#0a0a0a]">
+              <input
+                type="checkbox"
+                checked={form.consentimiento_datos}
+                onChange={(e) => setForm({ ...form, consentimiento_datos: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#0071e3] accent-[#0071e3]"
+              />
+              <span className="text-xs leading-5 text-[#86868b]">
+                Autorizo el tratamiento de mis datos personales conforme a la{" "}
+                <a
+                  href="/privacidad"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-[#0071e3] underline"
+                >
+                  Politica de privacidad
+                </a>{" "}
+                y la Ley 1581 de 2012 de proteccion de datos personales.
+              </span>
+            </label>
+          )}
+
           {/* Action buttons */}
           <div className="flex justify-end gap-3 pt-2">
             <button
-              onClick={() => list.setModalOpen(false)}
+              onClick={() => setModalOpen(false)}
               className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
-              disabled={list.saving}
+              disabled={saving || (!editing && !form.consentimiento_datos)}
               className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
             >
-              {list.saving ? "Guardando..." : list.editing ? "Guardar Cambios" : "Crear Instructor"}
+              {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Instructor"}
             </button>
           </div>
         </div>
@@ -494,11 +674,11 @@ export default function InstructoresPage() {
 
       {/* Delete confirmation */}
       <DeleteConfirm
-        open={list.deleteOpen}
-        onClose={() => list.setDeleteOpen(false)}
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
-        loading={list.saving}
-        message={`¿Eliminar a ${list.deleting?.nombre} ${list.deleting?.apellidos}?`}
+        loading={saving}
+        message={`¿Eliminar a ${deleting?.nombre} ${deleting?.apellidos}?`}
       />
     </div>
   );

@@ -11,14 +11,24 @@ import PageScaffold from "@/components/dashboard/PageScaffold";
 import SummaryRow from "@/components/dashboard/SummaryRow";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import {
-  getDashboardCatalogCached,
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
 import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type { Ingreso, MetodoPago, TipoRegistroAlumno } from "@/types/database";
-import { BookOpen, DollarSign, Plus, Printer, UserRound, WalletCards, CalendarDays, AlertCircle, X } from "lucide-react";
+import {
+  BookOpen,
+  DollarSign,
+  Plus,
+  Printer,
+  UserRound,
+  WalletCards,
+  CalendarDays,
+  AlertCircle,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import AlumnoModal from "./AlumnoModal";
 import MatriculaModal from "./MatriculaModal";
@@ -48,6 +58,19 @@ type AlumnosCatalogosResponse = {
 
 export default function AlumnosPage() {
   const { perfil } = useAuth();
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreateStudent = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "students", "create")
+    : true;
+  const canEditStudent = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "students", "edit")
+    : true;
+  const canDeleteStudent = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "students", "delete")
+    : true;
+  const canCreateIncome = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "income", "create")
+    : true;
 
   // --- Paginación server-side ---
   const [alumnos, setAlumnos] = useState<AlumnoRow[]>([]);
@@ -101,6 +124,7 @@ export default function AlumnosPage() {
   const [abonoSaving, setAbonoSaving] = useState(false);
 
   const fetchIdRef = useRef(0);
+  const catalogsLoadedRef = useRef(false);
 
   // ─── Data fetching ───────────────────────────────────────────────────
 
@@ -127,9 +151,15 @@ export default function AlumnosPage() {
       if (typeFilters.length > 0) params.set("tipos", typeFilters.join(","));
       if (mesFilter) params.set("mes", mesFilter);
 
+      // En la primera carga incluimos catálogos para ahorrar 1 HTTP request
+      const needCatalogs = !catalogsLoadedRef.current;
+      if (needCatalogs) params.set("include_catalogs", "1");
+
       try {
-        const payload = await getDashboardListCached<AlumnosListResponse>({
-          name: "alumnos-table",
+        const payload = await getDashboardListCached<
+          AlumnosListResponse & { _catalogs?: AlumnosCatalogosResponse }
+        >({
+          name: needCatalogs ? "alumnos-table-with-catalogs" : "alumnos-table",
           scope: {
             id: perfil?.id,
             rol: perfil?.rol,
@@ -139,12 +169,22 @@ export default function AlumnosPage() {
           params,
           forceFresh,
           loader: () =>
-            fetchJsonWithRetry<AlumnosListResponse>(`/api/alumnos?${params.toString()}`),
+            fetchJsonWithRetry<AlumnosListResponse & { _catalogs?: AlumnosCatalogosResponse }>(
+              `/api/alumnos?${params.toString()}`
+            ),
         });
         if (fetchId !== fetchIdRef.current) return;
 
         setAlumnos(payload.rows || []);
         setTotalCount(payload.totalCount || 0);
+
+        // Hidratar catálogos desde la respuesta combinada
+        if (payload._catalogs && !catalogsLoadedRef.current) {
+          catalogsLoadedRef.current = true;
+          setCategoriasEscuela(payload._catalogs.categoriasEscuela || []);
+          setTramitadorOptions(payload._catalogs.tramitadorOptions || []);
+          setDefaultSedeId(payload._catalogs.defaultSedeId || null);
+        }
       } catch (fetchError) {
         if (fetchId !== fetchIdRef.current) return;
         console.error("[AlumnosPage] Error cargando alumnos:", fetchError);
@@ -163,42 +203,6 @@ export default function AlumnosPage() {
     if (!perfil) return;
     fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes);
   }, [fetchAlumnos, perfil, currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes]);
-
-  useEffect(() => {
-    if (!perfil?.escuela_id || !perfil?.id) return;
-
-    let cancelled = false;
-
-    const loadCatalogos = async () => {
-      try {
-        const payload = await getDashboardCatalogCached<AlumnosCatalogosResponse>({
-          name: "alumnos-catalogos",
-          scope: {
-            id: perfil.id,
-            rol: perfil.rol,
-            escuelaId: perfil.escuela_id,
-            sedeId: perfil.sede_id,
-          },
-          loader: () => fetchJsonWithRetry<AlumnosCatalogosResponse>("/api/alumnos/catalogos"),
-        });
-        if (cancelled) return;
-        setCategoriasEscuela(payload.categoriasEscuela || []);
-        setTramitadorOptions(payload.tramitadorOptions || []);
-        setDefaultSedeId(payload.defaultSedeId || null);
-      } catch {
-        if (cancelled) return;
-        setCategoriasEscuela([]);
-        setTramitadorOptions([]);
-        setDefaultSedeId(null);
-      }
-    };
-
-    void loadCatalogos();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
   // ─── Callbacks ───────────────────────────────────────────────────────
 
@@ -298,12 +302,14 @@ export default function AlumnosPage() {
   // ─── Modal openers ──────────────────────────────────────────────────
 
   const openCreate = () => {
+    if (!canCreateStudent) return;
     setEditing(null);
     restoreAlumnoDraft(emptyForm);
     setModalOpen(true);
   };
 
   const openEdit = (alumno: AlumnoRow) => {
+    if (!canEditStudent) return;
     const matricula = alumno.matriculas[0] ?? null;
     setEditing(alumno);
     setForm({
@@ -343,16 +349,19 @@ export default function AlumnosPage() {
       tiene_tramitador: Boolean(matricula?.tiene_tramitador),
       tramitador_nombre: matricula?.tramitador_nombre || "",
       tramitador_valor: matricula?.tramitador_valor ? String(matricula.tramitador_valor) : "",
+      consentimiento_datos: alumno.consentimiento_datos ?? true,
     });
     setModalOpen(true);
   };
 
   const openDelete = (alumno: AlumnoRow) => {
+    if (!canDeleteStudent) return;
     setDeleting(alumno);
     setDeleteOpen(true);
   };
 
   const openNewMatricula = (alumno: AlumnoRow) => {
+    if (!canEditStudent) return;
     setMatriculaAlumno(alumno);
     restoreMatriculaDraft({
       ...emptyMatriculaForm,
@@ -361,33 +370,38 @@ export default function AlumnosPage() {
     setMatriculaOpen(true);
   };
 
-  const openAbono = useCallback(async (alumno: AlumnoRow) => {
-    setAbonoAlumno(alumno);
-    setAbonoMatriculas(alumno.matriculas);
-    setAbonoMatriculaId(alumno.matriculas[0]?.id || "");
-    setAbonoMonto("");
-    setAbonoMetodo("efectivo");
-    setAbonoConcepto("");
-    setAbonoFecha(new Date().toISOString().split("T")[0]);
-    setAbonoIngresos([]);
-    setAbonoOpen(true);
-    setLoadingIngresos(true);
+  const openAbono = useCallback(
+    async (alumno: AlumnoRow) => {
+      if (!canCreateIncome) return;
+      setAbonoAlumno(alumno);
+      setAbonoMatriculas(alumno.matriculas);
+      setAbonoMatriculaId(alumno.matriculas[0]?.id || "");
+      setAbonoMonto("");
+      setAbonoMetodo("efectivo");
+      setAbonoConcepto("");
+      setAbonoFecha(new Date().toISOString().split("T")[0]);
+      setAbonoIngresos([]);
+      setAbonoOpen(true);
+      setLoadingIngresos(true);
 
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("ingresos")
-      .select("*")
-      .eq("alumno_id", alumno.id)
-      .order("fecha", { ascending: false })
-      .order("created_at", { ascending: false });
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("ingresos")
+        .select("*")
+        .eq("alumno_id", alumno.id)
+        .order("fecha", { ascending: false })
+        .order("created_at", { ascending: false });
 
-    setAbonoIngresos((data as Ingreso[]) || []);
-    setLoadingIngresos(false);
-  }, []);
+      setAbonoIngresos((data as Ingreso[]) || []);
+      setLoadingIngresos(false);
+    },
+    [canCreateIncome]
+  );
 
   // ─── Handlers ───────────────────────────────────────────────────────
 
   const handleSave = async () => {
+    if (editing ? !canEditStudent : !canCreateStudent) return;
     const result = alumnoSchema.safeParse(form);
     if (!result.success) {
       toast.error(result.error.issues[0]?.message || "Error de validación.");
@@ -438,8 +452,7 @@ export default function AlumnosPage() {
 
     setSaving(true);
     try {
-      const sedeId =
-        defaultSedeId || (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
+      const sedeId = defaultSedeId || (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
       if (!sedeId) {
         toast.error("No se encontró una sede para esta escuela. Crea una sede primero.");
         setSaving(false);
@@ -478,6 +491,7 @@ export default function AlumnosPage() {
           tiene_tramitador: form.tiene_tramitador,
           tramitador_nombre: form.tramitador_nombre.trim() || null,
           tramitador_valor: form.tiene_tramitador ? tramitadorValorNum || null : null,
+          consentimiento_datos: form.consentimiento_datos,
         }),
       });
 
@@ -505,6 +519,7 @@ export default function AlumnosPage() {
   };
 
   const handleSaveMatricula = async () => {
+    if (!canEditStudent) return;
     if (!matriculaAlumno || !perfil?.escuela_id) return;
     if (matriculaAlumno.tipo_registro !== "regular") {
       toast.error("Solo los alumnos regulares pueden tener matrículas.");
@@ -590,6 +605,7 @@ export default function AlumnosPage() {
   };
 
   const handleSaveAbono = async () => {
+    if (!canCreateIncome) return;
     if (!abonoAlumno || !perfil?.escuela_id) return;
 
     const result = abonoSchema.safeParse({ monto: abonoMonto });
@@ -659,6 +675,7 @@ export default function AlumnosPage() {
   };
 
   const handleDelete = async () => {
+    if (!canDeleteStudent) return;
     if (!deleting) return;
 
     setSaving(true);
@@ -856,50 +873,47 @@ export default function AlumnosPage() {
     .filter((ingreso) => ingreso.estado === "cobrado")
     .reduce((sum, ingreso) => sum + Number(ingreso.monto), 0);
   const saldoPendienteAbono = valorTotalAbono - totalPagadoAbono;
-  const summaryItems = useMemo(
-    () => {
-      const regulares = alumnos.filter((row) => row.tipo_registro === "regular").length;
-      const servicios = alumnos.filter((row) => row.tipo_registro !== "regular").length;
-      const pendientes = alumnos.filter((row) => row.saldo_pendiente > 0).length;
-      const saldoVisible = alumnos.reduce((sum, row) => sum + Number(row.saldo_pendiente || 0), 0);
+  const summaryItems = useMemo(() => {
+    const regulares = alumnos.filter((row) => row.tipo_registro === "regular").length;
+    const servicios = alumnos.filter((row) => row.tipo_registro !== "regular").length;
+    const pendientes = alumnos.filter((row) => row.saldo_pendiente > 0).length;
+    const saldoVisible = alumnos.reduce((sum, row) => sum + Number(row.saldo_pendiente || 0), 0);
 
-      return [
-        {
-          id: "total",
-          label: "Registros filtrados",
-          value: String(totalCount || alumnos.length),
-          detail: `${alumnos.length} en esta página · ${regulares} regulares y ${servicios} especiales.`,
-          icon: <UserRound size={18} />,
-          tone: "primary" as const,
-        },
-        {
-          id: "saldo",
-          label: "Saldo visible",
-          value: `$${saldoVisible.toLocaleString("es-CO")}`,
-          detail: "Suma del pendiente mostrado en la tabla actual.",
-          icon: <WalletCards size={18} />,
-          tone: "warning" as const,
-        },
-        {
-          id: "pendientes",
-          label: "Pendientes en página",
-          value: String(pendientes),
-          detail: "Registros con saldo abierto para seguimiento.",
-          icon: <AlertCircle size={18} />,
-          tone: "danger" as const,
-        },
-        {
-          id: "periodo",
-          label: "Periodo activo",
-          value: filtroMes || "Todos",
-          detail: "Usa filtros para separar cohortes, cursos y servicios.",
-          icon: <CalendarDays size={18} />,
-          tone: "default" as const,
-        },
-      ];
-    },
-    [alumnos, filtroMes, totalCount]
-  );
+    return [
+      {
+        id: "total",
+        label: "Registros filtrados",
+        value: String(totalCount || alumnos.length),
+        detail: `${alumnos.length} en esta página · ${regulares} regulares y ${servicios} especiales.`,
+        icon: <UserRound size={18} />,
+        tone: "primary" as const,
+      },
+      {
+        id: "saldo",
+        label: "Saldo visible",
+        value: `$${saldoVisible.toLocaleString("es-CO")}`,
+        detail: "Suma del pendiente mostrado en la tabla actual.",
+        icon: <WalletCards size={18} />,
+        tone: "warning" as const,
+      },
+      {
+        id: "pendientes",
+        label: "Pendientes en página",
+        value: String(pendientes),
+        detail: "Registros con saldo abierto para seguimiento.",
+        icon: <AlertCircle size={18} />,
+        tone: "danger" as const,
+      },
+      {
+        id: "periodo",
+        label: "Periodo activo",
+        value: filtroMes || "Todos",
+        detail: "Usa filtros para separar cohortes, cursos y servicios.",
+        icon: <CalendarDays size={18} />,
+        tone: "default" as const,
+      },
+    ];
+  }, [alumnos, filtroMes, totalCount]);
 
   // ─── Render ─────────────────────────────────────────────────────────
 
@@ -909,10 +923,12 @@ export default function AlumnosPage() {
       title="Alumnos"
       description="Gestiona expedientes, matrículas, procesos de aptitud y prácticas adicionales desde una sola vista operativa."
       actions={
-        <button onClick={openCreate} className="apple-button-primary text-sm">
-          <Plus size={16} />
-          Nuevo alumno
-        </button>
+        canCreateStudent ? (
+          <button onClick={openCreate} className="apple-button-primary text-sm">
+            <Plus size={16} />
+            Nuevo alumno
+          </button>
+        ) : null
       }
     >
       <SummaryRow items={summaryItems} columns={4} />
@@ -950,7 +966,9 @@ export default function AlumnosPage() {
                   onChange={(e) => {
                     const newYear = e.target.value;
                     const currentMonth = filtroMes.split("-")[1] || "";
-                    setFiltroMes(newYear ? (currentMonth ? `${newYear}-${currentMonth}` : newYear) : "");
+                    setFiltroMes(
+                      newYear ? (currentMonth ? `${newYear}-${currentMonth}` : newYear) : ""
+                    );
                     setCurrentPage(0);
                   }}
                   className="apple-select"
@@ -984,7 +1002,9 @@ export default function AlumnosPage() {
             </div>
 
             <div className="md:col-span-2 xl:col-span-2">
-              <span className="mb-2 block text-xs font-medium text-[#86868b]">Tipo de registro</span>
+              <span className="mb-2 block text-xs font-medium text-[#86868b]">
+                Tipo de registro
+              </span>
               <div className="flex flex-wrap items-center gap-2">
                 {tiposRegistroAlumno.map((tipo) => {
                   const activo = filtrosTipo.includes(tipo.value);
@@ -1028,7 +1048,8 @@ export default function AlumnosPage() {
                 </div>
               ) : (
                 <div className="rounded-[18px] border border-[var(--surface-border)] bg-[var(--surface-strong)] px-3 py-3 text-xs text-[#66707a] dark:text-[#aeb6bf]">
-                  El tipo seleccionado no trabaja con categorías. Usa este filtro para cursos regulares o aptitud.
+                  El tipo seleccionado no trabaja con categorías. Usa este filtro para cursos
+                  regulares o aptitud.
                 </div>
               )}
             </div>
@@ -1044,8 +1065,8 @@ export default function AlumnosPage() {
           loading={loading}
           searchPlaceholder="Buscar por nombre, cédula, referencia o convenio..."
           searchTerm={searchTerm}
-          onEdit={openEdit}
-          onDelete={openDelete}
+          onEdit={canEditStudent ? openEdit : undefined}
+          onDelete={canDeleteStudent ? openDelete : undefined}
           serverSide
           totalCount={totalCount}
           currentPage={currentPage}
@@ -1070,13 +1091,13 @@ export default function AlumnosPage() {
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7b8591]">
+                  <p className="text-[11px] font-semibold tracking-[0.12em] text-[#7b8591] uppercase">
                     Teléfono
                   </p>
                   <p className="mt-1 text-[#111214] dark:text-[#f5f5f7]">{row.telefono}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7b8591]">
+                  <p className="text-[11px] font-semibold tracking-[0.12em] text-[#7b8591] uppercase">
                     Valor total
                   </p>
                   <p className="mt-1 text-[#111214] dark:text-[#f5f5f7]">
@@ -1084,7 +1105,7 @@ export default function AlumnosPage() {
                   </p>
                 </div>
                 <div className="col-span-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7b8591]">
+                  <p className="text-[11px] font-semibold tracking-[0.12em] text-[#7b8591] uppercase">
                     Saldo pendiente
                   </p>
                   <p className="mt-1 font-semibold text-amber-600 dark:text-amber-400">
@@ -1098,7 +1119,7 @@ export default function AlumnosPage() {
           )}
           extraActions={(row) => (
             <>
-              {row.tipo_registro === "regular" && (
+              {canEditStudent && row.tipo_registro === "regular" && (
                 <button
                   onClick={() => openNewMatricula(row)}
                   className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-blue-50 hover:text-[#0071e3] dark:hover:bg-blue-900/20"
@@ -1108,14 +1129,18 @@ export default function AlumnosPage() {
                   <BookOpen size={14} />
                 </button>
               )}
-              <button
-                onClick={() => openAbono(row)}
-                className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/20"
-                title={row.tipo_registro === "regular" ? "Registrar abono" : "Registrar pago"}
-                aria-label={row.tipo_registro === "regular" ? "Registrar abono" : "Registrar pago"}
-              >
-                <DollarSign size={14} />
-              </button>
+              {canCreateIncome ? (
+                <button
+                  onClick={() => openAbono(row)}
+                  className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/20"
+                  title={row.tipo_registro === "regular" ? "Registrar abono" : "Registrar pago"}
+                  aria-label={
+                    row.tipo_registro === "regular" ? "Registrar abono" : "Registrar pago"
+                  }
+                >
+                  <DollarSign size={14} />
+                </button>
+              ) : null}
               {row.tipo_registro === "regular" && (
                 <button
                   onClick={() => {

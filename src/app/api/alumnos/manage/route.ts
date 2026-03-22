@@ -14,11 +14,6 @@ import {
 } from "@/lib/api-auth";
 import { normalizeContractNumber } from "@/lib/contract-number";
 import { getServerDbPool } from "@/lib/server-db";
-import { revalidateServerReadCache } from "@/lib/server-read-cache";
-import {
-  buildDashboardListCacheTags,
-  buildBroadFinanceInvalidationTags,
-} from "@/lib/server-cache-tags";
 import type { MetodoPago, Rol, TipoRegistroAlumno } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = [
@@ -551,12 +546,15 @@ async function handleMutation(request: Request, mode: "create" | "update") {
               fecha_examen_practico,
               tiene_tramitador,
               tramitador_nombre,
-              tramitador_valor
+              tramitador_valor,
+              consentimiento_datos,
+              consentimiento_fecha
             )
             values (
               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
               $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-              $21, $22, $23, $24, $25, false, null, null
+              $21, $22, $23, $24, $25, false, null, null,
+              true, now()
             )
             returning id
           `,
@@ -749,13 +747,6 @@ async function handleMutation(request: Request, mode: "create" | "update") {
       }
 
       await client.query("COMMIT");
-
-      const scope = { escuelaId: schoolId, sedeId: payload.sede_id };
-      revalidateServerReadCache([
-        ...buildDashboardListCacheTags("alumnos", scope),
-        ...buildBroadFinanceInvalidationTags(scope),
-      ]);
-
       return NextResponse.json({ ok: true });
     } catch (error) {
       await client.query("ROLLBACK");

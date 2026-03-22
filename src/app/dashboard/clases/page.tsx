@@ -1,21 +1,43 @@
+/**
+ * ClasesPage - Pagina de gestion de clases del dashboard.
+ *
+ * Permite listar, crear, editar y eliminar clases (practicas y teoricas).
+ * Los datos se obtienen de Supabase y se muestran en un DataTable reutilizable.
+ * Incluye modales para el formulario de creacion/edicion y confirmacion de borrado.
+ *
+ * Dependencias principales:
+ *  - Supabase (base de datos y autenticacion)
+ *  - useAuth (perfil del usuario autenticado)
+ *  - DataTable, Modal, DeleteConfirm (componentes de UI del dashboard)
+ */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
-import { useDashboardList } from "@/hooks/useDashboardList";
+import { useAuth } from "@/hooks/useAuth";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
-import { getDashboardCatalogCached } from "@/lib/dashboard-client-cache";
 import { fetchJsonWithRetry } from "@/lib/retry";
+import {
+  getDashboardListCached,
+  invalidateDashboardClientCaches,
+} from "@/lib/dashboard-client-cache";
+import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
+import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type { Clase, TipoClase, EstadoClase, Alumno, Instructor, Vehiculo } from "@/types/database";
 import { Plus } from "lucide-react";
 
-type ClaseRow = Clase & { alumno_nombre?: string; instructor_nombre?: string };
+const PAGE_SIZE = 10;
 
+/** Opciones validas para el tipo de clase */
 const tiposClase: TipoClase[] = ["practica", "teorica"];
+
+/** Opciones validas para el estado de una clase */
 const estadosClase: EstadoClase[] = ["programada", "completada", "cancelada", "no_asistio"];
 
+/** Valores por defecto del formulario de clase */
 const emptyForm = {
   alumno_id: "",
   instructor_id: "",
@@ -28,66 +50,154 @@ const emptyForm = {
   notas: "",
 };
 
-const inputCls = "apple-input";
+type ClaseRow = Clase & { alumno_nombre?: string; instructor_nombre?: string };
+type ClasesListResponse = {
+  totalCount: number;
+  rows: ClaseRow[];
+};
 
 export default function ClasesPage() {
-  const list = useDashboardList<ClaseRow>({ resource: "clases" });
-  const { perfil } = list;
+  const { perfil } = useAuth();
+  const escuelaId = perfil?.escuela_id ?? null;
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreateClass = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "classes", "create")
+    : true;
+  const canEditClass = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "classes", "edit")
+    : true;
+  const canDeleteClass = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "classes", "delete")
+    : true;
 
+  // Estado principal: lista de clases con nombres resueltos
+  const [data, setData] = useState<ClaseRow[]>([]);
+
+  // --- Paginacion server-side ---
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
+  const fetchIdRef = useRef(0);
+  const catalogsLoadedRef = useRef(false);
+
+  // Listas de referencia para los selectores del formulario
   const [alumnos, setAlumnos] = useState<Alumno[]>([]);
   const [instructores, setInstructores] = useState<Instructor[]>([]);
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+
+  // Estado de UI
+  const [loading, setLoading] = useState(true);
+  const [tableError, setTableError] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editing, setEditing] = useState<Clase | null>(null);
+  const [deleting, setDeleting] = useState<Clase | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
 
-  // --- Load catalogs ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!perfil?.escuela_id) return;
-
-    let cancelled = false;
-
-    const loadCatalogs = async () => {
-      const catalogs = await getDashboardCatalogCached<{
-        alumnos: Alumno[];
-        instructores: Instructor[];
-        vehiculos: Vehiculo[];
-      }>({
-        name: "clases-form",
-        scope: {
-          id: perfil.id,
-          rol: perfil.rol,
-          escuelaId: perfil.escuela_id,
-          sedeId: perfil.sede_id,
-        },
-        loader: () =>
-          fetchJsonWithRetry<{
-            alumnos: Alumno[];
-            instructores: Instructor[];
-            vehiculos: Vehiculo[];
-          }>("/api/clases/catalogos"),
-      });
-
-      if (cancelled) return;
-      setAlumnos(catalogs.alumnos);
-      setInstructores(catalogs.instructores);
-      setVehiculos(catalogs.vehiculos);
-    };
-
-    void loadCatalogs();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
-
-  // --- Modal helpers ─────────────────────────────────────────────────
-  const openCreate = () => {
-    setForm(emptyForm);
-    setError("");
-    list.openCreate();
+  type ClasesCatalogs = {
+    alumnos: Alumno[];
+    instructores: Instructor[];
+    vehiculos: Vehiculo[];
   };
 
-  const openEdit = (row: ClaseRow) => {
+  /**
+   * fetchData - Obtiene clases paginadas desde la API server-side.
+   * En la primera carga incluye catálogos para ahorrar 1 HTTP request.
+   */
+  const fetchData = useCallback(
+    async (page = 0, search = "") => {
+      if (!escuelaId) return;
+
+      const fetchId = ++fetchIdRef.current;
+      setLoading(true);
+      setTableError("");
+
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+        });
+        if (search.trim()) params.set("q", search.trim());
+
+        const needCatalogs = !catalogsLoadedRef.current;
+        if (needCatalogs) params.set("include_catalogs", "1");
+
+        const payload = await getDashboardListCached<
+          ClasesListResponse & { _catalogs?: ClasesCatalogs }
+        >({
+          name: needCatalogs ? "clases-table-with-catalogs" : "clases-table",
+          scope: {
+            id: perfil?.id,
+            rol: perfil?.rol,
+            escuelaId,
+            sedeId: perfil?.sede_id,
+          },
+          params,
+          loader: () =>
+            fetchJsonWithRetry<ClasesListResponse & { _catalogs?: ClasesCatalogs }>(
+              `/api/clases?${params.toString()}`
+            ),
+        });
+
+        if (fetchId !== fetchIdRef.current) return;
+
+        setData(payload.rows || []);
+        setTotalCount(payload.totalCount || 0);
+
+        if (payload._catalogs && !catalogsLoadedRef.current) {
+          catalogsLoadedRef.current = true;
+          setAlumnos(payload._catalogs.alumnos);
+          setInstructores(payload._catalogs.instructores);
+          setVehiculos(payload._catalogs.vehiculos);
+        }
+      } catch (fetchError: unknown) {
+        if (fetchId !== fetchIdRef.current) return;
+        setData([]);
+        setTotalCount(0);
+        setTableError(
+          fetchError instanceof Error ? fetchError.message : "No se pudieron cargar las clases."
+        );
+      } finally {
+        if (fetchId === fetchIdRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [escuelaId, perfil?.id, perfil?.rol, perfil?.sede_id]
+  );
+
+  // Cargar datos cuando el perfil este disponible o cambie la pagina/busqueda
+  useEffect(() => {
+    if (!escuelaId) return;
+    void fetchData(currentPage, searchTerm);
+  }, [escuelaId, fetchData, currentPage, searchTerm]);
+
+  /** Callback del DataTable server-side: cambio de pagina */
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
+
+  /** Callback del DataTable server-side: cambio de busqueda (ya con debounce) */
+  const handleSearchChange = useCallback((term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(0); // volver a primera pagina al buscar
+  }, []);
+
+  /** Abre el modal en modo creacion con el formulario vacio */
+  const openCreate = () => {
+    if (!canCreateClass) return;
+    setEditing(null);
+    setForm(emptyForm);
+    setError("");
+    setModalOpen(true);
+  };
+
+  /** Abre el modal en modo edicion con los datos de la clase seleccionada */
+  const openEdit = (row: Clase) => {
+    if (!canEditClass) return;
+    setEditing(row);
     setForm({
       alumno_id: row.alumno_id,
       instructor_id: row.instructor_id || "",
@@ -100,21 +210,35 @@ export default function ClasesPage() {
       notas: row.notas || "",
     });
     setError("");
-    list.openEdit(row);
+    setModalOpen(true);
   };
 
-  // --- Save ──────────────────────────────────────────────────────────
+  /** Abre el dialogo de confirmacion de borrado */
+  const openDelete = (row: Clase) => {
+    if (!canDeleteClass) return;
+    setDeleting(row);
+    setDeleteOpen(true);
+  };
+
+  /**
+   * handleSave - Guarda (crea o actualiza) una clase en Supabase.
+   * Valida campos obligatorios antes de enviar. Envuelto en try/catch
+   * para capturar errores de red inesperados.
+   */
   const handleSave = async () => {
+    if (editing ? !canEditClass : !canCreateClass) return;
+    // Validacion de campos obligatorios
     if (!form.alumno_id || !form.fecha || !form.hora_inicio || !form.hora_fin) {
       setError("Alumno, fecha, hora inicio y hora fin son obligatorios.");
       return;
     }
-    list.setSaving(true);
+    setSaving(true);
     setError("");
 
     try {
       const supabase = createClient();
 
+      // Construir el payload con campos opcionales como null
       const payload = {
         alumno_id: form.alumno_id,
         instructor_id: form.instructor_id || null,
@@ -127,20 +251,19 @@ export default function ClasesPage() {
         notas: form.notas || null,
       };
 
-      if (list.editing) {
-        const { error: err } = await supabase
-          .from("clases")
-          .update(payload)
-          .eq("id", list.editing!.id);
+      if (editing) {
+        // Modo edicion: actualizar la clase existente
+        const { error: err } = await supabase.from("clases").update(payload).eq("id", editing.id);
         if (err) {
           setError(err.message);
-          list.setSaving(false);
+          setSaving(false);
           return;
         }
       } else {
+        // Modo creacion: insertar nueva clase con datos de la escuela/sede del usuario
         if (!perfil?.escuela_id) {
           setError("No se encontró una escuela activa para programar la clase.");
-          list.setSaving(false);
+          setSaving(false);
           return;
         }
 
@@ -158,7 +281,7 @@ export default function ClasesPage() {
 
         if (!sedeId) {
           setError("No se encontró una sede activa para programar la clase.");
-          list.setSaving(false);
+          setSaving(false);
           return;
         }
 
@@ -170,54 +293,77 @@ export default function ClasesPage() {
         });
         if (err) {
           setError(err.message);
-          list.setSaving(false);
+          setSaving(false);
           return;
         }
       }
 
-      list.setSaving(false);
-      list.setModalOpen(false);
-      await list.revalidateAndRefresh();
+      setSaving(false);
+      setModalOpen(false);
+      invalidateDashboardClientCaches([
+        "dashboard-list:clases-table:",
+        "dashboard-catalog:clases-form:",
+        "dashboard-summary:",
+      ]);
+      void revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
+      fetchData(currentPage, searchTerm);
     } catch (networkError) {
+      // Capturar errores de red u otros fallos inesperados
       setError(
         networkError instanceof Error
           ? networkError.message
           : "Error de conexion inesperado al guardar la clase."
       );
-      list.setSaving(false);
+      setSaving(false);
     }
   };
 
-  // --- Delete ────────────────────────────────────────────────────────
+  /**
+   * handleDelete - Elimina una clase de Supabase.
+   * Envuelto en try/catch para manejar errores de red o de la base de datos.
+   */
   const handleDelete = async () => {
-    if (!list.deleting) return;
-    list.setSaving(true);
+    if (!canDeleteClass) return;
+    if (!deleting) return;
+    setSaving(true);
 
     try {
-      const { error: err } = await createClient()
-        .from("clases")
-        .delete()
-        .eq("id", list.deleting.id);
+      const { error: err } = await createClient().from("clases").delete().eq("id", deleting.id);
       if (err) {
         setError(err.message);
-        list.setSaving(false);
+        setSaving(false);
         return;
       }
-      list.setSaving(false);
-      list.setDeleteOpen(false);
-      list.setDeleting(null);
-      await list.revalidateAndRefresh();
+      setSaving(false);
+      setDeleteOpen(false);
+      setDeleting(null);
+      invalidateDashboardClientCaches(["dashboard-list:clases-table:", "dashboard-summary:"]);
+      void revalidateTaggedServerCaches(
+        buildScopedMutationRevalidationTags({
+          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
+          includeFinance: false,
+          includeDashboard: true,
+        })
+      );
+      fetchData(currentPage, searchTerm);
     } catch (networkError) {
+      // Capturar errores de red u otros fallos inesperados
       setError(
         networkError instanceof Error
           ? networkError.message
           : "Error de conexion inesperado al eliminar la clase."
       );
-      list.setSaving(false);
+      setSaving(false);
     }
   };
 
-  // --- Columns ───────────────────────────────────────────────────────
+  /** Mapa de colores por estado para los badges de la tabla */
   const estadoColors: Record<string, string> = {
     programada: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
     completada: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
@@ -225,40 +371,41 @@ export default function ClasesPage() {
     no_asistio: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
   };
 
+  /** Definicion de columnas para el DataTable */
   const columns = [
-    { key: "fecha" as keyof ClaseRow, label: "Fecha" },
+    { key: "fecha" as keyof Clase, label: "Fecha" },
     {
-      key: "hora_inicio" as keyof ClaseRow,
+      key: "hora_inicio" as keyof Clase,
       label: "Horario",
-      render: (r: ClaseRow) => (
+      render: (r: Clase) => (
         <span>
           {r.hora_inicio?.slice(0, 5)} - {r.hora_fin?.slice(0, 5)}
         </span>
       ),
     },
     {
-      key: "alumno_nombre" as keyof ClaseRow,
+      key: "alumno_nombre" as string,
       label: "Alumno",
-      render: (r: ClaseRow) => <span>{r.alumno_nombre}</span>,
+      render: (r: Clase & { alumno_nombre?: string }) => <span>{r.alumno_nombre}</span>,
     },
     {
-      key: "instructor_nombre" as keyof ClaseRow,
+      key: "instructor_nombre" as string,
       label: "Instructor",
-      render: (r: ClaseRow) => <span>{r.instructor_nombre}</span>,
+      render: (r: Clase & { instructor_nombre?: string }) => <span>{r.instructor_nombre}</span>,
     },
     {
-      key: "tipo" as keyof ClaseRow,
+      key: "tipo" as keyof Clase,
       label: "Tipo",
-      render: (r: ClaseRow) => (
+      render: (r: Clase) => (
         <span className="rounded-full bg-[#0071e3]/10 px-2 py-0.5 text-xs font-medium text-[#0071e3]">
           {r.tipo}
         </span>
       ),
     },
     {
-      key: "estado" as keyof ClaseRow,
+      key: "estado" as keyof Clase,
       label: "Estado",
-      render: (r: ClaseRow) => (
+      render: (r: Clase) => (
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${estadoColors[r.estado]}`}>
           {r.estado.replace("_", " ")}
         </span>
@@ -266,9 +413,12 @@ export default function ClasesPage() {
     },
   ];
 
-  // --- Render ────────────────────────────────────────────────────────
+  /** Clase CSS reutilizable para todos los inputs del formulario */
+  const inputCls = "apple-input";
+
   return (
     <div>
+      {/* Cabecera con titulo y boton de nueva clase */}
       <div className="animate-fade-in mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
@@ -276,52 +426,56 @@ export default function ClasesPage() {
           </h2>
           <p className="mt-2 text-lg font-medium text-[#86868b]">Programa y gestiona las clases</p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
-        >
-          <Plus size={16} /> Nueva Clase
-        </button>
+        {canCreateClass ? (
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED]"
+          >
+            <Plus size={16} /> Nueva Clase
+          </button>
+        ) : null}
       </div>
 
+      {/* Tabla principal de clases */}
       <div className="animate-fade-in rounded-3xl border border-gray-100 bg-white p-6 shadow-sm delay-100 sm:p-8 dark:border-gray-800 dark:bg-[#1d1d1f]">
-        {list.tableError && (
+        {tableError && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
-            {list.tableError}
+            {tableError}
           </div>
         )}
         <DataTable
           columns={columns}
-          data={list.data}
-          loading={list.loading}
+          data={data}
+          loading={loading}
           searchPlaceholder="Buscar por fecha, tipo, estado..."
-          onEdit={openEdit}
-          onDelete={(row) => {
-            list.setDeleting(row);
-            list.setDeleteOpen(true);
-          }}
+          searchTerm={searchTerm}
+          onEdit={canEditClass ? openEdit : undefined}
+          onDelete={canDeleteClass ? openDelete : undefined}
           serverSide
-          totalCount={list.totalCount}
-          currentPage={list.currentPage}
-          onPageChange={list.handlePageChange}
-          onSearchChange={list.handleSearchChange}
-          pageSize={list.pageSize}
+          totalCount={totalCount}
+          currentPage={currentPage}
+          onPageChange={handlePageChange}
+          onSearchChange={handleSearchChange}
+          pageSize={PAGE_SIZE}
         />
       </div>
 
+      {/* Modal de creacion/edicion de clase */}
       <Modal
-        open={list.modalOpen}
-        onClose={() => list.setModalOpen(false)}
-        title={list.editing ? "Editar Clase" : "Nueva Clase"}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? "Editar Clase" : "Nueva Clase"}
         maxWidth="max-w-xl"
       >
         <div className="space-y-4">
+          {/* Mensaje de error si existe */}
           {error && (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
               {error}
             </p>
           )}
 
+          {/* Selector de alumno (obligatorio) */}
           <div>
             <label className="mb-1 block text-xs text-[#86868b]">Alumno *</label>
             <select
@@ -338,6 +492,7 @@ export default function ClasesPage() {
             </select>
           </div>
 
+          {/* Selectores de instructor y vehiculo (opcionales) */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs text-[#86868b]">Instructor</label>
@@ -371,6 +526,7 @@ export default function ClasesPage() {
             </div>
           </div>
 
+          {/* Selectores de tipo y estado */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs text-[#86868b]">Tipo</label>
@@ -402,6 +558,7 @@ export default function ClasesPage() {
             </div>
           </div>
 
+          {/* Campos de fecha y horario (obligatorios) */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs text-[#86868b]">Fecha *</label>
@@ -432,6 +589,7 @@ export default function ClasesPage() {
             </div>
           </div>
 
+          {/* Campo de notas (opcional) */}
           <div>
             <label className="mb-1 block text-xs text-[#86868b]">Notas</label>
             <textarea
@@ -442,29 +600,31 @@ export default function ClasesPage() {
             />
           </div>
 
+          {/* Botones de accion del formulario */}
           <div className="flex justify-end gap-3 pt-2">
             <button
-              onClick={() => list.setModalOpen(false)}
+              onClick={() => setModalOpen(false)}
               className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
-              disabled={list.saving}
+              disabled={saving}
               className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
             >
-              {list.saving ? "Guardando..." : list.editing ? "Guardar Cambios" : "Crear Clase"}
+              {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Clase"}
             </button>
           </div>
         </div>
       </Modal>
 
+      {/* Dialogo de confirmacion de eliminacion */}
       <DeleteConfirm
-        open={list.deleteOpen}
-        onClose={() => list.setDeleteOpen(false)}
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
-        loading={list.saving}
+        loading={saving}
         message="¿Eliminar esta clase?"
       />
     </div>

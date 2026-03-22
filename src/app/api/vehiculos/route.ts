@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import {
-  parseListParams,
-  createWhereBuilder,
-  buildPaginationRefs,
-  toNumber,
-} from "@/lib/api-helpers";
-import {
   buildDashboardListServerCacheKey,
   isFreshDashboardDataRequested,
 } from "@/lib/dashboard-server-cache";
@@ -53,26 +47,40 @@ type CountRow = {
 
 const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
 
+import { parseInteger, toNumber } from "@/lib/api-helpers";
+
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
   if (!auth.ok) return auth.response;
 
   const { perfil } = auth;
   const url = new URL(request.url);
-  const { search, page, pageSize } = parseListParams(url);
+  const search = (url.searchParams.get("q") ?? "").trim();
+  const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
+  const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
   }
 
-  const scope = { escuelaId, sedeId: perfil.sede_id };
-  const wb = createWhereBuilder();
-  wb.where.push(`v.escuela_id = ${wb.addValue(escuelaId)}`);
+  const scope = {
+    escuelaId,
+    sedeId: perfil.sede_id,
+  };
+
+  const values: Array<string | number> = [];
+  const addValue = (value: string | number) => {
+    values.push(value);
+    return `$${values.length}`;
+  };
+
+  const where: string[] = [];
+  where.push(`v.escuela_id = ${addValue(escuelaId)}`);
 
   if (search) {
-    const ref = wb.addValue(`%${search}%`);
-    wb.where.push(`(
+    const ref = addValue(`%${search}%`);
+    where.push(`(
       v.marca ILIKE ${ref}
       OR v.modelo ILIKE ${ref}
       OR v.matricula ILIKE ${ref}
@@ -81,9 +89,11 @@ export async function GET(request: Request) {
     )`);
   }
 
-  const whereSql = wb.toSql();
+  const whereSql = where.join(" AND ");
   const pool = getServerDbPool();
-  const pg = buildPaginationRefs(page, pageSize, wb.values.length);
+  const offset = page * pageSize;
+  const limitRef = `$${values.length + 1}`;
+  const offsetRef = `$${values.length + 2}`;
 
   const payload = await getServerReadCached({
     key: buildDashboardListServerCacheKey("vehiculos", perfil.id, scope, url.searchParams),
@@ -98,7 +108,7 @@ export async function GET(request: Request) {
             from public.vehiculos v
             where ${whereSql}
           `,
-          wb.values
+          values
         ),
         pool.query<VehiculoWithBitacoraRow>(
           `
@@ -124,9 +134,9 @@ export async function GET(request: Request) {
             ) b on true
             where ${whereSql}
             order by v.created_at desc
-            limit ${pg.limitRef} offset ${pg.offsetRef}
+            limit ${limitRef} offset ${offsetRef}
           `,
-          [...wb.values, ...pg.values]
+          [...values, pageSize, offset]
         ),
       ]);
 
@@ -143,6 +153,64 @@ export async function GET(request: Request) {
       };
     },
   });
+
+  // ── Opcional: incluir catálogos en la misma respuesta (ahorra 1 HTTP request) ──
+  const includeCatalogs = url.searchParams.get("include_catalogs") === "1";
+
+  if (includeCatalogs) {
+    const [vehiculosCatRes, instructoresCatRes, currentInstructorRes] = await Promise.all([
+      pool.query<{
+        id: string;
+        escuela_id: string;
+        sede_id: string;
+        user_id: string;
+        marca: string;
+        modelo: string;
+        matricula: string;
+        tipo: string;
+        anio: number | null;
+        fecha_itv: string | null;
+        seguro_vencimiento: string | null;
+        estado: string;
+        kilometraje: number | string | null;
+        notas: string | null;
+        created_at: string;
+      }>(
+        `select id, escuela_id, sede_id, user_id, marca, modelo, matricula, tipo, anio, fecha_itv, seguro_vencimiento, estado, kilometraje, notas, created_at
+         from public.vehiculos where escuela_id = $1 order by created_at desc`,
+        [escuelaId]
+      ),
+      pool.query<{ id: string; nombre: string; apellidos: string }>(
+        `select id, nombre, apellidos from public.instructores where escuela_id = $1 order by nombre, apellidos`,
+        [escuelaId]
+      ),
+      perfil.rol === "instructor"
+        ? pool.query<{ id: string }>(
+            `select id from public.instructores where user_id = $1 limit 1`,
+            [perfil.id]
+          )
+        : Promise.resolve({ rows: [] as Array<{ id: string }> }),
+    ]);
+
+    return NextResponse.json(
+      {
+        ...payload,
+        _catalogs: {
+          vehiculos: vehiculosCatRes.rows.map((r) => ({
+            ...r,
+            kilometraje: Number(r.kilometraje || 0),
+          })),
+          instructores: instructoresCatRes.rows,
+          currentInstructorId: currentInstructorRes.rows[0]?.id ?? null,
+        },
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=45, stale-while-revalidate=60",
+        },
+      }
+    );
+  }
 
   return NextResponse.json(payload, {
     headers: {

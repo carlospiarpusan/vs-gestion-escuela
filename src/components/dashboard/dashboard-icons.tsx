@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import {
+  Activity,
   BarChart3,
   BookOpen,
   Building2,
@@ -11,6 +12,7 @@ import {
   CreditCard,
   DollarSign,
   FileText,
+  Fingerprint,
   Home,
   Landmark,
   ReceiptText,
@@ -66,6 +68,10 @@ export function renderDashboardIcon(icon: DashboardIconKey, size = 18): ReactNod
       return <BookOpen size={size} />;
     case "permissions":
       return <ShieldCheck size={size} />;
+    case "analytics":
+      return <Activity size={size} />;
+    case "arco":
+      return <Fingerprint size={size} />;
     default:
       return <Home size={size} />;
   }

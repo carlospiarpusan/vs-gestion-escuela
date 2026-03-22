@@ -14,6 +14,7 @@ import {
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
+import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type {
   Vehiculo,
   TipoVehiculo,
@@ -149,7 +150,25 @@ export default function VehiculosPage() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<"vehiculos" | "bitacora">("vehiculos");
   const isInstructor = perfil?.rol === "instructor";
-  const canManageVehiculos = !isInstructor;
+  const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
+  const canCreateVehicle = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "vehicles", "create")
+    : !isInstructor;
+  const canEditVehicle = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "vehicles", "edit")
+    : !isInstructor;
+  const canDeleteVehicle = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "vehicles", "delete")
+    : !isInstructor;
+  const canCreateLogbook = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "logbook", "create")
+    : true;
+  const canEditLogbook = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "logbook", "edit")
+    : true;
+  const canDeleteLogbook = auditedRole
+    ? canAuditedRolePerformAction(auditedRole, "logbook", "delete")
+    : !isInstructor;
 
   // ── Vehículos state ──────────────────────────────────
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
@@ -199,14 +218,20 @@ export default function VehiculosPage() {
     }
   }, [searchParams]);
 
-  const loadCatalogs = useCallback(async () => {
-    if (!perfil?.escuela_id) return;
+  const catalogsLoadedRef = useRef(false);
 
-    const catalogs = await getDashboardCatalogCached<{
-      vehiculos: Vehiculo[];
-      instructores: Instructor[];
-      currentInstructorId: string | null;
-    }>({
+  type VehiculosCatalogs = {
+    vehiculos: Vehiculo[];
+    instructores: Instructor[];
+    currentInstructorId: string | null;
+  };
+
+  const loadCatalogs = useCallback(async () => {
+    // Los catálogos se cargan desde fetchVehiculosTable con include_catalogs=1
+    // Este callback se mantiene para recargas manuales post-mutación
+    if (!perfil?.escuela_id || catalogsLoadedRef.current) return;
+
+    const catalogs = await getDashboardCatalogCached<VehiculosCatalogs>({
       name: "vehiculos-base",
       scope: {
         id: perfil.id,
@@ -215,14 +240,11 @@ export default function VehiculosPage() {
         sedeId: perfil.sede_id,
       },
       loader: async () => {
-        return fetchJsonWithRetry<{
-          vehiculos: Vehiculo[];
-          instructores: Instructor[];
-          currentInstructorId: string | null;
-        }>("/api/vehiculos/catalogos");
+        return fetchJsonWithRetry<VehiculosCatalogs>("/api/vehiculos/catalogos");
       },
     });
 
+    catalogsLoadedRef.current = true;
     setVehiculos(catalogs.vehiculos);
     setInstructores(catalogs.instructores);
     if (isInstructor) {
@@ -244,8 +266,14 @@ export default function VehiculosPage() {
         });
         if (search.trim()) params.set("q", search.trim());
 
-        const payload = await getDashboardListCached<VehiculosListResponse>({
-          name: "vehiculos-table",
+        // En la primera carga incluimos catálogos para ahorrar 1 HTTP request
+        const needCatalogs = !catalogsLoadedRef.current;
+        if (needCatalogs) params.set("include_catalogs", "1");
+
+        const payload = await getDashboardListCached<
+          VehiculosListResponse & { _catalogs?: VehiculosCatalogs }
+        >({
+          name: needCatalogs ? "vehiculos-table-with-catalogs" : "vehiculos-table",
           scope: {
             id: perfil?.id,
             rol: perfil?.rol,
@@ -253,12 +281,25 @@ export default function VehiculosPage() {
             sedeId: perfil?.sede_id,
           },
           params,
-          loader: () => fetchJsonWithRetry<VehiculosListResponse>(`/api/vehiculos?${params.toString()}`),
+          loader: () =>
+            fetchJsonWithRetry<VehiculosListResponse & { _catalogs?: VehiculosCatalogs }>(
+              `/api/vehiculos?${params.toString()}`
+            ),
         });
 
         if (fetchId !== vehiculosFetchIdRef.current) return;
 
         setVehiculosTabla(payload.rows || []);
+
+        // Hidratar catálogos desde la respuesta combinada
+        if (payload._catalogs && !catalogsLoadedRef.current) {
+          catalogsLoadedRef.current = true;
+          setVehiculos(payload._catalogs.vehiculos);
+          setInstructores(payload._catalogs.instructores);
+          if (isInstructor) {
+            setCurrentInstructorId(payload._catalogs.currentInstructorId);
+          }
+        }
       } catch {
         if (fetchId !== vehiculosFetchIdRef.current) return;
         setVehiculosTabla([]);
@@ -296,7 +337,9 @@ export default function VehiculosPage() {
           },
           params,
           loader: () =>
-            fetchJsonWithRetry<MantenimientoListResponse>(`/api/mantenimiento?${params.toString()}`),
+            fetchJsonWithRetry<MantenimientoListResponse>(
+              `/api/mantenimiento?${params.toString()}`
+            ),
         });
 
         if (fetchId !== mantenimientoFetchIdRef.current) return;
@@ -315,36 +358,43 @@ export default function VehiculosPage() {
     [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
   );
 
-  const fetchHistorialVehiculo = useCallback(async (vehiculoId: string) => {
-    try {
-      const params = new URLSearchParams({
-        vehiculo_id: vehiculoId,
-        page: "0",
-        pageSize: "200",
-      });
-      const payload = await getDashboardListCached<MantenimientoListResponse>({
-        name: "vehiculos-historial",
-        scope: {
-          id: perfil?.id,
-          rol: perfil?.rol,
-          escuelaId: perfil?.escuela_id,
-          sedeId: perfil?.sede_id,
-        },
-        params,
-        loader: () =>
-          fetchJsonWithRetry<MantenimientoListResponse>(`/api/mantenimiento?${params.toString()}`),
-      });
-      setHistorialRegistros(payload.rows || []);
-    } catch {
-      setHistorialRegistros([]);
-      toast.error("No se pudo cargar el historial del vehículo.");
-    }
-  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
+  const fetchHistorialVehiculo = useCallback(
+    async (vehiculoId: string) => {
+      try {
+        const params = new URLSearchParams({
+          vehiculo_id: vehiculoId,
+          page: "0",
+          pageSize: "200",
+        });
+        const payload = await getDashboardListCached<MantenimientoListResponse>({
+          name: "vehiculos-historial",
+          scope: {
+            id: perfil?.id,
+            rol: perfil?.rol,
+            escuelaId: perfil?.escuela_id,
+            sedeId: perfil?.sede_id,
+          },
+          params,
+          loader: () =>
+            fetchJsonWithRetry<MantenimientoListResponse>(
+              `/api/mantenimiento?${params.toString()}`
+            ),
+        });
+        setHistorialRegistros(payload.rows || []);
+      } catch {
+        setHistorialRegistros([]);
+        toast.error("No se pudo cargar el historial del vehículo.");
+      }
+    },
+    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
+  );
 
   useEffect(() => {
-    if (!perfil?.escuela_id) return;
+    // Solo cargar catálogos manualmente si estamos en tab bitácora
+    // (en tab vehiculos los catálogos vienen con include_catalogs)
+    if (!perfil?.escuela_id || tab === "vehiculos") return;
     void loadCatalogs();
-  }, [loadCatalogs, perfil?.escuela_id]);
+  }, [loadCatalogs, perfil?.escuela_id, tab]);
 
   useEffect(() => {
     if (!perfil?.escuela_id || tab !== "vehiculos") return;
@@ -358,11 +408,13 @@ export default function VehiculosPage() {
 
   // ── Vehiculos CRUD ───────────────────────────────────
   const openCreateV = () => {
+    if (!canCreateVehicle) return;
     setEditingV(null);
     restoreVehiculoDraft(emptyVForm);
     setModalVOpen(true);
   };
   const openEditV = (row: Vehiculo) => {
+    if (!canEditVehicle) return;
     setEditingV(row);
     setFormV({
       marca: row.marca,
@@ -379,11 +431,13 @@ export default function VehiculosPage() {
     setModalVOpen(true);
   };
   const openDeleteV = (row: Vehiculo) => {
+    if (!canDeleteVehicle) return;
     setDeletingV(row);
     setDeleteVOpen(true);
   };
 
   const handleSaveV = async () => {
+    if (editingV ? !canEditVehicle : !canCreateVehicle) return;
     const result = vehiculoSchema.safeParse(formV);
     if (!result.success) {
       toast.error(result.error.issues[0]?.message || "Error en el formulario del vehículo.");
@@ -452,6 +506,7 @@ export default function VehiculosPage() {
   };
 
   const handleDeleteV = async () => {
+    if (!canDeleteVehicle) return;
     if (!deletingV) return;
     setSavingV(true);
     try {
@@ -480,6 +535,7 @@ export default function VehiculosPage() {
 
   // ── Mantenimiento CRUD ───────────────────────────────
   const openCreateM = () => {
+    if (!canCreateLogbook) return;
     setEditingM(null);
     restoreMantenimientoDraft({
       ...emptyMForm,
@@ -488,6 +544,7 @@ export default function VehiculosPage() {
     setModalMOpen(true);
   };
   const openEditM = (row: MantenimientoVehiculo) => {
+    if (!canEditLogbook) return;
     setEditingM(row);
     setFormM({
       vehiculo_id: row.vehiculo_id,
@@ -506,6 +563,7 @@ export default function VehiculosPage() {
     setModalMOpen(true);
   };
   const openDeleteM = (row: MantenimientoVehiculo) => {
+    if (!canDeleteLogbook) return;
     setDeletingM(row);
     setDeleteMOpen(true);
   };
@@ -525,6 +583,7 @@ export default function VehiculosPage() {
   );
 
   const handleSaveM = async () => {
+    if (editingM ? !canEditLogbook : !canCreateLogbook) return;
     const result = mantenimientoSchema.safeParse(formM);
     if (!result.success) {
       toast.error(result.error.issues[0]?.message || "Error en el registro de mantenimiento.");
@@ -621,6 +680,7 @@ export default function VehiculosPage() {
   };
 
   const handleDeleteM = async () => {
+    if (!canDeleteLogbook) return;
     if (!deletingM) return;
     setSavingM(true);
     try {
@@ -769,7 +829,7 @@ export default function VehiculosPage() {
     },
   ];
 
-  const canOpenCreate = tab === "bitacora" || canManageVehiculos;
+  const canOpenCreate = tab === "vehiculos" ? canCreateVehicle : canCreateLogbook;
 
   return (
     <div>
@@ -780,7 +840,9 @@ export default function VehiculosPage() {
           <p className="mt-0.5 text-sm text-[#86868b]">
             {isInstructor
               ? "Consulta y registra la bitácora de vehículos"
-              : "Gestiona la flota y la bitácora de vehículos"}
+              : canCreateVehicle || canEditVehicle
+                ? "Gestiona la flota y la bitácora de vehículos"
+                : "Consulta la flota y registra la bitácora sin editar vehículos"}
           </p>
         </div>
         {canOpenCreate && (
@@ -823,8 +885,8 @@ export default function VehiculosPage() {
             loading={loadingV}
             searchPlaceholder="Buscar por marca o matrícula..."
             searchKeys={["marca", "modelo", "matricula"]}
-            onEdit={canManageVehiculos ? openEditV : undefined}
-            onDelete={canManageVehiculos ? openDeleteV : undefined}
+            onEdit={canEditVehicle ? openEditV : undefined}
+            onDelete={canDeleteVehicle ? openDeleteV : undefined}
             extraActions={(row: VehiculoConBitacora) => (
               <button
                 onClick={() => {
@@ -851,11 +913,15 @@ export default function VehiculosPage() {
             loading={loadingM}
             searchPlaceholder="Buscar por vehículo, descripción o fecha..."
             searchKeys={["descripcion", "fecha", "vehiculo_nombre"] as (keyof MantenimientoRow)[]}
-            onEdit={(row: MantenimientoRow) => {
-              if (isInstructor && row.instructor_id !== currentInstructorId) return;
-              openEditM(row);
-            }}
-            onDelete={canManageVehiculos ? openDeleteM : undefined}
+            onEdit={
+              canEditLogbook
+                ? (row: MantenimientoRow) => {
+                    if (isInstructor && row.instructor_id !== currentInstructorId) return;
+                    openEditM(row);
+                  }
+                : undefined
+            }
+            onDelete={canDeleteLogbook ? openDeleteM : undefined}
           />
         </div>
       )}

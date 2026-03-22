@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
-import { parseListParams, createWhereBuilder, buildPaginationRefs } from "@/lib/api-helpers";
 import {
   buildDashboardListServerCacheKey,
   isFreshDashboardDataRequested,
@@ -34,30 +33,44 @@ type CountRow = {
 
 const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
 
+import { parseInteger } from "@/lib/api-helpers";
+
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
   if (!auth.ok) return auth.response;
 
   const { perfil } = auth;
   const url = new URL(request.url);
-  const { search, page, pageSize } = parseListParams(url);
+  const search = (url.searchParams.get("q") ?? "").trim();
+  const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
+  const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
   }
 
-  const scope = { escuelaId, sedeId: perfil.sede_id };
-  const wb = createWhereBuilder();
-  wb.where.push(`c.escuela_id = ${wb.addValue(escuelaId)}`);
+  const scope = {
+    escuelaId,
+    sedeId: perfil.sede_id,
+  };
+
+  const values: Array<string | number> = [];
+  const addValue = (value: string | number) => {
+    values.push(value);
+    return `$${values.length}`;
+  };
+
+  const where: string[] = [];
+  where.push(`c.escuela_id = ${addValue(escuelaId)}`);
 
   if (perfil.rol === "admin_sede" && perfil.sede_id) {
-    wb.where.push(`c.sede_id = ${wb.addValue(perfil.sede_id)}`);
+    where.push(`c.sede_id = ${addValue(perfil.sede_id)}`);
   }
 
   if (search) {
-    const ref = wb.addValue(`%${search}%`);
-    wb.where.push(`(
+    const ref = addValue(`%${search}%`);
+    where.push(`(
       c.fecha::text ILIKE ${ref}
       OR c.tipo::text ILIKE ${ref}
       OR c.estado::text ILIKE ${ref}
@@ -69,9 +82,11 @@ export async function GET(request: Request) {
     )`);
   }
 
-  const whereSql = wb.toSql();
+  const whereSql = where.join(" AND ");
   const pool = getServerDbPool();
-  const pg = buildPaginationRefs(page, pageSize, wb.values.length);
+  const offset = page * pageSize;
+  const limitRef = `$${values.length + 1}`;
+  const offsetRef = `$${values.length + 2}`;
 
   const payload = await getServerReadCached({
     key: buildDashboardListServerCacheKey("clases", perfil.id, scope, url.searchParams),
@@ -88,7 +103,7 @@ export async function GET(request: Request) {
             left join public.instructores i on i.id = c.instructor_id
             where ${whereSql}
           `,
-          wb.values
+          values
         ),
         pool.query<ClaseRow>(
           `
@@ -111,9 +126,9 @@ export async function GET(request: Request) {
             left join public.instructores i on i.id = c.instructor_id
             where ${whereSql}
             order by c.fecha desc, c.created_at desc
-            limit ${pg.limitRef} offset ${pg.offsetRef}
+            limit ${limitRef} offset ${offsetRef}
           `,
-          [...wb.values, ...pg.values]
+          [...values, pageSize, offset]
         ),
       ]);
 
@@ -127,6 +142,42 @@ export async function GET(request: Request) {
       };
     },
   });
+
+  // ── Opcional: incluir catálogos en la misma respuesta (ahorra 1 HTTP request) ──
+  const includeCatalogs = url.searchParams.get("include_catalogs") === "1";
+
+  if (includeCatalogs) {
+    const [alumnosRes, instructoresRes, vehiculosRes] = await Promise.all([
+      pool.query<{ id: string; nombre: string; apellidos: string }>(
+        `select id, nombre, apellidos from public.alumnos where escuela_id = $1 and estado = 'activo' order by nombre, apellidos`,
+        [escuelaId]
+      ),
+      pool.query<{ id: string; nombre: string; apellidos: string }>(
+        `select id, nombre, apellidos from public.instructores where escuela_id = $1 and estado = 'activo' order by nombre, apellidos`,
+        [escuelaId]
+      ),
+      pool.query<{ id: string; marca: string; modelo: string; matricula: string }>(
+        `select id, marca, modelo, matricula from public.vehiculos where escuela_id = $1 and estado <> 'baja' order by created_at desc`,
+        [escuelaId]
+      ),
+    ]);
+
+    return NextResponse.json(
+      {
+        ...payload,
+        _catalogs: {
+          alumnos: alumnosRes.rows,
+          instructores: instructoresRes.rows,
+          vehiculos: vehiculosRes.rows,
+        },
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=45, stale-while-revalidate=60",
+        },
+      }
+    );
+  }
 
   return NextResponse.json(payload, {
     headers: {
