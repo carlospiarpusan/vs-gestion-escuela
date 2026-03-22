@@ -20,7 +20,11 @@ describe("dashboard navigation config", () => {
     ]);
     expect(navigation[1]?.modules.map((module) => module.id)).toEqual(["exams"]);
     expect(navigation[2]?.modules.map((module) => module.id)).toEqual(["permissions"]);
-    expect(navigation[3]?.modules.map((module) => module.id)).toEqual(["schools", "subscriptions"]);
+    expect(navigation[3]?.modules.map((module) => module.id)).toEqual([
+      "schools",
+      "subscriptions",
+      "analytics",
+    ]);
   });
 
   it("groups admin_escuela modules by priority area order", () => {

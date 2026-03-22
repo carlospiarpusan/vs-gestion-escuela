@@ -19,6 +19,7 @@ import {
 } from "@/lib/cale-admin";
 import { CALE_BANK_SOURCE } from "@/lib/cale";
 import { getServerDbPool } from "@/lib/server-db";
+import { parseInteger, toNumber } from "@/lib/api-helpers";
 
 const VIEWER_ROLES = getAuditedRolesForCapabilityModule("exams");
 const EDITOR_ROLES = getAuditedRolesForCapabilityAction("exams", "configure");
@@ -41,18 +42,6 @@ const questionSchema = z.object({
   activa: z.boolean().default(true),
   codigo_externo: z.string().trim().max(120).optional().default(""),
 });
-
-function parseInteger(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
-
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") return Number(value);
-  return 0;
-}
 
 function canEditBank(role: string) {
   return EDITOR_ROLES.includes(role as (typeof EDITOR_ROLES)[number]);

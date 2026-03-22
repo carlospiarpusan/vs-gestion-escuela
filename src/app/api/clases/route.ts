@@ -33,11 +33,7 @@ type CountRow = {
 
 const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
 
-function parseInteger(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
+import { parseInteger } from "@/lib/api-helpers";
 
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
@@ -146,6 +142,42 @@ export async function GET(request: Request) {
       };
     },
   });
+
+  // ── Opcional: incluir catálogos en la misma respuesta (ahorra 1 HTTP request) ──
+  const includeCatalogs = url.searchParams.get("include_catalogs") === "1";
+
+  if (includeCatalogs) {
+    const [alumnosRes, instructoresRes, vehiculosRes] = await Promise.all([
+      pool.query<{ id: string; nombre: string; apellidos: string }>(
+        `select id, nombre, apellidos from public.alumnos where escuela_id = $1 and estado = 'activo' order by nombre, apellidos`,
+        [escuelaId]
+      ),
+      pool.query<{ id: string; nombre: string; apellidos: string }>(
+        `select id, nombre, apellidos from public.instructores where escuela_id = $1 and estado = 'activo' order by nombre, apellidos`,
+        [escuelaId]
+      ),
+      pool.query<{ id: string; marca: string; modelo: string; matricula: string }>(
+        `select id, marca, modelo, matricula from public.vehiculos where escuela_id = $1 and estado <> 'baja' order by created_at desc`,
+        [escuelaId]
+      ),
+    ]);
+
+    return NextResponse.json(
+      {
+        ...payload,
+        _catalogs: {
+          alumnos: alumnosRes.rows,
+          instructores: instructoresRes.rows,
+          vehiculos: vehiculosRes.rows,
+        },
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=45, stale-while-revalidate=60",
+        },
+      }
+    );
+  }
 
   return NextResponse.json(payload, {
     headers: {

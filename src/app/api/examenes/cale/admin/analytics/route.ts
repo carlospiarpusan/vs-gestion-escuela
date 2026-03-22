@@ -12,6 +12,7 @@ import type {
   CaleAnalyticsTrendPoint,
 } from "@/lib/cale-admin";
 import type { Rol } from "@/types/database";
+import { toNumber } from "@/lib/api-helpers";
 
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
 
@@ -64,12 +65,6 @@ function buildPeriod(year: string, month: string) {
     to: `${year}-${month}-${String(nextDate.getDate()).padStart(2, "0")}`,
     granularity: "day" as const,
   };
-}
-
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") return Number(value);
-  return 0;
 }
 
 function buildExamWhere(

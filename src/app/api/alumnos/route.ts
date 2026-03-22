@@ -4,6 +4,7 @@ import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import type { Rol, TipoRegistroAlumno } from "@/types/database";
+import { parseInteger, parseStringArray, toNumber } from "@/lib/api-helpers";
 
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
 const ALLOWED_TYPES: TipoRegistroAlumno[] = ["regular", "aptitud_conductor", "practica_adicional"];
@@ -44,23 +45,6 @@ type AlumnoApiRow = {
   valor_total_resumen: number | string | null;
   total_pagado: number | string | null;
 };
-
-function parseInteger(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
-
-function parseStringArray(value: string | null) {
-  return (value ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function toNumber(value: unknown) {
-  return Number(value || 0);
-}
 
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
@@ -299,6 +283,40 @@ export async function GET(request: Request) {
       };
     },
   });
+
+  // ── Opcional: incluir catálogos en la misma respuesta (ahorra 1 HTTP request) ──
+  const includeCatalogs = url.searchParams.get("include_catalogs") === "1";
+
+  if (includeCatalogs) {
+    const [escuelaRes, sedeRes, tramitadoresRes] = await Promise.all([
+      pool.query<{ categorias: string[] | null }>(
+        `select categorias from public.escuelas where id = $1 limit 1`,
+        [escuelaId]
+      ),
+      perfil.sede_id
+        ? Promise.resolve({ rows: [{ id: perfil.sede_id }] })
+        : pool.query<{ id: string }>(
+            `select id from public.sedes where escuela_id = $1 order by es_principal desc, created_at asc limit 1`,
+            [escuelaId]
+          ),
+      pool.query<{ nombre: string | null }>(
+        `select distinct nullif(trim(proveedor), '') as nombre
+         from public.gastos
+         where escuela_id = $1 and categoria = 'tramitador' and nullif(trim(proveedor), '') is not null
+         order by nombre asc`,
+        [escuelaId]
+      ),
+    ]);
+
+    return NextResponse.json({
+      ...result,
+      _catalogs: {
+        categoriasEscuela: escuelaRes.rows[0]?.categorias || [],
+        tramitadorOptions: tramitadoresRes.rows.map((r) => r.nombre || "").filter(Boolean),
+        defaultSedeId: sedeRes.rows[0]?.id ?? null,
+      },
+    });
+  }
 
   return NextResponse.json(result);
 }

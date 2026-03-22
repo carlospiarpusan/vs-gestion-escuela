@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
   ArrowUpRight,
   BookOpenCheck,
@@ -126,6 +127,15 @@ export default function SuperAdminDashboardHome() {
       accent: "bg-purple-500",
     },
     {
+      id: "analytics",
+      label: "Analíticas",
+      href: "/dashboard/analiticas",
+      description: "Métricas de uso, crecimiento, consumo de recursos y rendimiento.",
+      icon: <Activity className="text-amber-400" size={24} />,
+      bg: "from-amber-500/10 to-transparent border-amber-500/20",
+      accent: "bg-amber-500",
+    },
+    {
       id: "permissions",
       label: "Permisos",
       href: "/dashboard/permisos",
@@ -242,7 +252,7 @@ export default function SuperAdminDashboardHome() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {globalActionItems.map((action) => (
             <Link
               key={action.id}

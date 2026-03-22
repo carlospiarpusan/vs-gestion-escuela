@@ -11,6 +11,7 @@ import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardCacheTags } from "@/lib/server-cache-tags";
 import type { Rol } from "@/types/database";
+import { toNumber } from "@/lib/api-helpers";
 
 const ALLOWED_ROLES: Rol[] = [
   "super_admin",
@@ -56,12 +57,6 @@ type CountsRow = {
   clases_hoy: number | string | null;
   examenes_pendientes: number | string | null;
 };
-
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") return Number(value);
-  return 0;
-}
 
 function buildScopedWhere(
   alias: string,
@@ -173,13 +168,20 @@ export async function GET(request: Request) {
         ];
 
         const incomeValues: Array<string | number> = [];
-        const incomePeriodCte = createPeriodCte(incomeValues, previousMonthRange, currentMonthRange);
+        const incomePeriodCte = createPeriodCte(
+          incomeValues,
+          previousMonthRange,
+          currentMonthRange
+        );
         const incomeWhere = [
           `i.estado = 'cobrado'`,
           ...buildScopedWhere("i", authorization.perfil, escuelaId, incomeValues),
         ];
 
-        const dailyValues: Array<string | number> = [currentMonthRange.start, currentMonthRange.end];
+        const dailyValues: Array<string | number> = [
+          currentMonthRange.start,
+          currentMonthRange.end,
+        ];
         const dailyWhere = [
           `i.estado = 'cobrado'`,
           `i.fecha >= $1::date`,
@@ -197,9 +199,10 @@ export async function GET(request: Request) {
           ...buildScopedWhere("e", authorization.perfil, escuelaId, countsValues),
         ];
 
-        const [enrollmentRes, activeStudentsRes, incomeRes, dailyIncomeRes, countsRes] = await Promise.all([
-          pool.query<EnrollmentSummaryRow>(
-            `
+        const [enrollmentRes, activeStudentsRes, incomeRes, dailyIncomeRes, countsRes] =
+          await Promise.all([
+            pool.query<EnrollmentSummaryRow>(
+              `
               ${enrollmentPeriodCte},
               enrollment_sources as (
                 select
@@ -292,10 +295,10 @@ export async function GET(request: Request) {
               from student_buckets
               group by period_key
             `,
-            enrollmentValues
-          ),
-          pool.query<ActiveStudentSummaryRow>(
-            `
+              enrollmentValues
+            ),
+            pool.query<ActiveStudentSummaryRow>(
+              `
               with active_sources as (
                 select
                   a.id as alumno_id
@@ -317,10 +320,10 @@ export async function GET(request: Request) {
                 count(distinct alumno_id)::int as total
               from active_sources
             `,
-            activeValues
-          ),
-          pool.query<IncomeSummaryRow>(
-            `
+              activeValues
+            ),
+            pool.query<IncomeSummaryRow>(
+              `
               ${incomePeriodCte},
               filtered_ingresos as (
                 select
@@ -353,10 +356,10 @@ export async function GET(request: Request) {
               from filtered_ingresos
               group by period_key
             `,
-            incomeValues
-          ),
-          pool.query<DailyIncomeRow>(
-            `
+              incomeValues
+            ),
+            pool.query<DailyIncomeRow>(
+              `
               select
                 extract(day from i.fecha)::int as date,
                 coalesce(sum(coalesce(i.monto, 0)::numeric), 0)::numeric as monto
@@ -365,10 +368,10 @@ export async function GET(request: Request) {
               group by 1
               order by 1 asc
             `,
-            dailyValues
-          ),
-          pool.query<CountsRow>(
-            `
+              dailyValues
+            ),
+            pool.query<CountsRow>(
+              `
               select
                 (
                   select count(*)::int
@@ -381,16 +384,14 @@ export async function GET(request: Request) {
                   where ${examWhere.join(" and ")}
                 ) as examenes_pendientes
             `,
-            countsValues
-          ),
-        ]);
+              countsValues
+            ),
+          ]);
 
         const enrollmentByPeriod = new Map(
           enrollmentRes.rows.map((row) => [row.period_key, row] as const)
         );
-        const incomeByPeriod = new Map(
-          incomeRes.rows.map((row) => [row.period_key, row] as const)
-        );
+        const incomeByPeriod = new Map(incomeRes.rows.map((row) => [row.period_key, row] as const));
         const currentEnrollment = enrollmentByPeriod.get("current");
         const previousEnrollment = enrollmentByPeriod.get("previous");
         const activeStudents = activeStudentsRes.rows[0];

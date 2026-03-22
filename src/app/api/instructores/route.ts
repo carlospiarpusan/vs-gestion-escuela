@@ -8,6 +8,7 @@ import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
+import { parseInteger } from "@/lib/api-helpers";
 
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
 
@@ -31,12 +32,6 @@ type CountRow = {
 };
 
 const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
-
-function parseInteger(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
 
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);

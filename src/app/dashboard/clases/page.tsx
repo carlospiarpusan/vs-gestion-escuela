@@ -20,7 +20,6 @@ import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import {
-  getDashboardCatalogCached,
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
@@ -79,6 +78,7 @@ export default function ClasesPage() {
   const [currentPage, setCurrentPage] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const fetchIdRef = useRef(0);
+  const catalogsLoadedRef = useRef(false);
 
   // Listas de referencia para los selectores del formulario
   const [alumnos, setAlumnos] = useState<Alumno[]>([]);
@@ -96,8 +96,15 @@ export default function ClasesPage() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
 
+  type ClasesCatalogs = {
+    alumnos: Alumno[];
+    instructores: Instructor[];
+    vehiculos: Vehiculo[];
+  };
+
   /**
    * fetchData - Obtiene clases paginadas desde la API server-side.
+   * En la primera carga incluye catálogos para ahorrar 1 HTTP request.
    */
   const fetchData = useCallback(
     async (page = 0, search = "") => {
@@ -114,8 +121,13 @@ export default function ClasesPage() {
         });
         if (search.trim()) params.set("q", search.trim());
 
-        const payload = await getDashboardListCached<ClasesListResponse>({
-          name: "clases-table",
+        const needCatalogs = !catalogsLoadedRef.current;
+        if (needCatalogs) params.set("include_catalogs", "1");
+
+        const payload = await getDashboardListCached<
+          ClasesListResponse & { _catalogs?: ClasesCatalogs }
+        >({
+          name: needCatalogs ? "clases-table-with-catalogs" : "clases-table",
           scope: {
             id: perfil?.id,
             rol: perfil?.rol,
@@ -123,13 +135,23 @@ export default function ClasesPage() {
             sedeId: perfil?.sede_id,
           },
           params,
-          loader: () => fetchJsonWithRetry<ClasesListResponse>(`/api/clases?${params.toString()}`),
+          loader: () =>
+            fetchJsonWithRetry<ClasesListResponse & { _catalogs?: ClasesCatalogs }>(
+              `/api/clases?${params.toString()}`
+            ),
         });
 
         if (fetchId !== fetchIdRef.current) return;
 
         setData(payload.rows || []);
         setTotalCount(payload.totalCount || 0);
+
+        if (payload._catalogs && !catalogsLoadedRef.current) {
+          catalogsLoadedRef.current = true;
+          setAlumnos(payload._catalogs.alumnos);
+          setInstructores(payload._catalogs.instructores);
+          setVehiculos(payload._catalogs.vehiculos);
+        }
       } catch (fetchError: unknown) {
         if (fetchId !== fetchIdRef.current) return;
         setData([]);
@@ -151,45 +173,6 @@ export default function ClasesPage() {
     if (!escuelaId) return;
     void fetchData(currentPage, searchTerm);
   }, [escuelaId, fetchData, currentPage, searchTerm]);
-
-  useEffect(() => {
-    if (!escuelaId) return;
-
-    let cancelled = false;
-
-    const loadCatalogs = async () => {
-      const catalogs = await getDashboardCatalogCached<{
-        alumnos: Alumno[];
-        instructores: Instructor[];
-        vehiculos: Vehiculo[];
-      }>({
-        name: "clases-form",
-        scope: {
-          id: perfil?.id,
-          rol: perfil?.rol,
-          escuelaId,
-          sedeId: perfil?.sede_id,
-        },
-        loader: () =>
-          fetchJsonWithRetry<{
-            alumnos: Alumno[];
-            instructores: Instructor[];
-            vehiculos: Vehiculo[];
-          }>("/api/clases/catalogos"),
-      });
-
-      if (cancelled) return;
-      setAlumnos(catalogs.alumnos);
-      setInstructores(catalogs.instructores);
-      setVehiculos(catalogs.vehiculos);
-    };
-
-    void loadCatalogs();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [escuelaId, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
   /** Callback del DataTable server-side: cambio de pagina */
   const handlePageChange = useCallback((page: number) => {

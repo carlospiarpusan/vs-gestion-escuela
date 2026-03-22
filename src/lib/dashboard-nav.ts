@@ -29,7 +29,8 @@ export type DashboardIconKey =
   | "subscriptions"
   | "payroll"
   | "logbook"
-  | "permissions";
+  | "permissions"
+  | "analytics";
 
 export type DashboardModuleId =
   | "home"
@@ -51,7 +52,8 @@ export type DashboardModuleId =
   | "subscriptions"
   | "payroll"
   | "logbook"
-  | "permissions";
+  | "permissions"
+  | "analytics";
 
 export type DashboardAreaDescriptor = {
   id: DashboardAreaId;
@@ -370,6 +372,21 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     priority: 145,
     mobilePriority: 2,
     homePriority: 15,
+  },
+  {
+    id: "analytics",
+    label: "Analíticas",
+    shortLabel: "Analíticas",
+    href: "/dashboard/analiticas",
+    pathPrefix: "/dashboard/analiticas",
+    description:
+      "Métricas de uso, crecimiento, consumo de recursos y rendimiento de la plataforma.",
+    area: "platform",
+    icon: "analytics",
+    roles: ["super_admin"],
+    priority: 148,
+    mobilePriority: 3,
+    homePriority: 12,
   },
   {
     id: "payroll",

@@ -11,7 +11,6 @@ import PageScaffold from "@/components/dashboard/PageScaffold";
 import SummaryRow from "@/components/dashboard/SummaryRow";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import {
-  getDashboardCatalogCached,
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
@@ -125,6 +124,7 @@ export default function AlumnosPage() {
   const [abonoSaving, setAbonoSaving] = useState(false);
 
   const fetchIdRef = useRef(0);
+  const catalogsLoadedRef = useRef(false);
 
   // ─── Data fetching ───────────────────────────────────────────────────
 
@@ -151,9 +151,15 @@ export default function AlumnosPage() {
       if (typeFilters.length > 0) params.set("tipos", typeFilters.join(","));
       if (mesFilter) params.set("mes", mesFilter);
 
+      // En la primera carga incluimos catálogos para ahorrar 1 HTTP request
+      const needCatalogs = !catalogsLoadedRef.current;
+      if (needCatalogs) params.set("include_catalogs", "1");
+
       try {
-        const payload = await getDashboardListCached<AlumnosListResponse>({
-          name: "alumnos-table",
+        const payload = await getDashboardListCached<
+          AlumnosListResponse & { _catalogs?: AlumnosCatalogosResponse }
+        >({
+          name: needCatalogs ? "alumnos-table-with-catalogs" : "alumnos-table",
           scope: {
             id: perfil?.id,
             rol: perfil?.rol,
@@ -163,12 +169,22 @@ export default function AlumnosPage() {
           params,
           forceFresh,
           loader: () =>
-            fetchJsonWithRetry<AlumnosListResponse>(`/api/alumnos?${params.toString()}`),
+            fetchJsonWithRetry<AlumnosListResponse & { _catalogs?: AlumnosCatalogosResponse }>(
+              `/api/alumnos?${params.toString()}`
+            ),
         });
         if (fetchId !== fetchIdRef.current) return;
 
         setAlumnos(payload.rows || []);
         setTotalCount(payload.totalCount || 0);
+
+        // Hidratar catálogos desde la respuesta combinada
+        if (payload._catalogs && !catalogsLoadedRef.current) {
+          catalogsLoadedRef.current = true;
+          setCategoriasEscuela(payload._catalogs.categoriasEscuela || []);
+          setTramitadorOptions(payload._catalogs.tramitadorOptions || []);
+          setDefaultSedeId(payload._catalogs.defaultSedeId || null);
+        }
       } catch (fetchError) {
         if (fetchId !== fetchIdRef.current) return;
         console.error("[AlumnosPage] Error cargando alumnos:", fetchError);
@@ -187,42 +203,6 @@ export default function AlumnosPage() {
     if (!perfil) return;
     fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes);
   }, [fetchAlumnos, perfil, currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes]);
-
-  useEffect(() => {
-    if (!perfil?.escuela_id || !perfil?.id) return;
-
-    let cancelled = false;
-
-    const loadCatalogos = async () => {
-      try {
-        const payload = await getDashboardCatalogCached<AlumnosCatalogosResponse>({
-          name: "alumnos-catalogos",
-          scope: {
-            id: perfil.id,
-            rol: perfil.rol,
-            escuelaId: perfil.escuela_id,
-            sedeId: perfil.sede_id,
-          },
-          loader: () => fetchJsonWithRetry<AlumnosCatalogosResponse>("/api/alumnos/catalogos"),
-        });
-        if (cancelled) return;
-        setCategoriasEscuela(payload.categoriasEscuela || []);
-        setTramitadorOptions(payload.tramitadorOptions || []);
-        setDefaultSedeId(payload.defaultSedeId || null);
-      } catch {
-        if (cancelled) return;
-        setCategoriasEscuela([]);
-        setTramitadorOptions([]);
-        setDefaultSedeId(null);
-      }
-    };
-
-    void loadCatalogos();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
   // ─── Callbacks ───────────────────────────────────────────────────────
 

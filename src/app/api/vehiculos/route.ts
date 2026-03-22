@@ -47,15 +47,7 @@ type CountRow = {
 
 const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
 
-function parseInteger(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
-
-function toNumber(value: unknown) {
-  return Number(value || 0);
-}
+import { parseInteger, toNumber } from "@/lib/api-helpers";
 
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
@@ -161,6 +153,64 @@ export async function GET(request: Request) {
       };
     },
   });
+
+  // ── Opcional: incluir catálogos en la misma respuesta (ahorra 1 HTTP request) ──
+  const includeCatalogs = url.searchParams.get("include_catalogs") === "1";
+
+  if (includeCatalogs) {
+    const [vehiculosCatRes, instructoresCatRes, currentInstructorRes] = await Promise.all([
+      pool.query<{
+        id: string;
+        escuela_id: string;
+        sede_id: string;
+        user_id: string;
+        marca: string;
+        modelo: string;
+        matricula: string;
+        tipo: string;
+        anio: number | null;
+        fecha_itv: string | null;
+        seguro_vencimiento: string | null;
+        estado: string;
+        kilometraje: number | string | null;
+        notas: string | null;
+        created_at: string;
+      }>(
+        `select id, escuela_id, sede_id, user_id, marca, modelo, matricula, tipo, anio, fecha_itv, seguro_vencimiento, estado, kilometraje, notas, created_at
+         from public.vehiculos where escuela_id = $1 order by created_at desc`,
+        [escuelaId]
+      ),
+      pool.query<{ id: string; nombre: string; apellidos: string }>(
+        `select id, nombre, apellidos from public.instructores where escuela_id = $1 order by nombre, apellidos`,
+        [escuelaId]
+      ),
+      perfil.rol === "instructor"
+        ? pool.query<{ id: string }>(
+            `select id from public.instructores where user_id = $1 limit 1`,
+            [perfil.id]
+          )
+        : Promise.resolve({ rows: [] as Array<{ id: string }> }),
+    ]);
+
+    return NextResponse.json(
+      {
+        ...payload,
+        _catalogs: {
+          vehiculos: vehiculosCatRes.rows.map((r) => ({
+            ...r,
+            kilometraje: Number(r.kilometraje || 0),
+          })),
+          instructores: instructoresCatRes.rows,
+          currentInstructorId: currentInstructorRes.rows[0]?.id ?? null,
+        },
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=45, stale-while-revalidate=60",
+        },
+      }
+    );
+  }
 
   return NextResponse.json(payload, {
     headers: {

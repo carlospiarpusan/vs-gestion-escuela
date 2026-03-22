@@ -218,14 +218,20 @@ export default function VehiculosPage() {
     }
   }, [searchParams]);
 
-  const loadCatalogs = useCallback(async () => {
-    if (!perfil?.escuela_id) return;
+  const catalogsLoadedRef = useRef(false);
 
-    const catalogs = await getDashboardCatalogCached<{
-      vehiculos: Vehiculo[];
-      instructores: Instructor[];
-      currentInstructorId: string | null;
-    }>({
+  type VehiculosCatalogs = {
+    vehiculos: Vehiculo[];
+    instructores: Instructor[];
+    currentInstructorId: string | null;
+  };
+
+  const loadCatalogs = useCallback(async () => {
+    // Los catálogos se cargan desde fetchVehiculosTable con include_catalogs=1
+    // Este callback se mantiene para recargas manuales post-mutación
+    if (!perfil?.escuela_id || catalogsLoadedRef.current) return;
+
+    const catalogs = await getDashboardCatalogCached<VehiculosCatalogs>({
       name: "vehiculos-base",
       scope: {
         id: perfil.id,
@@ -234,14 +240,11 @@ export default function VehiculosPage() {
         sedeId: perfil.sede_id,
       },
       loader: async () => {
-        return fetchJsonWithRetry<{
-          vehiculos: Vehiculo[];
-          instructores: Instructor[];
-          currentInstructorId: string | null;
-        }>("/api/vehiculos/catalogos");
+        return fetchJsonWithRetry<VehiculosCatalogs>("/api/vehiculos/catalogos");
       },
     });
 
+    catalogsLoadedRef.current = true;
     setVehiculos(catalogs.vehiculos);
     setInstructores(catalogs.instructores);
     if (isInstructor) {
@@ -263,8 +266,14 @@ export default function VehiculosPage() {
         });
         if (search.trim()) params.set("q", search.trim());
 
-        const payload = await getDashboardListCached<VehiculosListResponse>({
-          name: "vehiculos-table",
+        // En la primera carga incluimos catálogos para ahorrar 1 HTTP request
+        const needCatalogs = !catalogsLoadedRef.current;
+        if (needCatalogs) params.set("include_catalogs", "1");
+
+        const payload = await getDashboardListCached<
+          VehiculosListResponse & { _catalogs?: VehiculosCatalogs }
+        >({
+          name: needCatalogs ? "vehiculos-table-with-catalogs" : "vehiculos-table",
           scope: {
             id: perfil?.id,
             rol: perfil?.rol,
@@ -273,12 +282,24 @@ export default function VehiculosPage() {
           },
           params,
           loader: () =>
-            fetchJsonWithRetry<VehiculosListResponse>(`/api/vehiculos?${params.toString()}`),
+            fetchJsonWithRetry<VehiculosListResponse & { _catalogs?: VehiculosCatalogs }>(
+              `/api/vehiculos?${params.toString()}`
+            ),
         });
 
         if (fetchId !== vehiculosFetchIdRef.current) return;
 
         setVehiculosTabla(payload.rows || []);
+
+        // Hidratar catálogos desde la respuesta combinada
+        if (payload._catalogs && !catalogsLoadedRef.current) {
+          catalogsLoadedRef.current = true;
+          setVehiculos(payload._catalogs.vehiculos);
+          setInstructores(payload._catalogs.instructores);
+          if (isInstructor) {
+            setCurrentInstructorId(payload._catalogs.currentInstructorId);
+          }
+        }
       } catch {
         if (fetchId !== vehiculosFetchIdRef.current) return;
         setVehiculosTabla([]);
@@ -369,9 +390,11 @@ export default function VehiculosPage() {
   );
 
   useEffect(() => {
-    if (!perfil?.escuela_id) return;
+    // Solo cargar catálogos manualmente si estamos en tab bitácora
+    // (en tab vehiculos los catálogos vienen con include_catalogs)
+    if (!perfil?.escuela_id || tab === "vehiculos") return;
     void loadCatalogs();
-  }, [loadCatalogs, perfil?.escuela_id]);
+  }, [loadCatalogs, perfil?.escuela_id, tab]);
 
   useEffect(() => {
     if (!perfil?.escuela_id || tab !== "vehiculos") return;

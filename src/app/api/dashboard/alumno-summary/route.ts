@@ -8,6 +8,7 @@ import {
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardCacheTags } from "@/lib/server-cache-tags";
+import { toNumber } from "@/lib/api-helpers";
 
 type AlumnoRow = {
   id: string;
@@ -50,12 +51,6 @@ type ExamenRow = {
   total_respuestas: number | string | null;
   respuestas_correctas: number | string | null;
 };
-
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") return Number(value);
-  return 0;
-}
 
 export async function GET() {
   const authorization = await authorizeApiRequest(["alumno"]);
