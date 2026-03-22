@@ -14,19 +14,13 @@ describe("dashboard navigation config", () => {
 
     expect(navigation.map((area) => area.id)).toEqual([
       "overview",
-      "finance",
       "exams",
       "configuration",
       "platform",
     ]);
-    expect(navigation[1]?.modules.map((module) => module.id)).toEqual(["reports"]);
-    expect(navigation[2]?.modules.map((module) => module.id)).toEqual(["exams"]);
-    expect(navigation[3]?.modules.map((module) => module.id)).toEqual([
-      "staff",
-      "permissions",
-      "branches",
-    ]);
-    expect(navigation[4]?.modules.map((module) => module.id)).toEqual(["schools"]);
+    expect(navigation[1]?.modules.map((module) => module.id)).toEqual(["exams"]);
+    expect(navigation[2]?.modules.map((module) => module.id)).toEqual(["permissions"]);
+    expect(navigation[3]?.modules.map((module) => module.id)).toEqual(["schools", "subscriptions"]);
   });
 
   it("groups admin_escuela modules by priority area order", () => {
