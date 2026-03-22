@@ -16,10 +16,12 @@ import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { getPasswordValidationError } from "@/lib/password-policy";
 import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
 import type { Escuela, EstadoEscuela, PlanEscuela } from "@/types/database";
-import { Plus, Building2, Eye, EyeOff } from "lucide-react";
+import { Plus, Building2, Eye, EyeOff, Filter, Users, MapPin } from "lucide-react";
 
 const planes: PlanEscuela[] = SCHOOL_PLAN_ORDER;
 const estados: EstadoEscuela[] = ["activa", "inactiva", "suspendida"];
+const filterSelectClass =
+  "rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-[#1d1d1f] transition-colors hover:border-gray-300 dark:border-gray-700 dark:bg-[#1d1d1f] dark:text-[#f5f5f7] dark:hover:border-gray-600";
 
 const CATEGORIAS_INDIVIDUALES = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
 const CATEGORIAS_COMBO = [
@@ -72,6 +74,8 @@ export default function EscuelasPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  const [filterPlan, setFilterPlan] = useState<PlanEscuela | "">("");
+  const [filterEstado, setFilterEstado] = useState<EstadoEscuela | "">("");
   const {
     value: escuelaForm,
     setValue: setEscuelaForm,
@@ -260,6 +264,19 @@ export default function EscuelasPage() {
     }
   };
 
+  const filteredEscuelas = escuelas.filter((e) => {
+    if (filterPlan && e.plan !== filterPlan) return false;
+    if (filterEstado && e.estado !== filterEstado) return false;
+    return true;
+  });
+
+  const stats = {
+    total: escuelas.length,
+    activas: escuelas.filter((e) => e.estado === "activa").length,
+    suspendidas: escuelas.filter((e) => e.estado === "suspendida").length,
+    inactivas: escuelas.filter((e) => e.estado === "inactiva").length,
+  };
+
   const estadoColors: Record<string, string> = {
     activa: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
     inactiva: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
@@ -298,6 +315,24 @@ export default function EscuelasPage() {
           </span>
         );
       },
+    },
+    {
+      key: "max_alumnos" as keyof Escuela,
+      label: "Capacidad",
+      render: (row: Escuela) => (
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 text-xs text-[#86868b]">
+            <Users size={12} />
+            <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {row.max_alumnos}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 text-xs text-[#86868b]">
+            <MapPin size={12} />
+            <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{row.max_sedes}</span>
+          </div>
+        </div>
+      ),
     },
     {
       key: "categorias" as keyof Escuela,
@@ -383,13 +418,80 @@ export default function EscuelasPage() {
         })}
       </div>
 
-      {/* Tabla */}
+      {/* Stats rápidos */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: "Total", value: stats.total, color: "text-[#1d1d1f] dark:text-[#f5f5f7]" },
+          { label: "Activas", value: stats.activas, color: "text-green-600 dark:text-green-400" },
+          {
+            label: "Suspendidas",
+            value: stats.suspendidas,
+            color: "text-red-600 dark:text-red-400",
+          },
+          { label: "Inactivas", value: stats.inactivas, color: "text-gray-500" },
+        ].map((s) => (
+          <div
+            key={s.label}
+            className="rounded-xl border border-gray-100 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#1d1d1f]"
+          >
+            <p className="text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
+              {s.label}
+            </p>
+            <p className={`mt-1 text-xl font-bold ${s.color}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filtros + Tabla */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Filter size={14} className="text-[#86868b]" />
+          <select
+            value={filterPlan}
+            onChange={(e) => setFilterPlan(e.target.value as PlanEscuela | "")}
+            className={filterSelectClass}
+          >
+            <option value="">Todos los planes</option>
+            {planes.map((p) => (
+              <option key={p} value={p}>
+                {SCHOOL_PLAN_DESCRIPTORS[p].label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterEstado}
+            onChange={(e) => setFilterEstado(e.target.value as EstadoEscuela | "")}
+            className={filterSelectClass}
+          >
+            <option value="">Todos los estados</option>
+            {estados.map((e) => (
+              <option key={e} value={e} className="capitalize">
+                {e}
+              </option>
+            ))}
+          </select>
+          {(filterPlan || filterEstado) && (
+            <button
+              onClick={() => {
+                setFilterPlan("");
+                setFilterEstado("");
+              }}
+              className="rounded-lg px-2 py-1 text-xs text-[#0071e3] transition-colors hover:bg-[#0071e3]/10"
+            >
+              Limpiar filtros
+            </button>
+          )}
+          {(filterPlan || filterEstado) && (
+            <span className="text-xs text-[#86868b]">
+              {filteredEscuelas.length} de {escuelas.length}
+            </span>
+          )}
+        </div>
         <DataTable
           columns={columns}
-          data={escuelas}
+          data={filteredEscuelas}
           loading={loading}
-          searchPlaceholder="Buscar por nombre o NIT..."
+          searchPlaceholder="Buscar por nombre, NIT o correo..."
           searchKeys={["nombre", "cif", "email"]}
           onEdit={openEdit}
           onDelete={openDelete}
@@ -562,6 +664,44 @@ export default function EscuelasPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              <p className="mt-1 mb-2 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
+                Límites de capacidad
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>Máx. alumnos</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100000}
+                    value={escuelaForm.max_alumnos}
+                    onChange={(e) =>
+                      setEscuelaForm({
+                        ...escuelaForm,
+                        max_alumnos: Math.max(1, parseInt(e.target.value) || 1),
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Máx. sedes</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={escuelaForm.max_sedes}
+                    onChange={(e) =>
+                      setEscuelaForm({
+                        ...escuelaForm,
+                        max_sedes: Math.max(1, parseInt(e.target.value) || 1),
+                      })
+                    }
+                    className={inputClass}
+                  />
                 </div>
               </div>
 
