@@ -8,6 +8,8 @@ import {
 } from "@/lib/api-auth";
 import { normalizeContractNumber } from "@/lib/contract-number";
 import { getServerDbPool } from "@/lib/server-db";
+import { revalidateServerReadCache } from "@/lib/server-read-cache";
+import { buildDashboardListCacheTags, buildFinanceCacheTags } from "@/lib/server-cache-tags";
 import type { MetodoPago, Rol } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = [
@@ -220,6 +222,13 @@ export async function POST(request: Request) {
     }
 
     await client.query("COMMIT");
+
+    const scope = { escuelaId: alumno.escuela_id, sedeId: payload.sede_id };
+    revalidateServerReadCache([
+      ...buildDashboardListCacheTags("alumnos", scope),
+      ...buildFinanceCacheTags("income", scope),
+    ]);
+
     return NextResponse.json({ ok: true, matricula_id: matriculaId });
   } catch (error) {
     await client.query("ROLLBACK");

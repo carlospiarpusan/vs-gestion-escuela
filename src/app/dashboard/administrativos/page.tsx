@@ -1,34 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase";
-import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
+import { useDashboardList } from "@/hooks/useDashboardList";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import { getDashboardCatalogCached } from "@/lib/dashboard-client-cache";
-import {
-  getDashboardListCached,
-  invalidateDashboardClientCaches,
-} from "@/lib/dashboard-client-cache";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
-import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
-import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import type { Perfil, Sede } from "@/types/database";
 import { Plus, Power } from "lucide-react";
 
 interface AdminRow extends Perfil {
   sede_nombre?: string;
 }
-
-type AdministrativosListResponse = {
-  totalCount: number;
-  rows: AdminRow[];
-};
-
-const PAGE_SIZE = 10;
 
 const emptyForm = {
   nombre: "",
@@ -41,88 +28,24 @@ const inputCls = "apple-input";
 const labelCls = "apple-label";
 
 export default function AdministrativosPage() {
-  const { perfil } = useAuth();
+  const list = useDashboardList<AdminRow>({ resource: "administrativos" });
+  const { perfil } = list;
 
-  const [data, setData] = useState<AdminRow[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [searchTerm, setSearchTerm] = useState("");
   const [sedes, setSedes] = useState<Sede[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tableError, setTableError] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [editing, setEditing] = useState<AdminRow | null>(null);
-  const [deleting, setDeleting] = useState<AdminRow | null>(null);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [reloadKey, setReloadKey] = useState(0);
-  const fetchIdRef = useRef(0);
   const {
     value: form,
     setValue: setForm,
     restoreDraft,
     clearDraft,
   } = useDraftForm("dashboard:administrativos:form", emptyForm, {
-    persist: modalOpen && !editing,
+    persist: list.modalOpen && !list.editing,
   });
 
   const auditedRole = isAuditedRole(perfil?.rol) ? perfil.rol : null;
   const canEdit = canAuditedRolePerformAction(auditedRole, "staff", "create");
 
-  const fetchAdministrativos = useCallback(
-    async (page = 0, search = "") => {
-      if (!perfil?.escuela_id) return;
-
-      const fetchId = ++fetchIdRef.current;
-      setLoading(true);
-      setTableError("");
-
-      try {
-        const params = new URLSearchParams({
-          page: String(page),
-          pageSize: String(PAGE_SIZE),
-        });
-
-        if (search.trim()) params.set("q", search.trim());
-
-        const payload = await getDashboardListCached<AdministrativosListResponse>({
-          name: "administrativos-table",
-          scope: {
-            id: perfil.id,
-            rol: perfil.rol,
-            escuelaId: perfil.escuela_id,
-            sedeId: perfil.sede_id,
-          },
-          params,
-          loader: () =>
-            fetchJsonWithRetry<AdministrativosListResponse>(
-              `/api/administrativos?${params.toString()}`
-            ),
-        });
-
-        if (fetchId !== fetchIdRef.current) return;
-
-        setData(payload.rows || []);
-        setTotalCount(payload.totalCount || 0);
-      } catch (fetchError: unknown) {
-        if (fetchId !== fetchIdRef.current) return;
-        setData([]);
-        setTotalCount(0);
-        setTableError(
-          fetchError instanceof Error
-            ? fetchError.message
-            : "No se pudieron cargar los administrativos."
-        );
-      } finally {
-        if (fetchId === fetchIdRef.current) {
-          setLoading(false);
-        }
-      }
-    },
-    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
-  );
-
+  // --- Load sedes catalog ─────────────────────────────────────────────
   useEffect(() => {
     if (!perfil?.escuela_id) return;
 
@@ -151,7 +74,6 @@ export default function AdministrativosPage() {
       });
 
       if (cancelled) return;
-
       setSedes(sedesData);
     };
 
@@ -162,32 +84,29 @@ export default function AdministrativosPage() {
     };
   }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
 
-  useEffect(() => {
-    if (!perfil?.escuela_id) return;
-    void fetchAdministrativos(currentPage, searchTerm);
-  }, [fetchAdministrativos, perfil?.escuela_id, currentPage, searchTerm, reloadKey]);
+  // --- Modal helpers ──────────────────────────────────────────────────
 
   const openCreate = () => {
-    setEditing(null);
     restoreDraft({
       ...emptyForm,
       sede_id: perfil?.rol === "admin_sede" && perfil.sede_id ? perfil.sede_id : "",
     });
     setError("");
-    setModalOpen(true);
+    list.openCreate();
   };
 
   const openEdit = (row: AdminRow) => {
-    setEditing(row);
     setForm({
       nombre: row.nombre,
-      cedula: "", // la cédula no se muestra ni edita (son credenciales auth)
+      cedula: "",
       email: row.email,
       sede_id: row.sede_id ?? "",
     });
     setError("");
-    setModalOpen(true);
+    list.openEdit(row);
   };
+
+  // --- Save ───────────────────────────────────────────────────────────
 
   const handleSave = async () => {
     if (!form.nombre.trim() || !form.sede_id) {
@@ -196,25 +115,24 @@ export default function AdministrativosPage() {
     }
     if (!perfil?.escuela_id) return;
 
-    setSaving(true);
+    list.setSaving(true);
     setError("");
 
     try {
-      if (editing) {
+      if (list.editing) {
         await fetchJsonWithRetry("/api/administrativos", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            id: editing.id,
+            id: list.editing.id,
             nombre: form.nombre.trim(),
             sede_id: form.sede_id,
           }),
         });
       } else {
-        // CREAR: llamar a la API que crea el usuario en Supabase Auth + perfil
         if (!form.cedula.trim()) {
           setError("La cédula es obligatoria para crear un administrativo.");
-          setSaving(false);
+          list.setSaving(false);
           return;
         }
 
@@ -234,27 +152,17 @@ export default function AdministrativosPage() {
         ...emptyForm,
         sede_id: perfil?.rol === "admin_sede" && perfil.sede_id ? perfil.sede_id : "",
       });
-      setSaving(false);
-      setModalOpen(false);
-      invalidateDashboardClientCaches();
-      void revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: {
-            escuelaId: perfil?.escuela_id,
-            sedeId: perfil?.sede_id,
-          },
-          includeFinance: false,
-          includeDashboard: true,
-        })
-      );
-      setReloadKey((value) => value + 1);
+      list.setSaving(false);
+      list.setModalOpen(false);
+      await list.revalidateAndRefresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al guardar el administrativo.");
-      setSaving(false);
+      list.setSaving(false);
     }
   };
 
-  // Activar / desactivar
+  // --- Toggle active ──────────────────────────────────────────────────
+
   const toggleActivo = async (row: AdminRow) => {
     await fetchJsonWithRetry("/api/administrativos", {
       method: "PATCH",
@@ -264,50 +172,31 @@ export default function AdministrativosPage() {
         activo: !row.activo,
       }),
     });
-    invalidateDashboardClientCaches();
-    void revalidateTaggedServerCaches(
-      buildScopedMutationRevalidationTags({
-        scope: {
-          escuelaId: perfil?.escuela_id,
-          sedeId: perfil?.sede_id,
-        },
-        includeFinance: false,
-        includeDashboard: true,
-      })
-    );
-    setReloadKey((value) => value + 1);
+    await list.revalidateAndRefresh();
   };
 
-  // Eliminar perfil
+  // --- Delete ─────────────────────────────────────────────────────────
+
   const handleDelete = async () => {
-    if (!deleting) return;
-    setSaving(true);
+    if (!list.deleting) return;
+    list.setSaving(true);
     try {
       await fetchJsonWithRetry("/api/administrativos", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: deleting.id }),
+        body: JSON.stringify({ id: list.deleting.id }),
       });
-      setSaving(false);
-      setDeleteOpen(false);
-      setDeleting(null);
-      invalidateDashboardClientCaches();
-      void revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: {
-            escuelaId: perfil?.escuela_id,
-            sedeId: perfil?.sede_id,
-          },
-          includeFinance: false,
-          includeDashboard: true,
-        })
-      );
-      setReloadKey((value) => value + 1);
+      list.setSaving(false);
+      list.setDeleteOpen(false);
+      list.setDeleting(null);
+      await list.revalidateAndRefresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al eliminar el administrativo.");
-      setSaving(false);
+      list.setSaving(false);
     }
   };
+
+  // --- Derived data ───────────────────────────────────────────────────
 
   const sedesDisponibles =
     perfil?.rol === "admin_sede" && perfil.sede_id
@@ -316,11 +205,11 @@ export default function AdministrativosPage() {
 
   const tableRows = useMemo(() => {
     const sedesMap = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
-    return data.map((row) => ({
+    return list.data.map((row) => ({
       ...row,
       sede_nombre: row.sede_nombre ?? (row.sede_id ? (sedesMap.get(row.sede_id) ?? "—") : "—"),
     }));
-  }, [data, sedes]);
+  }, [list.data, sedes]);
 
   const columns = useMemo(
     () => [
@@ -371,14 +260,7 @@ export default function AdministrativosPage() {
     []
   );
 
-  const handlePageChange = useCallback((page: number) => {
-    setCurrentPage(page);
-  }, []);
-
-  const handleSearchChange = useCallback((term: string) => {
-    setSearchTerm(term);
-    setCurrentPage(0);
-  }, []);
+  // --- Render ─────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -406,29 +288,29 @@ export default function AdministrativosPage() {
 
       {/* Lista */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
-        {tableError && (
+        {list.tableError && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
-            {tableError}
+            {list.tableError}
           </div>
         )}
 
         <DataTable
           columns={columns}
           data={tableRows}
-          loading={loading}
+          loading={list.loading}
           searchPlaceholder="Buscar por nombre o correo..."
           serverSide
-          totalCount={totalCount}
-          currentPage={currentPage}
-          onPageChange={handlePageChange}
-          onSearchChange={handleSearchChange}
-          pageSize={PAGE_SIZE}
+          totalCount={list.totalCount}
+          currentPage={list.currentPage}
+          onPageChange={list.handlePageChange}
+          onSearchChange={list.handleSearchChange}
+          pageSize={list.pageSize}
           onEdit={canEdit ? openEdit : undefined}
           onDelete={
             canEdit
               ? (row) => {
-                  setDeleting(row);
-                  setDeleteOpen(true);
+                  list.setDeleting(row);
+                  list.setDeleteOpen(true);
                 }
               : undefined
           }
@@ -450,9 +332,9 @@ export default function AdministrativosPage() {
 
       {/* Modal crear / editar */}
       <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={editing ? "Editar Administrativo" : "Nuevo Administrativo"}
+        open={list.modalOpen}
+        onClose={() => list.setModalOpen(false)}
+        title={list.editing ? "Editar Administrativo" : "Nuevo Administrativo"}
         maxWidth="max-w-md"
       >
         <div className="space-y-4">
@@ -474,7 +356,7 @@ export default function AdministrativosPage() {
           </div>
 
           {/* Cédula y email solo al crear */}
-          {!editing && (
+          {!list.editing && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelCls}>Cédula *</label>
@@ -501,7 +383,7 @@ export default function AdministrativosPage() {
           )}
 
           {/* Al editar mostrar el email como solo lectura */}
-          {editing && (
+          {list.editing && (
             <div>
               <label className={labelCls}>Correo / Cédula</label>
               <input
@@ -536,17 +418,21 @@ export default function AdministrativosPage() {
 
           <div className="flex justify-end gap-3 pt-2">
             <button
-              onClick={() => setModalOpen(false)}
+              onClick={() => list.setModalOpen(false)}
               className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={list.saving}
               className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
             >
-              {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Administrativo"}
+              {list.saving
+                ? "Guardando..."
+                : list.editing
+                  ? "Guardar Cambios"
+                  : "Crear Administrativo"}
             </button>
           </div>
         </div>
@@ -554,11 +440,11 @@ export default function AdministrativosPage() {
 
       {/* Confirmar eliminar */}
       <DeleteConfirm
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
+        open={list.deleteOpen}
+        onClose={() => list.setDeleteOpen(false)}
         onConfirm={handleDelete}
-        loading={saving}
-        message={`¿Eliminar al administrativo "${deleting?.nombre}"? Esta acción no se puede deshacer.`}
+        loading={list.saving}
+        message={`¿Eliminar al administrativo "${list.deleting?.nombre}"? Esta acción no se puede deshacer.`}
       />
     </div>
   );

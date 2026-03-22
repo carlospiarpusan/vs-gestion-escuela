@@ -12,32 +12,19 @@
  */
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
-import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
+import { useDashboardList } from "@/hooks/useDashboardList";
 import DataTable from "@/components/dashboard/DataTable";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
 import { fetchJsonWithRetry, runSupabaseMutationWithRetry } from "@/lib/retry";
-import {
-  getDashboardListCached,
-  invalidateDashboardClientCaches,
-} from "@/lib/dashboard-client-cache";
-import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
-import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import { fetchSchoolCategories } from "@/lib/school-categories";
 import type { Instructor, EstadoInstructor } from "@/types/database";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { instructorSchema } from "./schemas";
-
-const PAGE_SIZE = 10;
-
-type InstructoresListResponse = {
-  totalCount: number;
-  rows: Instructor[];
-};
 
 /** Allowed activity states for an instructor record. */
 const estados: EstadoInstructor[] = ["activo", "inactivo"];
@@ -56,21 +43,9 @@ const emptyForm = {
 };
 
 export default function InstructoresPage() {
-  const { perfil } = useAuth();
+  const list = useDashboardList<Instructor>({ resource: "instructores" });
+  const { perfil } = list;
 
-  // --- State -----------------------------------------------------------
-  const [data, setData] = useState<Instructor[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(true);
-  const fetchIdRef = useRef(0);
-  const [tableError, setTableError] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [editing, setEditing] = useState<Instructor | null>(null);
-  const [deleting, setDeleting] = useState<Instructor | null>(null);
-  const [saving, setSaving] = useState(false);
   const [categoriasEscuela, setCategoriasEscuela] = useState<string[]>([]);
   const {
     value: form,
@@ -78,69 +53,10 @@ export default function InstructoresPage() {
     restoreDraft,
     clearDraft,
   } = useDraftForm("dashboard:instructores:form", emptyForm, {
-    persist: modalOpen && !editing,
+    persist: list.modalOpen && !list.editing,
   });
 
-  // --- Data fetching ----------------------------------------------------
-
-  /** Fetch paginated instructors from Supabase, ordered by most-recent first. */
-  const fetchData = useCallback(
-    async (page = 0, search = "") => {
-      if (!perfil?.escuela_id) return;
-
-      const fetchId = ++fetchIdRef.current;
-      setLoading(true);
-      setTableError("");
-
-      try {
-        const params = new URLSearchParams({
-          page: String(page),
-          pageSize: String(PAGE_SIZE),
-        });
-
-        if (search.trim()) params.set("q", search.trim());
-
-        const payload = await getDashboardListCached<InstructoresListResponse>({
-          name: "instructores-table",
-          scope: {
-            id: perfil.id,
-            rol: perfil.rol,
-            escuelaId: perfil.escuela_id,
-            sedeId: perfil.sede_id,
-          },
-          params,
-          loader: () =>
-            fetchJsonWithRetry<InstructoresListResponse>(`/api/instructores?${params.toString()}`),
-        });
-
-        if (fetchId !== fetchIdRef.current) return;
-
-        setData(payload.rows || []);
-        setTotalCount(payload.totalCount || 0);
-      } catch (fetchError: unknown) {
-        if (fetchId !== fetchIdRef.current) return;
-        setData([]);
-        setTotalCount(0);
-        setTableError(
-          fetchError instanceof Error
-            ? fetchError.message
-            : "No se pudieron cargar los instructores."
-        );
-      } finally {
-        if (fetchId === fetchIdRef.current) {
-          setLoading(false);
-        }
-      }
-    },
-    [perfil]
-  );
-
-  // Re-fetch whenever page, search, or profile changes.
-  useEffect(() => {
-    if (!perfil) return;
-    void fetchData(currentPage, searchTerm);
-  }, [fetchData, perfil, currentPage, searchTerm]);
-
+  // --- Load school categories ─────────────────────────────────────────
   useEffect(() => {
     if (!perfil?.escuela_id) return;
 
@@ -166,29 +82,14 @@ export default function InstructoresPage() {
     };
   }, [perfil?.escuela_id]);
 
-  /** Callback del DataTable server-side: cambio de página */
-  const handlePageChange = useCallback((page: number) => {
-    setCurrentPage(page);
-  }, []);
+  // --- Modal helpers ──────────────────────────────────────────────────
 
-  /** Callback del DataTable server-side: cambio de búsqueda */
-  const handleSearchChange = useCallback((term: string) => {
-    setSearchTerm(term);
-    setCurrentPage(0);
-  }, []);
-
-  // --- Modal helpers ----------------------------------------------------
-
-  /** Open the modal in "create" mode with a blank form. */
   const openCreate = () => {
-    setEditing(null);
     restoreDraft(emptyForm);
-    setModalOpen(true);
+    list.openCreate();
   };
 
-  /** Open the modal in "edit" mode, pre-filling the form with existing data. */
   const openEdit = (row: Instructor) => {
-    setEditing(row);
     setForm({
       nombre: row.nombre,
       apellidos: row.apellidos,
@@ -200,16 +101,9 @@ export default function InstructoresPage() {
       estado: row.estado,
       color: row.color,
     });
-    setModalOpen(true);
+    list.openEdit(row);
   };
 
-  /** Open the delete-confirmation dialog for the given instructor. */
-  const openDelete = (row: Instructor) => {
-    setDeleting(row);
-    setDeleteOpen(true);
-  };
-
-  /** Toggle a category in the especialidades array. */
   const toggleEspecialidad = (cat: string) => {
     setForm((prev) => ({
       ...prev,
@@ -219,7 +113,7 @@ export default function InstructoresPage() {
     }));
   };
 
-  // --- Save (create / update) -------------------------------------------
+  // --- Save (create / update) ─────────────────────────────────────────
 
   const handleSave = async () => {
     const result = instructorSchema.safeParse(form);
@@ -227,15 +121,14 @@ export default function InstructoresPage() {
       toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
       return;
     }
-    setSaving(true);
+    list.setSaving(true);
 
-    // Use first selected specialty as the legacy single-value field
     const especialidadPrincipal = form.especialidades[0];
 
     try {
       const supabase = createClient();
 
-      if (editing) {
+      if (list.editing) {
         await runSupabaseMutationWithRetry(() =>
           supabase
             .from("instructores")
@@ -251,12 +144,12 @@ export default function InstructoresPage() {
               estado: form.estado,
               color: form.color,
             })
-            .eq("id", editing.id)
+            .eq("id", list.editing!.id)
         );
       } else {
         if (!perfil) {
           toast.error("No se encontró el perfil activo para guardar.");
-          setSaving(false);
+          list.setSaving(false);
           return;
         }
 
@@ -274,11 +167,10 @@ export default function InstructoresPage() {
 
         if (!sedeId) {
           toast.error("No se encontró una sede asignada. Contacta al administrador.");
-          setSaving(false);
+          list.setSaving(false);
           return;
         }
 
-        // Crear cuenta de acceso para el instructor (email=cédula, password=cédula)
         const authJson = await fetchJsonWithRetry<{ user_id: string }>(
           "/api/crear-instructor-auth",
           {
@@ -314,68 +206,49 @@ export default function InstructoresPage() {
       }
 
       clearDraft(emptyForm);
-      setSaving(false);
-      setModalOpen(false);
-      toast.success(editing ? "Instructor actualizado" : "Instructor creado");
-      invalidateDashboardClientCaches();
-      await revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: {
-            escuelaId: perfil?.escuela_id,
-            sedeId: perfil?.sede_id,
-          },
-          includeFinance: false,
-          includeDashboard: true,
-        })
-      );
-      void fetchData(currentPage, searchTerm);
+      list.setSaving(false);
+      list.setModalOpen(false);
+      toast.success(list.editing ? "Instructor actualizado" : "Instructor creado");
+      await list.revalidateAndRefresh();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al guardar.";
       toast.error(message);
-      setSaving(false);
+      list.setSaving(false);
     }
   };
 
-  // --- Delete -----------------------------------------------------------
+  // --- Delete ─────────────────────────────────────────────────────────
 
   const handleDelete = async () => {
-    if (!deleting) return;
-    setSaving(true);
+    if (!list.deleting) return;
+    list.setSaving(true);
 
     try {
       const supabase = createClient();
-      const { error: err } = await supabase.from("instructores").delete().eq("id", deleting.id);
+      const { error: err } = await supabase
+        .from("instructores")
+        .delete()
+        .eq("id", list.deleting.id);
 
       if (err) {
         toast.error(err.message);
-        setSaving(false);
+        list.setSaving(false);
         return;
       }
 
-      setSaving(false);
-      setDeleteOpen(false);
-      setDeleting(null);
+      list.setSaving(false);
+      list.setDeleteOpen(false);
+      list.setDeleting(null);
       toast.success("Instructor eliminado");
-      invalidateDashboardClientCaches();
-      await revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: {
-            escuelaId: perfil?.escuela_id,
-            sedeId: perfil?.sede_id,
-          },
-          includeFinance: false,
-          includeDashboard: true,
-        })
-      );
-      void fetchData(currentPage, searchTerm);
+      await list.revalidateAndRefresh();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al eliminar.";
       toast.error(message);
-      setSaving(false);
+      list.setSaving(false);
     }
   };
 
-  // --- Table column definitions -----------------------------------------
+  // --- Table columns ──────────────────────────────────────────────────
 
   const columns = [
     {
@@ -426,7 +299,7 @@ export default function InstructoresPage() {
 
   const inputCls = "apple-input";
 
-  // --- Render -----------------------------------------------------------
+  // --- Render ─────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -448,32 +321,32 @@ export default function InstructoresPage() {
 
       {/* Data table */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-[#1d1d1f]">
-        {tableError && (
+        {list.tableError && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
-            {tableError}
+            {list.tableError}
           </div>
         )}
         <DataTable
           columns={columns}
-          data={data}
-          loading={loading}
+          data={list.data}
+          loading={list.loading}
           searchPlaceholder="Buscar por nombre o cédula..."
           serverSide
-          totalCount={totalCount}
-          currentPage={currentPage}
-          onPageChange={handlePageChange}
-          onSearchChange={handleSearchChange}
-          pageSize={PAGE_SIZE}
+          totalCount={list.totalCount}
+          currentPage={list.currentPage}
+          onPageChange={list.handlePageChange}
+          onSearchChange={list.handleSearchChange}
+          pageSize={list.pageSize}
           onEdit={openEdit}
-          onDelete={openDelete}
+          onDelete={list.openDelete}
         />
       </div>
 
       {/* Create / Edit modal */}
       <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={editing ? "Editar Instructor" : "Nuevo Instructor"}
+        open={list.modalOpen}
+        onClose={() => list.setModalOpen(false)}
+        title={list.editing ? "Editar Instructor" : "Nuevo Instructor"}
         maxWidth="max-w-xl"
       >
         <div className="space-y-4">
@@ -603,17 +476,17 @@ export default function InstructoresPage() {
           {/* Action buttons */}
           <div className="flex justify-end gap-3 pt-2">
             <button
-              onClick={() => setModalOpen(false)}
+              onClick={() => list.setModalOpen(false)}
               className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#1d1d1f] transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:bg-gray-800"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={list.saving}
               className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
             >
-              {saving ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Instructor"}
+              {list.saving ? "Guardando..." : list.editing ? "Guardar Cambios" : "Crear Instructor"}
             </button>
           </div>
         </div>
@@ -621,11 +494,11 @@ export default function InstructoresPage() {
 
       {/* Delete confirmation */}
       <DeleteConfirm
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
+        open={list.deleteOpen}
+        onClose={() => list.setDeleteOpen(false)}
         onConfirm={handleDelete}
-        loading={saving}
-        message={`¿Eliminar a ${deleting?.nombre} ${deleting?.apellidos}?`}
+        loading={list.saving}
+        message={`¿Eliminar a ${list.deleting?.nombre} ${list.deleting?.apellidos}?`}
       />
     </div>
   );

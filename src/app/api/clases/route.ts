@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import { parseListParams, createWhereBuilder, buildPaginationRefs } from "@/lib/api-helpers";
 import {
   buildDashboardListServerCacheKey,
   isFreshDashboardDataRequested,
@@ -33,48 +34,30 @@ type CountRow = {
 
 const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
 
-function parseInteger(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
-
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
   if (!auth.ok) return auth.response;
 
   const { perfil } = auth;
   const url = new URL(request.url);
-  const search = (url.searchParams.get("q") ?? "").trim();
-  const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
-  const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
+  const { search, page, pageSize } = parseListParams(url);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
   }
 
-  const scope = {
-    escuelaId,
-    sedeId: perfil.sede_id,
-  };
-
-  const values: Array<string | number> = [];
-  const addValue = (value: string | number) => {
-    values.push(value);
-    return `$${values.length}`;
-  };
-
-  const where: string[] = [];
-  where.push(`c.escuela_id = ${addValue(escuelaId)}`);
+  const scope = { escuelaId, sedeId: perfil.sede_id };
+  const wb = createWhereBuilder();
+  wb.where.push(`c.escuela_id = ${wb.addValue(escuelaId)}`);
 
   if (perfil.rol === "admin_sede" && perfil.sede_id) {
-    where.push(`c.sede_id = ${addValue(perfil.sede_id)}`);
+    wb.where.push(`c.sede_id = ${wb.addValue(perfil.sede_id)}`);
   }
 
   if (search) {
-    const ref = addValue(`%${search}%`);
-    where.push(`(
+    const ref = wb.addValue(`%${search}%`);
+    wb.where.push(`(
       c.fecha::text ILIKE ${ref}
       OR c.tipo::text ILIKE ${ref}
       OR c.estado::text ILIKE ${ref}
@@ -86,11 +69,9 @@ export async function GET(request: Request) {
     )`);
   }
 
-  const whereSql = where.join(" AND ");
+  const whereSql = wb.toSql();
   const pool = getServerDbPool();
-  const offset = page * pageSize;
-  const limitRef = `$${values.length + 1}`;
-  const offsetRef = `$${values.length + 2}`;
+  const pg = buildPaginationRefs(page, pageSize, wb.values.length);
 
   const payload = await getServerReadCached({
     key: buildDashboardListServerCacheKey("clases", perfil.id, scope, url.searchParams),
@@ -107,7 +88,7 @@ export async function GET(request: Request) {
             left join public.instructores i on i.id = c.instructor_id
             where ${whereSql}
           `,
-          values
+          wb.values
         ),
         pool.query<ClaseRow>(
           `
@@ -130,9 +111,9 @@ export async function GET(request: Request) {
             left join public.instructores i on i.id = c.instructor_id
             where ${whereSql}
             order by c.fecha desc, c.created_at desc
-            limit ${limitRef} offset ${offsetRef}
+            limit ${pg.limitRef} offset ${pg.offsetRef}
           `,
-          [...values, pageSize, offset]
+          [...wb.values, ...pg.values]
         ),
       ]);
 

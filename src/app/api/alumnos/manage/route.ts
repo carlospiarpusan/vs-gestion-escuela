@@ -14,6 +14,11 @@ import {
 } from "@/lib/api-auth";
 import { normalizeContractNumber } from "@/lib/contract-number";
 import { getServerDbPool } from "@/lib/server-db";
+import { revalidateServerReadCache } from "@/lib/server-read-cache";
+import {
+  buildDashboardListCacheTags,
+  buildBroadFinanceInvalidationTags,
+} from "@/lib/server-cache-tags";
 import type { MetodoPago, Rol, TipoRegistroAlumno } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = [
@@ -744,6 +749,13 @@ async function handleMutation(request: Request, mode: "create" | "update") {
       }
 
       await client.query("COMMIT");
+
+      const scope = { escuelaId: schoolId, sedeId: payload.sede_id };
+      revalidateServerReadCache([
+        ...buildDashboardListCacheTags("alumnos", scope),
+        ...buildBroadFinanceInvalidationTags(scope),
+      ]);
+
       return NextResponse.json({ ok: true });
     } catch (error) {
       await client.query("ROLLBACK");

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
-import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import { parseInteger, toNumber } from "@/lib/api-helpers";
+import {
+  buildDashboardListServerCacheKey,
+  isFreshDashboardDataRequested,
+} from "@/lib/dashboard-server-cache";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
@@ -43,22 +47,12 @@ type ClosureRow = {
   updated_at: string;
 };
 
-function parseInteger(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
-
 function getMonthRange(year: number, monthIndex: number) {
   const normalizedMonth = Math.min(11, Math.max(0, monthIndex));
   const from = `${year}-${String(normalizedMonth + 1).padStart(2, "0")}-01`;
   const lastDay = new Date(year, normalizedMonth + 1, 0).getDate();
   const to = `${year}-${String(normalizedMonth + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   return { from, to };
-}
-
-function toNumber(value: unknown) {
-  return Number(value || 0);
 }
 
 export async function GET(request: Request) {

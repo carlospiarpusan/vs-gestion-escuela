@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import { parseInteger, parseStringArray, toNumber } from "@/lib/api-helpers";
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
@@ -44,23 +45,6 @@ type AlumnoApiRow = {
   valor_total_resumen: number | string | null;
   total_pagado: number | string | null;
 };
-
-function parseInteger(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
-
-function parseStringArray(value: string | null) {
-  return (value ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function toNumber(value: unknown) {
-  return Number(value || 0);
-}
 
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);

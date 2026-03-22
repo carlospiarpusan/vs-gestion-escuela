@@ -7,10 +7,29 @@ import {
   ensureSedeScope,
   parseJsonBody,
 } from "@/lib/api-auth";
+import { revalidateServerReadCache } from "@/lib/server-read-cache";
+import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import type { Rol } from "@/types/database";
 
 // ── Roles con acceso al módulo de nóminas ────────────────────────────
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
+
+// ── Tipo para updates de nómina ──────────────────────────────────────
+type NominaUpdate = {
+  estado?: string;
+  fecha_pago?: string | null;
+  notas?: string | null;
+  salario_base?: number;
+  total_devengado?: number;
+  total_deducciones?: number;
+  neto_pagar?: number;
+};
+
+// ── Helper: invalidar cache de nóminas ───────────────────────────────
+function revalidateNominasCache(escuelaId: string, sedeId?: string | null) {
+  const scope = { escuelaId, sedeId };
+  revalidateServerReadCache(buildDashboardListCacheTags("nominas", scope));
+}
 
 // ── GET: listar nóminas de un periodo ────────────────────────────────
 export async function GET(request: Request) {
@@ -59,41 +78,53 @@ export async function GET(request: Request) {
   }
 
   // Cargar instructores y administrativos para el selector
-  const [instructoresRes, administrativosRes, sedesRes] = await Promise.all([
-    supabase
-      .from("instructores")
-      .select("id, nombre, apellidos, sede_id")
-      .eq("escuela_id", escuelaId)
-      .eq("estado", "activo")
-      .order("nombre"),
-    supabase
-      .from("perfiles")
-      .select("id, nombre, sede_id")
-      .eq("escuela_id", escuelaId)
-      .eq("activo", true)
-      .in("rol", ["administrativo", "admin_sede", "recepcion"])
-      .order("nombre"),
-    supabase
-      .from("sedes")
-      .select("id, nombre, es_principal")
-      .eq("escuela_id", escuelaId)
-      .eq("estado", "activa")
-      .order("es_principal", { ascending: false }),
-  ]);
+  let instructores: Array<{ id: string; nombre: string; sede_id: string | null }> = [];
+  let administrativos: Array<{ id: string; nombre: string; sede_id: string | null }> = [];
+  let sedes: Array<{ id: string; nombre: string; es_principal: boolean }> = [];
 
-  return NextResponse.json({
-    nominas: data ?? [],
-    instructores: (instructoresRes.data ?? []).map((i) => ({
+  try {
+    const [instructoresRes, administrativosRes, sedesRes] = await Promise.all([
+      supabase
+        .from("instructores")
+        .select("id, nombre, apellidos, sede_id")
+        .eq("escuela_id", escuelaId)
+        .eq("estado", "activo")
+        .order("nombre"),
+      supabase
+        .from("perfiles")
+        .select("id, nombre, sede_id")
+        .eq("escuela_id", escuelaId)
+        .eq("activo", true)
+        .in("rol", ["administrativo", "admin_sede", "recepcion"])
+        .order("nombre"),
+      supabase
+        .from("sedes")
+        .select("id, nombre, es_principal")
+        .eq("escuela_id", escuelaId)
+        .eq("estado", "activa")
+        .order("es_principal", { ascending: false }),
+    ]);
+
+    instructores = (instructoresRes.data ?? []).map((i) => ({
       id: i.id,
       nombre: `${i.nombre} ${i.apellidos}`,
       sede_id: i.sede_id,
-    })),
-    administrativos: (administrativosRes.data ?? []).map((a) => ({
+    }));
+    administrativos = (administrativosRes.data ?? []).map((a) => ({
       id: a.id,
       nombre: a.nombre,
       sede_id: a.sede_id,
-    })),
-    sedes: sedesRes.data ?? [],
+    }));
+    sedes = sedesRes.data ?? [];
+  } catch (err) {
+    console.error("[API NOMINAS GET selectors]", err);
+  }
+
+  return NextResponse.json({
+    nominas: data ?? [],
+    instructores,
+    administrativos,
+    sedes,
     periodo: { anio, mes },
   });
 }
@@ -223,6 +254,8 @@ export async function POST(request: Request) {
     }
   }
 
+  revalidateNominasCache(body.escuela_id, body.sede_id);
+
   return NextResponse.json({ nomina }, { status: 201 });
 }
 
@@ -264,8 +297,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: scopeErr }, { status: 403 });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updates: Record<string, any> = {};
+  const updates: NominaUpdate = {};
 
   if (body.estado !== undefined) {
     updates.estado = body.estado;
@@ -283,8 +315,19 @@ export async function PATCH(request: Request) {
     updates.salario_base = salarioBase;
 
     if (body.conceptos) {
-      // Reemplazar conceptos
-      await supabase.from("nomina_conceptos").delete().eq("nomina_id", body.nomina_id);
+      // Reemplazar conceptos — verificar que el delete fue exitoso
+      const { error: deleteErr } = await supabase
+        .from("nomina_conceptos")
+        .delete()
+        .eq("nomina_id", body.nomina_id);
+
+      if (deleteErr) {
+        console.error("[API NOMINAS PATCH delete conceptos]", deleteErr);
+        return NextResponse.json(
+          { error: "No se pudieron actualizar los conceptos." },
+          { status: 500 }
+        );
+      }
 
       const tipoEmpleado = nomina.empleado_tipo;
       const nuevosConceptos = [
@@ -304,7 +347,15 @@ export async function PATCH(request: Request) {
         })),
       ];
 
-      await supabase.from("nomina_conceptos").insert(nuevosConceptos);
+      const { error: insertErr } = await supabase.from("nomina_conceptos").insert(nuevosConceptos);
+
+      if (insertErr) {
+        console.error("[API NOMINAS PATCH insert conceptos]", insertErr);
+        return NextResponse.json(
+          { error: "No se pudieron guardar los nuevos conceptos." },
+          { status: 500 }
+        );
+      }
 
       const totalDevengado =
         salarioBase +
@@ -335,6 +386,8 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "No se pudo actualizar la nómina." }, { status: 500 });
   }
 
+  revalidateNominasCache(nomina.escuela_id, nomina.sede_id);
+
   return NextResponse.json({ nomina: updated });
 }
 
@@ -355,7 +408,7 @@ export async function DELETE(request: Request) {
 
   const { data: nomina } = await supabase
     .from("nominas")
-    .select("id, escuela_id, estado")
+    .select("id, escuela_id, sede_id, estado")
     .eq("id", nominaId)
     .single();
 
@@ -381,6 +434,8 @@ export async function DELETE(request: Request) {
     console.error("[API NOMINAS DELETE]", deleteError);
     return NextResponse.json({ error: "No se pudo eliminar la nómina." }, { status: 500 });
   }
+
+  revalidateNominasCache(nomina.escuela_id, nomina.sede_id);
 
   return NextResponse.json({ ok: true });
 }
