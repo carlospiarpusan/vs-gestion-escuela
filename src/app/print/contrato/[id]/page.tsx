@@ -1,23 +1,10 @@
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
+import { buildSupabaseAdminClient } from "@/lib/api-auth";
 import PrintButton from "./PrintButton";
 
 export default async function PrintContratoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: matriculaId } = await params;
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll() {},
-      },
-    }
-  );
+  const supabase = buildSupabaseAdminClient();
 
   const { data: matricula, error } = await supabase
     .from("matriculas_alumno")
@@ -32,6 +19,7 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
     .single();
 
   if (error || !matricula) {
+    console.error("[print/contrato] Query failed:", { matriculaId, error });
     return notFound();
   }
 
