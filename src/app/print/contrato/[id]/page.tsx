@@ -33,26 +33,14 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
       `
       *,
       alumno:alumnos(nombre, apellidos, dni, telefono, direccion, email),
-      sede:sedes(nombre, direccion, correo, linea_whatsapp, escuela:escuelas(nombre, nit))
+      sede:sedes(nombre, direccion, correo, linea_whatsapp, escuela:escuelas(nombre, cif))
     `
     )
     .eq("id", matriculaId)
     .single();
 
   if (error || !matricula) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-white p-10">
-        <div className="max-w-md space-y-4 text-center">
-          <h1 className="text-2xl font-bold text-red-600">Error al cargar contrato</h1>
-          <p className="text-sm text-gray-600">Matrícula ID: {matriculaId}</p>
-          <p className="text-sm text-gray-600">Error: {error?.message || "Sin datos"}</p>
-          <p className="text-sm text-gray-600">Code: {error?.code || "N/A"}</p>
-          <p className="text-xs text-gray-400">
-            Service key: {process.env.SUPABASE_SERVICE_ROLE_KEY ? "configurada" : "NO configurada"}
-          </p>
-        </div>
-      </div>
-    );
+    return notFound();
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,7 +56,7 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
 
   const contratoNum = m.numero_contrato || m.id.slice(0, 8).toUpperCase();
   const escuelaNombre = escuela?.nombre || "AUTOESCUELA";
-  const escuelaNit = escuela?.nit || "000000000-0";
+  const escuelaNit = escuela?.cif || "000000000-0";
   const sedeDireccion = m.sede?.direccion || "";
   const sedeWhatsApp = m.sede?.linea_whatsapp || "";
 
