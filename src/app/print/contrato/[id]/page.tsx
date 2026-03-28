@@ -1,10 +1,31 @@
+import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
-import { buildSupabaseAdminClient } from "@/lib/api-auth";
 import PrintButton from "./PrintButton";
+
+async function getSupabase() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  if (serviceKey) {
+    return createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+  }
+  const cookieStore = await cookies();
+  return createServerClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {},
+    },
+  });
+}
 
 export default async function PrintContratoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: matriculaId } = await params;
-  const supabase = buildSupabaseAdminClient();
+  const supabase = await getSupabase();
 
   const { data: matricula, error } = await supabase
     .from("matriculas_alumno")
