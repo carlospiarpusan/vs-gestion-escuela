@@ -32,7 +32,7 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
     .select(
       `
       *,
-      alumno:alumnos(nombre, apellidos, dni, telefono, direccion, email),
+      alumno:alumnos(nombre, apellidos, dni, tipo_documento, telefono, direccion, email),
       sede:sedes(nombre, direccion, email, telefono, escuela:escuelas(nombre, cif, telefono, direccion))
     `
     )
@@ -61,6 +61,7 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
   const sedeTelefono = m.sede?.telefono || escuela?.telefono || "";
   const alumnoNombre = `${alumno.nombre} ${alumno.apellidos}`;
   const categorias = m.categorias?.join(", ") || "___";
+  const esTI = alumno.tipo_documento === "TI";
 
   const headerBlock = (
     <div className="border-b-2 border-gray-300 pb-2">
@@ -260,33 +261,120 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
         <div className="print-page flex min-h-[279mm] flex-col px-10 py-4 print:min-h-0 print:px-0 print:py-0">
           {headerBlock}
 
-          <div className="flex-1 space-y-6 pt-5">
-            {/* Acceptance */}
-            <div className="space-y-4 text-justify text-sm leading-relaxed">
-              <p>
-                Las partes declaran que han leído y comprendido cada una de las cláusulas del
-                presente contrato y lo suscriben en señal de aceptación.
-              </p>
-              <p>
-                Para constancia, se firma en la fecha <strong>{currentDate}</strong>.
-              </p>
-            </div>
+          <div className="flex-1 pt-3 text-justify text-[9px] leading-[13px]">
+            <p>
+              C) Informar al Estudiante de la suspensión y reprogramación de clases con mínimo doce
+              (12) horas de anticipación. D) Realizar el proceso de certificación del Estudiante de
+              manera imparcial. E) Suspender y retirar temporalmente del proceso de formación al
+              Estudiante que incumpla cualquiera de las normas contenidas en el presente contrato o
+              en el manual de convivencia. F) Dar por terminado el presente contrato en caso de que
+              el Estudiante incurra en agresión física o verbal a personas en el CEA, por brindar
+              información falsa al CEA, por realizar suplantación de personalidad o realizar fraude
+              en la evaluación teórica o cualquier otra considerada en el manual de convivencia. G)
+              Aprobar, reprobar o aplazar al Estudiante acorde al resultado del proceso de
+              certificación y teniendo en cuenta los parámetros exigidos por la normatividad
+              existente.
+            </p>
+
+            <p className="mt-1">
+              <strong>OCTAVA. Obligaciones del CEA:</strong> A) Convenir con el Estudiante los
+              horarios para que tome la formación y vigilar su cumplimiento. B) Garantizar
+              instructores idóneos, vehículos adecuados y material pedagógico pertinente durante
+              todo el proceso de formación. C) Brindar la intensidad y contenido temático acorde a
+              la normatividad. D) Garantizar que las instalaciones cumplan con las condiciones para
+              la formación. E) Enviar oportuna y completamente a la Plataforma del RUNT, la
+              información del Estudiante que haya aprobado la formación impartida por el CEA para su
+              debida certificación. F) Atender cualquier reclamación presentada por el Estudiante y
+              tomar con celeridad una decisión sobre si aceptar o negar, acorde a la información
+              suministrada.
+            </p>
+
+            <p className="mt-1">
+              <strong>NOVENA. Exclusión de Responsabilidad:</strong> El CEA no asumirá
+              responsabilidad alguna por inconvenientes ajenos a los servicios ofrecidos, tales
+              como: A) Multas o comparendos que posea el estudiante y que le impidan obtener la
+              certificación. B) No utilizar el certificado expedido por el CEA, dentro de los seis
+              (6) meses siguientes, plazo al término del cual, el RUNT procede a anularlo. C)
+              Vencimiento del certificado de aptitud física, mental y de coordinación motriz, el
+              cual tiene una vigencia de ciento ochenta (180) días. D) Peajes. E) Cualquier otra que
+              no esté contemplada dentro del presente contrato.
+            </p>
+
+            <p className="mt-1">
+              <strong>DÉCIMA. Multas.</strong> De acuerdo a los artículos: quinto numeral j y sexto
+              en su numeral g, el estudiante se obliga a informar con anticipación de 24 horas el
+              cambio de horario o su inasistencia a clase para la correspondiente modificación en el
+              horario, el incumplir con lo estipulado ocasionará el cobro de DIEZ MIL PESOS m/cte.
+              ($10.000) por hora de clase programada, valor que se podrá cobrar al finalizar el
+              curso o sumar al saldo pendiente por pagar; además, sin el pago de las multas
+              ocasionadas el CEA no podrá realizar la certificación respectiva (El incumplimiento
+              causado por situaciones de fuerza mayor o caso fortuito no serán objeto de multa por
+              el CEA).
+            </p>
+
+            <p className="mt-1">
+              <strong>DÉCIMA PRIMERA. Terminación:</strong> El contrato podrá darse por terminado de
+              manera unilateral por parte del CEA en cualquiera de los siguientes casos: A) Por
+              incumplimiento de las obligaciones del Estudiante. B) Por cumplirse el plazo máximo
+              para realizar el proceso de formación (3 meses). PARÁGRAFO: El plazo máximo que la
+              plataforma de inscripción de estudiantes Aulapp permite a cada estudiante es de tres
+              (03) meses.
+            </p>
+
+            <p className="mt-1">
+              <strong>DÉCIMA SEGUNDA. Devolución de Dinero.</strong> El CEA no realizará devolución
+              de dinero: a) Por incumplimiento de las obligaciones del Estudiante. b) Una vez se
+              realice matricula y/o registro del estudiante en el sistema no habrá devolución del
+              pago de PIN. c) Cuando el estudiante realice aportes en dinero, haya comenzado con
+              clases teóricas y/o prácticas y no termine el curso no habrá devolución del dinero. d)
+              No habrá devolución de aportes entregados una vez cumplido el plazo máximo para
+              realizar el proceso de formación (3 meses), tiempo dentro del cual el Estudiante debe
+              terminar su formación.
+            </p>
+
+            <p className="mt-1">
+              <strong>DÉCIMA TERCERA. Declaración de veracidad:</strong> En constancia el Estudiante
+              declara conocer y aceptar sus derechos y obligaciones, el manual de convivencia y los
+              deberes de las personas certificadas, estipulados en el presente contrato y de asumir
+              completamente las consecuencias que ocasione infringirlos. Las partes conocen,
+              comprenden y aceptan todas y cada una de las estipulaciones contenidas en el presente
+              documento y para constancia firman en {sedeDireccion} a <strong>{currentDate}</strong>
+              .
+            </p>
 
             {/* Signatures */}
-            <div className="grid grid-cols-2 gap-10 pt-16">
+            <div className="mt-6 grid grid-cols-2 gap-8">
               <div className="text-center">
-                <div className="mx-auto mb-2 w-3/4 border-b border-black" />
-                <p className="text-sm font-bold uppercase">{alumnoNombre}</p>
-                <p className="text-xs text-gray-500">CC. {alumno.dni}</p>
-                <p className="mt-1 text-xs text-gray-500">El Estudiante</p>
+                <div className="mx-auto mt-10 mb-1 w-3/4 border-b border-black" />
+                <p className="text-[9px]">Firma Estudiante</p>
+                <p className="mt-1 text-[9px] font-bold">{alumnoNombre}</p>
               </div>
-              <div className="text-center">
-                <div className="mx-auto mb-2 w-3/4 border-b border-black" />
-                <p className="text-sm font-bold uppercase">{escuelaNombre}</p>
-                <p className="text-xs text-gray-500">NIT. {escuelaNit}</p>
-                <p className="mt-1 text-xs text-gray-500">El CEA</p>
-              </div>
+              <div />
             </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-8">
+              <div className="text-center">
+                <div className="mx-auto mt-8 mb-1 w-3/4 border-b border-black" />
+                <p className="text-[9px]">Firma CEA {escuelaNombre.toUpperCase()}</p>
+              </div>
+              {esTI && (
+                <div className="text-center">
+                  <div className="mx-auto mt-8 mb-1 w-3/4 border-b border-black" />
+                  <p className="text-[9px]">Firma Acudiente</p>
+                  <p className="text-[9px]">(para menores de edad) C.C. __________________</p>
+                </div>
+              )}
+            </div>
+
+            <p className="mt-2 text-[9px]">Adjuntar fotocopia cédula de ciudadanía</p>
+            <p className="text-[9px]">
+              Dirección: {alumno.direccion || "________________________"}
+            </p>
+            <p className="text-[9px]">No. Celular: {alumno.telefono}</p>
+
+            <p className="mt-4 text-[9px] font-bold">
+              Consecutivo anual de contrato: {contratoNum}
+            </p>
           </div>
 
           {footerPage2}
