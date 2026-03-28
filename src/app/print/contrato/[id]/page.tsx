@@ -40,7 +40,14 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
     .single();
 
   if (error || !matricula) {
-    return notFound();
+    return (
+      <div className="p-10 text-center">
+        <h1 className="text-xl font-bold text-red-600">Error contrato</h1>
+        <pre className="mt-4 text-left text-xs whitespace-pre-wrap">
+          {JSON.stringify({ matriculaId, error, hasData: !!matricula }, null, 2)}
+        </pre>
+      </div>
+    );
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
