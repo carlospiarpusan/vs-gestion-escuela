@@ -33,21 +33,14 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
       `
       *,
       alumno:alumnos(nombre, apellidos, dni, telefono, direccion, email),
-      sede:sedes(nombre, direccion, correo, linea_whatsapp, escuela:escuelas(nombre, cif))
+      sede:sedes(nombre, direccion, email, telefono, escuela:escuelas(nombre, cif, telefono, direccion))
     `
     )
     .eq("id", matriculaId)
     .single();
 
   if (error || !matricula) {
-    return (
-      <div className="p-10 text-center">
-        <h1 className="text-xl font-bold text-red-600">Error contrato</h1>
-        <pre className="mt-4 text-left text-xs whitespace-pre-wrap">
-          {JSON.stringify({ matriculaId, error, hasData: !!matricula }, null, 2)}
-        </pre>
-      </div>
-    );
+    return notFound();
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,8 +57,8 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
   const contratoNum = m.numero_contrato || m.id.slice(0, 8).toUpperCase();
   const escuelaNombre = escuela?.nombre || "AUTOESCUELA";
   const escuelaNit = escuela?.cif || "000000000-0";
-  const sedeDireccion = m.sede?.direccion || "";
-  const sedeWhatsApp = m.sede?.linea_whatsapp || "";
+  const sedeDireccion = m.sede?.direccion || escuela?.direccion || "";
+  const sedeTelefono = m.sede?.telefono || escuela?.telefono || "";
 
   const headerBlock = (
     <div className="border-b-2 border-gray-300 pb-3">
@@ -74,7 +67,7 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
           <h1 className="text-xl font-bold tracking-widest uppercase">{escuelaNombre}</h1>
           <p className="text-[10px] text-gray-500">NIT: {escuelaNit}</p>
           <p className="text-[10px] text-gray-500">
-            {sedeDireccion} · WhatsApp: {sedeWhatsApp}
+            {sedeDireccion} · Tel:{sedeTelefono}
           </p>
         </div>
         <div className="text-right">
