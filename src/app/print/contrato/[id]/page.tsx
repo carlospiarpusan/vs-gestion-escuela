@@ -40,8 +40,19 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
     .single();
 
   if (error || !matricula) {
-    console.error("[print/contrato] Query failed:", { matriculaId, error });
-    return notFound();
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white p-10">
+        <div className="max-w-md space-y-4 text-center">
+          <h1 className="text-2xl font-bold text-red-600">Error al cargar contrato</h1>
+          <p className="text-sm text-gray-600">Matrícula ID: {matriculaId}</p>
+          <p className="text-sm text-gray-600">Error: {error?.message || "Sin datos"}</p>
+          <p className="text-sm text-gray-600">Code: {error?.code || "N/A"}</p>
+          <p className="text-xs text-gray-400">
+            Service key: {process.env.SUPABASE_SERVICE_ROLE_KEY ? "configurada" : "NO configurada"}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
