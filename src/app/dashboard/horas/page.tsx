@@ -18,8 +18,18 @@ import type { CierreHorasInstructor, Instructor } from "@/types/database";
 // ─── Constantes ────────────────────────────────────────────────
 
 const MESES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
 ];
 
 const DIA_ABREV = ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"];
@@ -33,7 +43,16 @@ type InstructorHorasRow = Pick<Instructor, "id" | "nombre" | "apellidos" | "colo
 };
 type CierreHoraMensualRow = Pick<
   CierreHorasInstructor,
-  "id" | "instructor_id" | "gasto_id" | "periodo_anio" | "periodo_mes" | "fecha_cierre" | "total_horas" | "valor_hora" | "monto_total" | "updated_at"
+  | "id"
+  | "instructor_id"
+  | "gasto_id"
+  | "periodo_anio"
+  | "periodo_mes"
+  | "fecha_cierre"
+  | "total_horas"
+  | "valor_hora"
+  | "monto_total"
+  | "updated_at"
 >;
 type GeneracionGastoHoraRow = {
   instructor_id: string;
@@ -74,7 +93,11 @@ function padMonth(year: number, month: number, day: number) {
 }
 
 const fmtCOP = (n: number) =>
-  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(n);
 
 // ─── Componente principal ──────────────────────────────────────
 
@@ -108,7 +131,8 @@ export default function HorasPage() {
   const isReadOnly = perfil?.rol === "instructor" || perfil?.rol === "alumno";
   const canEditValor = ["super_admin", "admin_escuela", "admin_sede"].includes(perfil?.rol ?? "");
   const canGenerateMonthlyExpenses = Boolean(
-    perfil?.escuela_id && ["super_admin", "admin_escuela", "admin_sede", "administrativo"].includes(perfil?.rol ?? "")
+    perfil?.escuela_id &&
+    ["super_admin", "admin_escuela", "admin_sede", "administrativo"].includes(perfil?.rol ?? "")
   );
   const monthNumber = mes + 1;
   const monthKey = `${anio}-${String(monthNumber).padStart(2, "0")}`;
@@ -119,8 +143,8 @@ export default function HorasPage() {
 
   // Anchos fijos de columnas sticky derecha
   const VALOR_COL_W = 110; // px — columna valor total (solo admins)
-  const TOTAL_COL_W = 64;  // px — columna total horas
-  const DAY_COL_W   = 36;  // px — columna de cada día
+  const TOTAL_COL_W = 64; // px — columna total horas
+  const DAY_COL_W = 36; // px — columna de cada día
 
   // ── Carga de datos ────────────────────────────────────────────
 
@@ -135,6 +159,9 @@ export default function HorasPage() {
         anio: String(anio),
         mes: String(mes),
       });
+      if (canGenerateMonthlyExpenses && monthClosed) {
+        params.set("include_closures", "1");
+      }
       const payload = await getDashboardListCached<HorasDashboardResponse>({
         name: "horas-dashboard",
         scope: {
@@ -211,7 +238,7 @@ export default function HorasPage() {
   };
 
   const handleChange = (instructorId: string, day: number, value: string) => {
-    setInputOverrides(prev => ({ ...prev, [`${instructorId}-${day}`]: value }));
+    setInputOverrides((prev) => ({ ...prev, [`${instructorId}-${day}`]: value }));
   };
 
   const handleBlur = async (instructorId: string, day: number) => {
@@ -225,39 +252,51 @@ export default function HorasPage() {
 
     // Si el campo queda vacío, limpiar del mapa local
     if (isEmpty) {
-      setHorasMap(prev => {
+      setHorasMap((prev) => {
         const next = { ...prev, [instructorId]: { ...prev[instructorId] } };
         delete next[instructorId][day];
         return next;
       });
     } else {
-      setHorasMap(prev => ({
+      setHorasMap((prev) => ({
         ...prev,
         [instructorId]: { ...prev[instructorId], [day]: hours },
       }));
     }
-    setInputOverrides(prev => { const n = { ...prev }; delete n[key]; return n; });
+    setInputOverrides((prev) => {
+      const n = { ...prev };
+      delete n[key];
+      return n;
+    });
 
-    const instructor = instructores.find(i => i.id === instructorId);
+    const instructor = instructores.find((i) => i.id === instructorId);
     if (!instructor) return;
 
     const fecha = padMonth(anio, mes, day);
     const supabase = createClient();
-    setSavingCells(prev => new Set(prev).add(key));
+    setSavingCells((prev) => new Set(prev).add(key));
     setSaveError(null);
 
     const query = isEmpty
       ? supabase.from("horas_trabajo").delete().eq("instructor_id", instructorId).eq("fecha", fecha)
-      : supabase.from("horas_trabajo").upsert(
-          { escuela_id: perfil.escuela_id, sede_id: instructor.sede_id, instructor_id: instructorId, fecha, horas: hours },
-          { onConflict: "instructor_id,fecha" }
-        );
+      : supabase
+          .from("horas_trabajo")
+          .upsert(
+            {
+              escuela_id: perfil.escuela_id,
+              sede_id: instructor.sede_id,
+              instructor_id: instructorId,
+              fecha,
+              horas: hours,
+            },
+            { onConflict: "instructor_id,fecha" }
+          );
 
     const { error } = await query;
 
     if (error) {
       setSaveError("No se pudo guardar la hora. Recarga la página si el problema persiste.");
-      setHorasMap(prev => {
+      setHorasMap((prev) => {
         const next = { ...prev, [instructorId]: { ...(prev[instructorId] || {}) } };
         if (previousValue === undefined) {
           delete next[instructorId][day];
@@ -273,7 +312,11 @@ export default function HorasPage() {
       ]);
     }
 
-    setSavingCells(prev => { const n = new Set(prev); n.delete(key); return n; });
+    setSavingCells((prev) => {
+      const n = new Set(prev);
+      n.delete(key);
+      return n;
+    });
   };
 
   // ── Valor hora por instructor ────────────────────────────────
@@ -290,23 +333,34 @@ export default function HorasPage() {
     const valor = isNaN(parsed) ? 0 : Math.max(parsed, 0);
     const previousValue = valorHoras[instructorId] ?? 0;
 
-    setValorHoras(prev => ({ ...prev, [instructorId]: valor }));
-    setValorHoraEdits(prev => { const n = { ...prev }; delete n[instructorId]; return n; });
+    setValorHoras((prev) => ({ ...prev, [instructorId]: valor }));
+    setValorHoraEdits((prev) => {
+      const n = { ...prev };
+      delete n[instructorId];
+      return n;
+    });
 
-    setSavingValor(prev => new Set(prev).add(instructorId));
+    setSavingValor((prev) => new Set(prev).add(instructorId));
     setSaveError(null);
     const supabase = createClient();
-    const { error } = await supabase.from("instructores").update({ valor_hora: valor }).eq("id", instructorId);
+    const { error } = await supabase
+      .from("instructores")
+      .update({ valor_hora: valor })
+      .eq("id", instructorId);
     if (error) {
       setSaveError("No se pudo guardar el valor por hora.");
-      setValorHoras(prev => ({ ...prev, [instructorId]: previousValue }));
+      setValorHoras((prev) => ({ ...prev, [instructorId]: previousValue }));
     } else {
       invalidateDashboardClientCaches([
         "dashboard-list:horas-dashboard:",
         "dashboard-list:horas-grid:",
       ]);
     }
-    setSavingValor(prev => { const n = new Set(prev); n.delete(instructorId); return n; });
+    setSavingValor((prev) => {
+      const n = new Set(prev);
+      n.delete(instructorId);
+      return n;
+    });
   };
 
   // ── Totales ───────────────────────────────────────────────────
@@ -317,8 +371,7 @@ export default function HorasPage() {
   const getTotalDay = (day: number) =>
     instructores.reduce((s, i) => s + ((horasMap[i.id] || {})[day] || 0), 0);
 
-  const getTotalValor = (id: string) =>
-    getTotalInstructor(id) * (valorHoras[id] || 0);
+  const getTotalValor = (id: string) => getTotalInstructor(id) * (valorHoras[id] || 0);
 
   const grandTotal = instructores.reduce((s, i) => s + getTotalInstructor(i.id), 0);
   const grandTotalValor = instructores.reduce((s, i) => s + getTotalValor(i.id), 0);
@@ -358,10 +411,15 @@ export default function HorasPage() {
       }
 
       const generatedRows = (data as GeneracionGastoHoraRow[] | null) ?? [];
-      const totalGenerado = generatedRows.reduce((sum, row) => sum + Number(row.monto_total || 0), 0);
+      const totalGenerado = generatedRows.reduce(
+        (sum, row) => sum + Number(row.monto_total || 0),
+        0
+      );
 
       if (generatedRows.length === 0) {
-        setClosureNotice(`No había horas con valor para trasladar a gastos en ${selectedMonthLabel}.`);
+        setClosureNotice(
+          `No había horas con valor para trasladar a gastos en ${selectedMonthLabel}.`
+        );
       } else {
         setClosureNotice(
           `${generatedRows.length} gasto(s) ${monthClosures.length > 0 ? "actualizado(s)" : "generado(s)"} por ${fmtCOP(totalGenerado)} para ${selectedMonthLabel}.`
@@ -385,7 +443,9 @@ export default function HorasPage() {
       await fetchData();
     } catch (generationError) {
       console.error("[HorasPage] Error generando gastos mensuales:", generationError);
-      setClosureError(getErrorMessage(generationError, "No se pudo generar el gasto mensual de horas."));
+      setClosureError(
+        getErrorMessage(generationError, "No se pudo generar el gasto mensual de horas.")
+      );
     } finally {
       setClosingMonth(false);
     }
@@ -394,20 +454,28 @@ export default function HorasPage() {
   // ── Navegación de mes ─────────────────────────────────────────
 
   const prevMonth = () => {
-    if (mes === 0) { setAnio(a => a - 1); setMes(11); }
-    else setMes(m => m - 1);
+    if (mes === 0) {
+      setAnio((a) => a - 1);
+      setMes(11);
+    } else setMes((m) => m - 1);
   };
   const nextMonth = () => {
-    if (mes === 11) { setAnio(a => a + 1); setMes(0); }
-    else setMes(m => m + 1);
+    if (mes === 11) {
+      setAnio((a) => a + 1);
+      setMes(0);
+    } else setMes((m) => m + 1);
   };
 
   const anios = Array.from({ length: 6 }, (_, i) => today.getFullYear() - 2 + i);
 
-  const selectCls =
-    "apple-input cursor-pointer px-3 py-2";
+  const pickerShellCls =
+    "inline-flex items-center gap-1.5 rounded-[24px] border border-gray-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-[#1d1d1f]/90";
+  const sharedSelectCls =
+    "h-9 rounded-2xl border border-transparent bg-transparent px-3 text-sm font-medium text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/30 focus:bg-white focus:ring-0 dark:text-[#f5f5f7] dark:focus:bg-white/5";
+  const monthSelectCls = `${sharedSelectCls} min-w-[8.75rem]`;
+  const yearSelectCls = `${sharedSelectCls} w-[5.4rem]`;
   const navBtnCls =
-    "apple-icon-button text-[#1d1d1f] dark:text-[#f5f5f7]";
+    "inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-transparent text-[#1d1d1f] transition hover:bg-[#f5f5f7] hover:text-[#0071e3] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/20 dark:text-[#f5f5f7] dark:hover:bg-white/8 dark:hover:text-[#6cb6ff]";
 
   // right offset para la columna de total horas (deja espacio para la columna valor)
   const totalColRight = canEditValor ? VALOR_COL_W : 0;
@@ -452,7 +520,7 @@ export default function HorasPage() {
 
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div className="rounded-2xl bg-white px-3 py-3 dark:bg-[#1a1c20]">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">
+                <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
                   Total horas
                 </p>
                 <p className="mt-1 text-lg font-semibold text-[#0071e3]">
@@ -460,7 +528,7 @@ export default function HorasPage() {
                 </p>
               </div>
               <div className="rounded-2xl bg-white px-3 py-3 dark:bg-[#1a1c20]">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">
+                <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
                   Valor total
                 </p>
                 <p className="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">
@@ -471,7 +539,7 @@ export default function HorasPage() {
 
             {canEditValor ? (
               <div className="mt-4">
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">
+                <label className="mb-2 block text-[11px] font-semibold tracking-[0.18em] text-[#86868b] uppercase">
                   Valor por hora
                 </label>
                 <input
@@ -504,7 +572,7 @@ export default function HorasPage() {
             ) : null}
 
             <div className="mt-4">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">
+              <p className="mb-3 text-[11px] font-semibold tracking-[0.18em] text-[#86868b] uppercase">
                 Registro diario
               </p>
               <div className="grid grid-cols-4 gap-2">
@@ -603,14 +671,14 @@ export default function HorasPage() {
       <div className="rounded-[1.75rem] border border-gray-100 bg-white p-4 dark:border-gray-800 dark:bg-[#17181c]">
         <div className={`grid gap-3 ${canEditValor ? "grid-cols-2" : "grid-cols-1"}`}>
           <div className="rounded-2xl bg-gray-50 px-3 py-3 dark:bg-[#111214]">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Total mes</p>
+            <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">Total mes</p>
             <p className="mt-1 text-lg font-semibold text-[#0071e3]">
               {grandTotal > 0 ? `${grandTotal}h` : "—"}
             </p>
           </div>
           {canEditValor ? (
             <div className="rounded-2xl bg-gray-50 px-3 py-3 dark:bg-[#111214]">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">
+              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
                 Total a gasto
               </p>
               <p className="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">
@@ -628,28 +696,44 @@ export default function HorasPage() {
   return (
     <div>
       {/* ── Cabecera ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 animate-fade-in">
-        <div>
-          <h2 className="text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
+      <div className="animate-fade-in mb-6 flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
             Horas de Instructores
           </h2>
-          <p className="text-[#86868b] mt-1 text-sm">
+          <p className="mt-1 text-sm text-[#86868b]">
             Control mensual de horas trabajadas por instructor
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className={`${pickerShellCls} shrink-0`}>
           <button onClick={prevMonth} className={navBtnCls} aria-label="Mes anterior">
-            <ChevronLeft size={16} />
+            <ChevronLeft size={15} />
           </button>
-          <select value={mes} onChange={e => setMes(Number(e.target.value))} className={selectCls}>
-            {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+          <select
+            value={mes}
+            onChange={(e) => setMes(Number(e.target.value))}
+            className={monthSelectCls}
+          >
+            {MESES.map((m, i) => (
+              <option key={i} value={i}>
+                {m}
+              </option>
+            ))}
           </select>
-          <select value={anio} onChange={e => setAnio(Number(e.target.value))} className={selectCls}>
-            {anios.map(y => <option key={y} value={y}>{y}</option>)}
+          <select
+            value={anio}
+            onChange={(e) => setAnio(Number(e.target.value))}
+            className={yearSelectCls}
+          >
+            {anios.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
           </select>
           <button onClick={nextMonth} className={navBtnCls} aria-label="Mes siguiente">
-            <ChevronRight size={16} />
+            <ChevronRight size={15} />
           </button>
         </div>
       </div>
@@ -669,7 +753,8 @@ export default function HorasPage() {
                 <h3 className="text-lg font-semibold">Cierre contable de horas</h3>
               </div>
               <p className="mt-1 text-sm text-[#86868b]">
-                Cuando el mes termina, puedes convertir el valor total de horas de cada instructor en gasto de nómina sin duplicados.
+                Cuando el mes termina, puedes convertir el valor total de horas de cada instructor
+                en gasto de nómina sin duplicados.
               </p>
             </div>
 
@@ -681,7 +766,9 @@ export default function HorasPage() {
                     : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
                 }`}
               >
-                {monthClosed ? `Mes cerrado: ${selectedMonthLabel}` : `Mes aún abierto: ${selectedMonthLabel}`}
+                {monthClosed
+                  ? `Mes cerrado: ${selectedMonthLabel}`
+                  : `Mes aún abierto: ${selectedMonthLabel}`}
               </span>
               <button
                 onClick={handleGenerateMonthlyExpenses}
@@ -695,7 +782,11 @@ export default function HorasPage() {
                 }
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0071e3] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED] disabled:cursor-not-allowed disabled:bg-[#0071e3]/40"
               >
-                {closingMonth ? <RefreshCw size={16} className="animate-spin" /> : <ReceiptText size={16} />}
+                {closingMonth ? (
+                  <RefreshCw size={16} className="animate-spin" />
+                ) : (
+                  <ReceiptText size={16} />
+                )}
                 {closingMonth
                   ? "Generando gastos..."
                   : monthClosures.length > 0
@@ -707,37 +798,49 @@ export default function HorasPage() {
 
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-[#141414]">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Total horas del mes</p>
+              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+                Total horas del mes
+              </p>
               <p className="mt-1 text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                 {grandTotal > 0 ? `${grandTotal}h` : "—"}
               </p>
             </div>
             <div className="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-[#141414]">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Valor a gasto</p>
+              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+                Valor a gasto
+              </p>
               <p className="mt-1 text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                 {grandTotalValor > 0 ? fmtCOP(grandTotalValor) : "—"}
               </p>
             </div>
             <div className="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-[#141414]">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Gastos ya generados</p>
+              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+                Gastos ya generados
+              </p>
               <p className="mt-1 text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                 {loadingClosures ? "..." : `${monthClosures.length}`}
               </p>
               <p className="mt-1 text-xs text-[#86868b]">
-                {loadingClosures ? "Verificando..." : monthClosures.length > 0 ? fmtCOP(closureTotal) : "Sin cierre todavía"}
+                {loadingClosures
+                  ? "Verificando..."
+                  : monthClosures.length > 0
+                    ? fmtCOP(closureTotal)
+                    : "Sin cierre todavía"}
               </p>
             </div>
           </div>
 
           {!monthClosed && (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
-              Este mes todavía no ha terminado. El traslado a gastos se habilita cuando cierre el período.
+              Este mes todavía no ha terminado. El traslado a gastos se habilita cuando cierre el
+              período.
             </div>
           )}
 
           {monthClosed && instructorsMissingRate.length > 0 && (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
-              Hay instructores con horas registradas y valor por hora en `0`: {instructorsMissingRate.map((inst) => `${inst.nombre} ${inst.apellidos}`).join(", ")}.
+              Hay instructores con horas registradas y valor por hora en `0`:{" "}
+              {instructorsMissingRate.map((inst) => `${inst.nombre} ${inst.apellidos}`).join(", ")}.
               Corrige ese valor antes de generar el gasto del mes.
             </div>
           )}
@@ -757,13 +860,13 @@ export default function HorasPage() {
       )}
 
       {/* ── Tabla ── */}
-      <div className="bg-white dark:bg-[#1d1d1f] rounded-3xl shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in delay-100 overflow-hidden">
+      <div className="animate-fade-in overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm delay-100 dark:border-gray-800 dark:bg-[#1d1d1f]">
         {loading ? (
-          <div className="flex items-center justify-center h-52">
-            <div className="w-6 h-6 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+          <div className="flex h-52 items-center justify-center">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#0071e3] border-t-transparent" />
           </div>
         ) : instructores.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-52 gap-2 text-[#86868b]">
+          <div className="flex h-52 flex-col items-center justify-center gap-2 text-[#86868b]">
             <span className="text-4xl">📋</span>
             <p className="text-sm">No hay instructores activos para mostrar</p>
           </div>
@@ -773,41 +876,51 @@ export default function HorasPage() {
           <TableScrollArea framed={false} viewportClassName="w-full">
             <table
               className="border-collapse"
-              style={{ minWidth: `${180 + daysInMonth * DAY_COL_W + TOTAL_COL_W + (canEditValor ? VALOR_COL_W : 0)}px` }}
+              style={{
+                minWidth: `${180 + daysInMonth * DAY_COL_W + TOTAL_COL_W + (canEditValor ? VALOR_COL_W : 0)}px`,
+              }}
             >
               {/* ── Encabezado ── */}
               <thead>
                 <tr className="border-b-2 border-gray-200 dark:border-gray-700">
-
                   {/* Instructor — sticky izquierda */}
                   <th
                     scope="col"
-                    className="sticky left-0 z-20 bg-gray-50 dark:bg-[#141414] px-4 py-2.5 text-left text-[10px] font-semibold text-[#86868b] uppercase tracking-wider border-r-2 border-gray-200 dark:border-gray-700"
+                    className="sticky left-0 z-20 border-r-2 border-gray-200 bg-gray-50 px-4 py-2.5 text-left text-[10px] font-semibold tracking-wider text-[#86868b] uppercase dark:border-gray-700 dark:bg-[#141414]"
                     style={{ width: 180, minWidth: 180 }}
                   >
                     Instructor
                   </th>
 
                   {/* Días */}
-                  {days.map(d => {
+                  {days.map((d) => {
                     const dow = getDayOfWeek(anio, mes, d);
                     const isWE = dow === 0 || dow === 6;
-                    const isToday = d === today.getDate() && mes === today.getMonth() && anio === today.getFullYear();
+                    const isToday =
+                      d === today.getDate() &&
+                      mes === today.getMonth() &&
+                      anio === today.getFullYear();
                     return (
                       <th
                         key={d}
                         scope="col"
                         style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
-                        className={`py-1.5 text-center border-r border-gray-100 dark:border-gray-800 ${
-                          isToday ? "bg-[#0071e3]/10 dark:bg-[#0071e3]/15"
-                          : isWE  ? "bg-gray-100 dark:bg-[#1a1a1a]"
-                          : "bg-gray-50 dark:bg-[#141414]"
+                        className={`border-r border-gray-100 py-1.5 text-center dark:border-gray-800 ${
+                          isToday
+                            ? "bg-[#0071e3]/10 dark:bg-[#0071e3]/15"
+                            : isWE
+                              ? "bg-gray-100 dark:bg-[#1a1a1a]"
+                              : "bg-gray-50 dark:bg-[#141414]"
                         }`}
                       >
-                        <div className={`text-xs font-bold leading-none mb-0.5 ${isToday ? "text-[#0071e3]" : "text-[#1d1d1f] dark:text-[#f5f5f7]"}`}>
+                        <div
+                          className={`mb-0.5 text-xs leading-none font-bold ${isToday ? "text-[#0071e3]" : "text-[#1d1d1f] dark:text-[#f5f5f7]"}`}
+                        >
                           {d}
                         </div>
-                        <div className={`text-[9px] font-medium ${isToday ? "text-[#0071e3]" : isWE ? "text-[#0071e3]/70" : "text-[#86868b]"}`}>
+                        <div
+                          className={`text-[9px] font-medium ${isToday ? "text-[#0071e3]" : isWE ? "text-[#0071e3]/70" : "text-[#86868b]"}`}
+                        >
                           {DIA_ABREV[dow]}
                         </div>
                       </th>
@@ -817,7 +930,7 @@ export default function HorasPage() {
                   {/* Total horas — sticky derecha (desplazada si hay columna valor) */}
                   <th
                     scope="col"
-                    className="sticky z-20 bg-gray-50 dark:bg-[#141414] px-2 py-2.5 text-center text-[10px] font-semibold text-[#86868b] uppercase tracking-wider border-l-2 border-gray-200 dark:border-gray-700"
+                    className="sticky z-20 border-l-2 border-gray-200 bg-gray-50 px-2 py-2.5 text-center text-[10px] font-semibold tracking-wider text-[#86868b] uppercase dark:border-gray-700 dark:bg-[#141414]"
                     style={{ width: TOTAL_COL_W, minWidth: TOTAL_COL_W, right: totalColRight }}
                   >
                     Total h
@@ -827,7 +940,7 @@ export default function HorasPage() {
                   {canEditValor && (
                     <th
                       scope="col"
-                      className="sticky right-0 z-20 bg-gray-50 dark:bg-[#141414] px-2 py-2.5 text-center text-[10px] font-semibold text-[#86868b] uppercase tracking-wider border-l border-gray-200 dark:border-gray-700"
+                      className="sticky right-0 z-20 border-l border-gray-200 bg-gray-50 px-2 py-2.5 text-center text-[10px] font-semibold tracking-wider text-[#86868b] uppercase dark:border-gray-700 dark:bg-[#141414]"
                       style={{ width: VALOR_COL_W, minWidth: VALOR_COL_W }}
                     >
                       Valor total
@@ -839,47 +952,60 @@ export default function HorasPage() {
               {/* ── Filas de instructores ── */}
               <tbody>
                 {instructores.map((inst, idx) => {
-                  const totalInst  = getTotalInstructor(inst.id);
+                  const totalInst = getTotalInstructor(inst.id);
                   const totalValor = getTotalValor(inst.id);
                   const cierreMes = closureByInstructor.get(inst.id);
                   const isEven = idx % 2 === 0;
-                  const rowBg = isEven ? "bg-white dark:bg-[#1d1d1f]" : "bg-gray-50/40 dark:bg-[#1f1f1f]";
-                  const stickyRowBg = isEven ? "bg-white dark:bg-[#1d1d1f]" : "bg-gray-50 dark:bg-[#1f1f1f]";
-                  const stickyFootBg = isEven ? "bg-gray-50 dark:bg-[#141414]" : "bg-gray-100 dark:bg-[#111]";
+                  const rowBg = isEven
+                    ? "bg-white dark:bg-[#1d1d1f]"
+                    : "bg-gray-50/40 dark:bg-[#1f1f1f]";
+                  const stickyRowBg = isEven
+                    ? "bg-white dark:bg-[#1d1d1f]"
+                    : "bg-gray-50 dark:bg-[#1f1f1f]";
+                  const stickyFootBg = isEven
+                    ? "bg-gray-50 dark:bg-[#141414]"
+                    : "bg-gray-100 dark:bg-[#111]";
 
                   return (
-                    <tr key={inst.id} className={`border-b border-gray-100 dark:border-gray-800 ${rowBg}`}>
-
+                    <tr
+                      key={inst.id}
+                      className={`border-b border-gray-100 dark:border-gray-800 ${rowBg}`}
+                    >
                       {/* Nombre + valor/hora — sticky izquierda */}
                       <td
-                        className={`sticky left-0 z-10 px-4 border-r-2 border-gray-200 dark:border-gray-700 ${stickyRowBg}`}
+                        className={`sticky left-0 z-10 border-r-2 border-gray-200 px-4 dark:border-gray-700 ${stickyRowBg}`}
                         style={{ width: 180, minWidth: 180 }}
                       >
                         <div className="flex items-start gap-2 py-2">
                           {inst.color && (
                             <span
-                              className="w-2 h-2 rounded-full flex-shrink-0 mt-1"
+                              className="mt-1 h-2 w-2 flex-shrink-0 rounded-full"
                               style={{ backgroundColor: inst.color }}
                             />
                           )}
                           <div className="min-w-0 flex-1">
-                            <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate block leading-tight">
+                            <span className="block truncate text-sm leading-tight font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
                               {inst.nombre} {inst.apellidos}
                             </span>
 
                             {/* Input valor/hora — solo admins de escuela/sede */}
                             {canEditValor && (
-                              <div className="flex items-center gap-1 mt-1.5">
-                                <span className="text-[10px] text-[#86868b] shrink-0">$/h</span>
+                              <div className="mt-1.5 flex items-center gap-1">
+                                <span className="shrink-0 text-[10px] text-[#86868b]">$/h</span>
                                 <input
                                   type="number"
                                   min="0"
                                   step="1000"
                                   value={getValorHoraDisplay(inst.id)}
-                                  onChange={e => setValorHoraEdits(prev => ({ ...prev, [inst.id]: e.target.value }))}
+                                  onChange={(e) =>
+                                    setValorHoraEdits((prev) => ({
+                                      ...prev,
+                                      [inst.id]: e.target.value,
+                                    }))
+                                  }
                                   onBlur={() => handleValorHoraBlur(inst.id)}
                                   placeholder="0"
-                                  className={`w-[72px] text-xs px-1.5 py-0.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-1 focus:ring-[#0071e3]/50 focus:border-[#0071e3] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${savingValor.has(inst.id) ? "opacity-40" : ""}`}
+                                  className={`w-[72px] [appearance:textfield] rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-[#1d1d1f] focus:border-[#0071e3] focus:ring-1 focus:ring-[#0071e3]/50 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-[#f5f5f7] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${savingValor.has(inst.id) ? "opacity-40" : ""}`}
                                 />
                               </div>
                             )}
@@ -908,29 +1034,40 @@ export default function HorasPage() {
                       </td>
 
                       {/* Celdas de días */}
-                      {days.map(d => {
-                        const key    = `${inst.id}-${d}`;
-                        const val    = getCellValue(inst.id, d);
+                      {days.map((d) => {
+                        const key = `${inst.id}-${d}`;
+                        const val = getCellValue(inst.id, d);
                         const numVal = parseFloat(val);
                         const hasVal = val !== "" && numVal > 0;
-                        const isRest = val === "0" || (val !== "" && numVal === 0 && horasMap[inst.id]?.[d] === 0);
+                        const isRest =
+                          val === "0" ||
+                          (val !== "" && numVal === 0 && horasMap[inst.id]?.[d] === 0);
                         const isSaving = savingCells.has(key);
-                        const dow  = getDayOfWeek(anio, mes, d);
+                        const dow = getDayOfWeek(anio, mes, d);
                         const isWE = dow === 0 || dow === 6;
-                        const isToday = d === today.getDate() && mes === today.getMonth() && anio === today.getFullYear();
+                        const isToday =
+                          d === today.getDate() &&
+                          mes === today.getMonth() &&
+                          anio === today.getFullYear();
 
                         return (
                           <td
                             key={d}
                             style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
-                            className={`p-0 border-r border-gray-100 dark:border-gray-800 transition-opacity ${isSaving ? "opacity-40" : ""} ${
-                              isRest              ? "bg-amber-100/70 dark:bg-amber-900/20"
-                              : isToday && hasVal ? "bg-[#0071e3]/12"
-                              : isToday           ? "bg-[#0071e3]/6"
-                              : hasVal && isWE    ? "bg-blue-50/60 dark:bg-[#0071e3]/8"
-                              : hasVal            ? "bg-[#0071e3]/5 dark:bg-[#0071e3]/7"
-                              : isWE              ? "bg-gray-50/60 dark:bg-[#1a1a1a]/60"
-                              : ""
+                            className={`border-r border-gray-100 p-0 transition-opacity dark:border-gray-800 ${isSaving ? "opacity-40" : ""} ${
+                              isRest
+                                ? "bg-amber-100/70 dark:bg-amber-900/20"
+                                : isToday && hasVal
+                                  ? "bg-[#0071e3]/12"
+                                  : isToday
+                                    ? "bg-[#0071e3]/6"
+                                    : hasVal && isWE
+                                      ? "bg-blue-50/60 dark:bg-[#0071e3]/8"
+                                      : hasVal
+                                        ? "bg-[#0071e3]/5 dark:bg-[#0071e3]/7"
+                                        : isWE
+                                          ? "bg-gray-50/60 dark:bg-[#1a1a1a]/60"
+                                          : ""
                             }`}
                           >
                             <input
@@ -939,26 +1076,26 @@ export default function HorasPage() {
                               pattern="[0-9]*"
                               maxLength={2}
                               value={val}
-                              onChange={e => {
+                              onChange={(e) => {
                                 const v = e.target.value.replace(/[^0-9]/g, "");
                                 handleChange(inst.id, d, v);
                               }}
                               onBlur={() => handleBlur(inst.id, d)}
-                              onFocus={e => e.target.select()}
+                              onFocus={(e) => e.target.select()}
                               readOnly={isReadOnly}
                               placeholder="·"
                               aria-label={`${inst.nombre} día ${d}`}
-                              className={`
-                                w-full h-9 text-center text-sm bg-transparent
-                                border-0 outline-none
-                                placeholder:text-gray-300 dark:placeholder:text-gray-700
-                                ${isRest ? "font-semibold text-amber-600 dark:text-amber-400"
-                                  : hasVal ? "font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"
-                                  : "text-[#86868b]"}
-                                ${isReadOnly
+                              className={`h-9 w-full border-0 bg-transparent text-center text-sm outline-none placeholder:text-gray-300 dark:placeholder:text-gray-700 ${
+                                isRest
+                                  ? "font-semibold text-amber-600 dark:text-amber-400"
+                                  : hasVal
+                                    ? "font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"
+                                    : "text-[#86868b]"
+                              } ${
+                                isReadOnly
                                   ? "cursor-default"
-                                  : "focus:bg-[#0071e3]/10 dark:focus:bg-[#0071e3]/20 cursor-text"}
-                              `}
+                                  : "cursor-text focus:bg-[#0071e3]/10 dark:focus:bg-[#0071e3]/20"
+                              } `}
                             />
                           </td>
                         );
@@ -966,10 +1103,12 @@ export default function HorasPage() {
 
                       {/* Total horas — sticky */}
                       <td
-                        className={`sticky z-10 px-2 py-0 text-center border-l-2 border-gray-200 dark:border-gray-700 ${stickyFootBg}`}
+                        className={`sticky z-10 border-l-2 border-gray-200 px-2 py-0 text-center dark:border-gray-700 ${stickyFootBg}`}
                         style={{ width: TOTAL_COL_W, minWidth: TOTAL_COL_W, right: totalColRight }}
                       >
-                        <span className={`text-sm font-bold tabular-nums ${totalInst > 0 ? "text-[#0071e3]" : "text-gray-300 dark:text-gray-600"}`}>
+                        <span
+                          className={`text-sm font-bold tabular-nums ${totalInst > 0 ? "text-[#0071e3]" : "text-gray-300 dark:text-gray-600"}`}
+                        >
                           {totalInst > 0 ? `${totalInst}h` : "—"}
                         </span>
                       </td>
@@ -977,10 +1116,12 @@ export default function HorasPage() {
                       {/* Valor total — sticky right-0 (solo admins de escuela/sede) */}
                       {canEditValor && (
                         <td
-                          className={`sticky right-0 z-10 px-2 py-0 text-center border-l border-gray-200 dark:border-gray-700 ${stickyFootBg}`}
+                          className={`sticky right-0 z-10 border-l border-gray-200 px-2 py-0 text-center dark:border-gray-700 ${stickyFootBg}`}
                           style={{ width: VALOR_COL_W, minWidth: VALOR_COL_W }}
                         >
-                          <span className={`text-sm font-bold tabular-nums ${totalValor > 0 ? "text-green-600 dark:text-green-400" : "text-gray-300 dark:text-gray-600"}`}>
+                          <span
+                            className={`text-sm font-bold tabular-nums ${totalValor > 0 ? "text-green-600 dark:text-green-400" : "text-gray-300 dark:text-gray-600"}`}
+                          >
                             {totalValor > 0 ? fmtCOP(totalValor) : "—"}
                           </span>
                         </td>
@@ -994,26 +1135,28 @@ export default function HorasPage() {
               <tfoot>
                 <tr className="border-t-2 border-gray-200 dark:border-gray-700">
                   <td
-                    className="sticky left-0 z-10 bg-gray-50 dark:bg-[#141414] px-4 py-2 border-r-2 border-gray-200 dark:border-gray-700"
+                    className="sticky left-0 z-10 border-r-2 border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-700 dark:bg-[#141414]"
                     style={{ width: 180, minWidth: 180 }}
                   >
-                    <span className="text-[10px] font-semibold text-[#86868b] uppercase tracking-wider">
+                    <span className="text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
                       Total día
                     </span>
                   </td>
 
-                  {days.map(d => {
+                  {days.map((d) => {
                     const total = getTotalDay(d);
-                    const isWE  = [0, 6].includes(getDayOfWeek(anio, mes, d));
+                    const isWE = [0, 6].includes(getDayOfWeek(anio, mes, d));
                     return (
                       <td
                         key={d}
                         style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
-                        className={`py-2 text-center border-r border-gray-100 dark:border-gray-800 ${
+                        className={`border-r border-gray-100 py-2 text-center dark:border-gray-800 ${
                           isWE ? "bg-gray-100/70 dark:bg-[#1a1a1a]" : "bg-gray-50 dark:bg-[#141414]"
                         }`}
                       >
-                        <span className={`text-xs font-bold tabular-nums ${total > 0 ? "text-[#1d1d1f] dark:text-[#f5f5f7]" : "text-gray-300 dark:text-gray-700"}`}>
+                        <span
+                          className={`text-xs font-bold tabular-nums ${total > 0 ? "text-[#1d1d1f] dark:text-[#f5f5f7]" : "text-gray-300 dark:text-gray-700"}`}
+                        >
                           {total > 0 ? total : ""}
                         </span>
                       </td>
@@ -1022,7 +1165,7 @@ export default function HorasPage() {
 
                   {/* Gran total horas */}
                   <td
-                    className="sticky z-10 bg-gray-50 dark:bg-[#141414] px-2 py-2 text-center border-l-2 border-gray-200 dark:border-gray-700"
+                    className="sticky z-10 border-l-2 border-gray-200 bg-gray-50 px-2 py-2 text-center dark:border-gray-700 dark:bg-[#141414]"
                     style={{ width: TOTAL_COL_W, minWidth: TOTAL_COL_W, right: totalColRight }}
                   >
                     <span className="text-sm font-bold text-[#0071e3] tabular-nums">
@@ -1033,10 +1176,12 @@ export default function HorasPage() {
                   {/* Gran total valor (solo admins de escuela/sede) */}
                   {canEditValor && (
                     <td
-                      className="sticky right-0 z-10 bg-gray-50 dark:bg-[#141414] px-2 py-2 text-center border-l border-gray-200 dark:border-gray-700"
+                      className="sticky right-0 z-10 border-l border-gray-200 bg-gray-50 px-2 py-2 text-center dark:border-gray-700 dark:bg-[#141414]"
                       style={{ width: VALOR_COL_W, minWidth: VALOR_COL_W }}
                     >
-                      <span className={`text-sm font-bold tabular-nums ${grandTotalValor > 0 ? "text-green-600 dark:text-green-400" : "text-gray-300 dark:text-gray-700"}`}>
+                      <span
+                        className={`text-sm font-bold tabular-nums ${grandTotalValor > 0 ? "text-green-600 dark:text-green-400" : "text-gray-300 dark:text-gray-700"}`}
+                      >
                         {grandTotalValor > 0 ? fmtCOP(grandTotalValor) : "—"}
                       </span>
                     </td>
@@ -1051,29 +1196,29 @@ export default function HorasPage() {
       {/* Leyenda */}
       {!loading && instructores.length > 0 && (
         <div
-          className={`mt-4 flex flex-wrap gap-4 text-xs text-[#86868b] animate-fade-in ${
+          className={`animate-fade-in mt-4 flex flex-wrap gap-4 text-xs text-[#86868b] ${
             isMobile ? "items-start" : "items-center"
           }`}
         >
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm bg-[#0071e3]/10 border border-[#0071e3]/20" />
+            <span className="h-3 w-3 rounded-sm border border-[#0071e3]/20 bg-[#0071e3]/10" />
             Día con horas
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm bg-amber-100 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800" />
+            <span className="h-3 w-3 rounded-sm border border-amber-200 bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30" />
             Descanso (0)
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm bg-gray-100 dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700" />
+            <span className="h-3 w-3 rounded-sm border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-[#1a1a1a]" />
             Fin de semana
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm bg-[#0071e3]/10 border border-[#0071e3]/30" />
+            <span className="h-3 w-3 rounded-sm border border-[#0071e3]/30 bg-[#0071e3]/10" />
             Hoy
           </div>
           {canEditValor && (
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-200 dark:border-green-800" />
+              <span className="h-3 w-3 rounded-sm border border-green-200 bg-green-100 dark:border-green-800 dark:bg-green-900/30" />
               Valor = horas × $/h
             </div>
           )}
