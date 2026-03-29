@@ -18,17 +18,7 @@ import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
 import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type { Ingreso, MetodoPago, TipoRegistroAlumno } from "@/types/database";
-import {
-  BookOpen,
-  DollarSign,
-  Plus,
-  Printer,
-  UserRound,
-  WalletCards,
-  CalendarDays,
-  AlertCircle,
-  X,
-} from "lucide-react";
+import { BookOpen, DollarSign, Plus, Printer, UserRound, CalendarDays, X } from "lucide-react";
 import { toast } from "sonner";
 import AlumnoModal from "./AlumnoModal";
 import MatriculaModal from "./MatriculaModal";
@@ -876,9 +866,6 @@ export default function AlumnosPage() {
   const summaryItems = useMemo(() => {
     const regulares = alumnos.filter((row) => row.tipo_registro === "regular").length;
     const servicios = alumnos.filter((row) => row.tipo_registro !== "regular").length;
-    const pendientes = alumnos.filter((row) => row.saldo_pendiente > 0).length;
-    const saldoVisible = alumnos.reduce((sum, row) => sum + Number(row.saldo_pendiente || 0), 0);
-
     return [
       {
         id: "total",
@@ -887,22 +874,6 @@ export default function AlumnosPage() {
         detail: `${alumnos.length} en esta página · ${regulares} regulares y ${servicios} especiales.`,
         icon: <UserRound size={18} />,
         tone: "primary" as const,
-      },
-      {
-        id: "saldo",
-        label: "Saldo visible",
-        value: `$${saldoVisible.toLocaleString("es-CO")}`,
-        detail: "Suma del pendiente mostrado en la tabla actual.",
-        icon: <WalletCards size={18} />,
-        tone: "warning" as const,
-      },
-      {
-        id: "pendientes",
-        label: "Pendientes en página",
-        value: String(pendientes),
-        detail: "Registros con saldo abierto para seguimiento.",
-        icon: <AlertCircle size={18} />,
-        tone: "danger" as const,
       },
       {
         id: "periodo",
@@ -931,7 +902,7 @@ export default function AlumnosPage() {
         ) : null
       }
     >
-      <SummaryRow items={summaryItems} columns={4} />
+      <SummaryRow items={summaryItems} columns={2} />
 
       {/* ========== Filters ========== */}
       {(() => {
