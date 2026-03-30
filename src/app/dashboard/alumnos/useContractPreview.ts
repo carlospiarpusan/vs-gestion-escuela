@@ -37,7 +37,7 @@ export function useContractPreview({
   const [preview, setPreview] = useState<ContractPreviewResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cancelRef = useRef<() => void>();
+  const cancelRef = useRef<(() => void) | undefined>(undefined);
 
   const filteredCategorias = useMemo(() => categorias.filter(Boolean), [categorias]);
   const hasCategorias = filteredCategorias.length > 0;
