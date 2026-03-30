@@ -60,24 +60,25 @@ export default function InformesPage() {
         useCache?: boolean;
       }
     ) => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const nextReport = await fetchFinanceReportsDashboard(buildParams(filters, section), options);
-      setReport(nextReport);
-    } catch (reportError: unknown) {
-      const message =
-        reportError instanceof Error
-          ? reportError.message
-          : "No se pudo generar el informe contable.";
-      setLoadError(message);
-      setReport(null);
-      toast.error(
-        message
-      );
-    } finally {
-      setLoading(false);
-    }
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const nextReport = await fetchFinanceReportsDashboard(
+          buildParams(filters, section),
+          options
+        );
+        setReport(nextReport);
+      } catch (reportError: unknown) {
+        const message =
+          reportError instanceof Error
+            ? reportError.message
+            : "No se pudo generar el informe contable.";
+        setLoadError(message);
+        setReport(null);
+        toast.error(message);
+      } finally {
+        setLoading(false);
+      }
     },
     []
   );
@@ -223,7 +224,11 @@ export default function InformesPage() {
   const handleExport = async (format: "csv" | "xls") => {
     setExportingFormat(format);
     try {
-      const params = buildParams(appliedFilters, activeSection);
+      const params = buildParams(
+        appliedFilters,
+        activeSection,
+        format === "xls" ? "export" : "screen"
+      );
       if (format === "csv") {
         params.set("format", "csv");
         const response = await fetch(`/api/reportes/contables?${params.toString()}`);
@@ -241,9 +246,12 @@ export default function InformesPage() {
         return;
       }
 
-      const nextReport = await fetchFinanceReportsDashboard(buildParams(appliedFilters, activeSection), {
-        useCache: false,
-      });
+      const nextReport = await fetchFinanceReportsDashboard(
+        buildParams(appliedFilters, activeSection, "export"),
+        {
+          useCache: false,
+        }
+      );
       await downloadSpreadsheetWorkbook(
         `informe-contable-${appliedFilters.year}${appliedFilters.month && appliedFilters.month !== "all" ? `-${appliedFilters.month}` : ""}.xls`,
         buildReportSheets(nextReport, activeSection)
@@ -274,22 +282,22 @@ export default function InformesPage() {
     if (activeSection === "estudiantes") {
       return Boolean(
         report.students?.rows.length ||
-          report.students?.countRegulares ||
-          report.students?.countPractica ||
-          report.students?.countAptitud ||
-          report.students?.totalIngresosRegulares ||
-          report.students?.totalIngresosPractica ||
-          report.students?.totalIngresosAptitud
+        report.students?.countRegulares ||
+        report.students?.countPractica ||
+        report.students?.countAptitud ||
+        report.students?.totalIngresosRegulares ||
+        report.students?.totalIngresosPractica ||
+        report.students?.totalIngresosAptitud
       );
     }
 
     return Boolean(
       report.summary?.totalMovimientos ||
-        report.contracts?.registros ||
-        report.contracts?.totalPendiente ||
-        report.payables?.totalPendiente ||
-        report.breakdown?.ingresosPorLinea.length ||
-        report.breakdown?.gastosPorCategoria.length
+      report.contracts?.registros ||
+      report.contracts?.totalPendiente ||
+      report.payables?.totalPendiente ||
+      report.breakdown?.ingresosPorLinea.length ||
+      report.breakdown?.gastosPorCategoria.length
     );
   }, [activeSection, report]);
 
@@ -382,7 +390,11 @@ export default function InformesPage() {
         }
       />
 
-      <InformesTabs activeSection={activeSection} items={REPORT_SECTIONS} onChange={setActiveSection} />
+      <InformesTabs
+        activeSection={activeSection}
+        items={REPORT_SECTIONS}
+        onChange={setActiveSection}
+      />
 
       <InformesFiltersPanel
         perfilRol={perfil?.rol}

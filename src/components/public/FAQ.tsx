@@ -3,8 +3,11 @@ import { faqItems } from "@/lib/public-site-content";
 
 export default function FAQ() {
   return (
-    <section id="faq" className="border-t border-[var(--surface-border)] bg-background py-16 sm:py-24 md:py-28">
-      <div className="mx-auto max-w-[980px] px-6">
+    <section
+      id="faq"
+      className="bg-background scroll-mt-28 border-t border-[var(--surface-border)] py-16 sm:scroll-mt-32 sm:py-24 md:py-28"
+    >
+      <div className="mx-auto max-w-[980px] px-4 sm:px-6">
         <SectionIntro
           badge="Preguntas frecuentes"
           title="Respuestas claras para escuelas de conducción en Colombia"
@@ -17,7 +20,7 @@ export default function FAQ() {
               key={item.question}
               className="apple-panel-muted rounded-[26px] p-5 transition-colors open:border-[color:color-mix(in_srgb,var(--brand-400)_40%,var(--surface-border))]"
             >
-              <summary className="cursor-pointer list-none text-lg font-semibold text-foreground">
+              <summary className="text-foreground cursor-pointer list-none text-lg font-semibold">
                 {item.question}
               </summary>
               <p className="apple-copy mt-4 text-sm leading-7 sm:text-[15px]">{item.answer}</p>

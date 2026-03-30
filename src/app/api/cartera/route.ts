@@ -6,8 +6,6 @@ import { createServerTiming } from "@/lib/server-timing";
 import { buildQueryParts } from "@/app/api/reportes/contables/query-builder";
 import type {
   AllowedPerfil,
-  AgingBucketRow,
-  ContractsMonthlyRow,
   ContractOldDebtRow,
   CounterpartyAggregateRow,
   QueryFilters,
@@ -18,9 +16,8 @@ import {
   buildFinanceServerCacheKey,
   isFreshDataRequested,
 } from "@/lib/finance/server/request";
-import { RECEIVABLE_BUCKET_LABELS } from "@/lib/finance/aging";
 import { buildFinanceCacheTags } from "@/lib/server-cache-tags";
-import { normalizeDateOnly, normalizePeriod, toNumber } from "@/lib/finance/server/normalizers";
+import { normalizeDateOnly, toNumber } from "@/lib/finance/server/normalizers";
 
 type ContractsSummaryRow = {
   total_esperado: number | string | null;
@@ -108,17 +105,10 @@ export async function GET(request: Request) {
             const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredObligationsCte}`;
             const offset = page * pageSize;
 
-            const [
-              summaryRes,
-              monthlyRes,
-              oldestRes,
-              pendingCountRes,
-              pendingRowsRes,
-              bucketsRes,
-              topDeudoresRes,
-            ] = await Promise.all([
-              pool.query<ContractsSummaryRow>(
-                `
+            const [summaryRes, oldestRes, pendingCountRes, pendingRowsRes, topDeudoresRes] =
+              await Promise.all([
+                pool.query<ContractsSummaryRow>(
+                  `
                   ${cte}
                   select
                     count(*)::int as registros,
@@ -128,25 +118,10 @@ export async function GET(request: Request) {
                   from filtered_obligations
                   where saldo_pendiente > 0
                 `,
-                parts.values
-              ),
-              pool.query<ContractsMonthlyRow>(
-                `
-                  ${cte}
-                  select
-                    to_char(date_trunc('month', fecha_registro), 'YYYY-MM') as periodo,
-                    count(*)::int as registros,
-                    coalesce(sum(valor_esperado), 0) as valor_esperado,
-                    coalesce(sum(valor_cobrado), 0) as valor_cobrado,
-                    coalesce(sum(saldo_pendiente), 0) as saldo_pendiente
-                  from filtered_obligations
-                  group by 1
-                  order by periodo desc
-                `,
-                parts.values
-              ),
-              pool.query<ContractOldDebtRow>(
-                `
+                  parts.values
+                ),
+                pool.query<ContractOldDebtRow>(
+                  `
                   ${cte}
                   select
                     nombre,
@@ -162,19 +137,19 @@ export async function GET(request: Request) {
                   order by dias_pendiente desc, saldo_pendiente desc, fecha_referencia asc
                   limit 12
                 `,
-                parts.values
-              ),
-              pool.query<CountRow>(
-                `
+                  parts.values
+                ),
+                pool.query<CountRow>(
+                  `
                   ${cte}
                   select count(*)::int as total
                   from filtered_obligations
                   where saldo_pendiente > 0
                 `,
-                parts.values
-              ),
-              pool.query<PortfolioPendingSqlRow>(
-                `
+                  parts.values
+                ),
+                pool.query<PortfolioPendingSqlRow>(
+                  `
                   ${cte}
                   select
                     obligation_id,
@@ -194,28 +169,10 @@ export async function GET(request: Request) {
                   order by dias_pendiente desc, saldo_pendiente desc, fecha_referencia asc
                   limit $${parts.values.length + 1} offset $${parts.values.length + 2}
                 `,
-                [...parts.values, String(pageSize), String(offset)]
-              ),
-              pool.query<AgingBucketRow>(
-                `
-                  ${cte}
-                  select
-                    case
-                      when fecha_referencia < current_date - interval '60 day' then '${RECEIVABLE_BUCKET_LABELS.overdueCritical}'
-                      when fecha_referencia < current_date - interval '30 day' then '${RECEIVABLE_BUCKET_LABELS.overdueMedium}'
-                      else '${RECEIVABLE_BUCKET_LABELS.current}'
-                    end as bucket,
-                    count(*)::int as cantidad,
-                    coalesce(sum(saldo_pendiente), 0) as total
-                  from filtered_obligations
-                  where saldo_pendiente > 0
-                  group by 1
-                  order by min(fecha_referencia) asc
-                `,
-                parts.values
-              ),
-              pool.query<CounterpartyAggregateRow>(
-                `
+                  [...parts.values, String(pageSize), String(offset)]
+                ),
+                pool.query<CounterpartyAggregateRow>(
+                  `
                   ${cte}
                   select
                     nombre,
@@ -227,16 +184,11 @@ export async function GET(request: Request) {
                   order by total desc, cantidad desc, nombre asc
                   limit 8
                 `,
-                parts.values
-              ),
-            ]);
+                  parts.values
+                ),
+              ]);
 
             const summary = summaryRes.rows[0];
-            const bucketRows = bucketsRes.rows.map((row) => ({
-              bucket: row.bucket,
-              cantidad: Number(row.cantidad || 0),
-              total: toNumber(row.total),
-            }));
 
             return {
               generatedAt: new Date().toISOString(),
@@ -247,19 +199,13 @@ export async function GET(request: Request) {
                 totalCobrado: toNumber(summary?.total_cobrado),
                 totalPendiente: toNumber(summary?.total_pendiente),
               },
-              buckets: bucketRows,
+              buckets: [],
               topDeudores: topDeudoresRes.rows.map((row) => ({
                 nombre: row.nombre || "Sin alumno asociado",
                 cantidad: Number(row.cantidad || 0),
                 total: toNumber(row.total),
               })),
-              monthly: monthlyRes.rows.map((row) => ({
-                periodo: normalizePeriod(row.periodo),
-                registros: Number(row.registros || 0),
-                valorEsperado: toNumber(row.valor_esperado),
-                valorCobrado: toNumber(row.valor_cobrado),
-                saldoPendiente: toNumber(row.saldo_pendiente),
-              })),
+              monthly: [],
               oldestPending: oldestRes.rows.map((row) => ({
                 nombre: row.nombre || "Sin alumno asociado",
                 documento: row.documento,

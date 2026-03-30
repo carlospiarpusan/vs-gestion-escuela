@@ -63,6 +63,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const anio = parseInteger(url.searchParams.get("anio"), new Date().getFullYear(), 2023, 2100);
   const mes = parseInteger(url.searchParams.get("mes"), new Date().getMonth(), 0, 11);
+  const includeClosures = url.searchParams.get("include_closures") === "1";
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
   if (!escuelaId) {
@@ -108,27 +109,29 @@ export async function GET(request: Request) {
           `,
           [escuelaId, from, to]
         ),
-        pool.query<ClosureRow>(
-          `
-            select
-              id,
-              instructor_id,
-              gasto_id,
-              periodo_anio,
-              periodo_mes,
-              fecha_cierre,
-              total_horas,
-              valor_hora,
-              monto_total,
-              updated_at
-            from public.cierres_horas_instructores
-            where escuela_id = $1
-              and periodo_anio = $2
-              and periodo_mes = $3
-            order by monto_total desc, updated_at desc
-          `,
-          [escuelaId, anio, mes + 1]
-        ),
+        includeClosures
+          ? pool.query<ClosureRow>(
+              `
+                select
+                  id,
+                  instructor_id,
+                  gasto_id,
+                  periodo_anio,
+                  periodo_mes,
+                  fecha_cierre,
+                  total_horas,
+                  valor_hora,
+                  monto_total,
+                  updated_at
+                from public.cierres_horas_instructores
+                where escuela_id = $1
+                  and periodo_anio = $2
+                  and periodo_mes = $3
+                order by monto_total desc, updated_at desc
+              `,
+              [escuelaId, anio, mes + 1]
+            )
+          : Promise.resolve({ rows: [] as ClosureRow[] }),
       ]);
 
       return {

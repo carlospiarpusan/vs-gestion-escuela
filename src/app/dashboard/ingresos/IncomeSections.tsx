@@ -1,21 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  ArrowDownCircle,
-  ChevronDown,
-  ChevronUp,
-  Clock3,
-  Filter,
-  Layers,
-  Wallet,
-  X,
-} from "lucide-react";
+import { ArrowDownCircle, ChevronDown, ChevronUp, Clock3, Filter, X } from "lucide-react";
 import DataTable from "@/components/dashboard/DataTable";
 import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
 import {
   AccountingChipTabs,
-  AccountingMiniList,
   AccountingPanel,
   AccountingStatCard,
 } from "@/components/dashboard/accounting/AccountingWorkspace";
@@ -32,17 +22,6 @@ import {
   labelCls,
   metodos,
 } from "./constants";
-
-type IncomeViewMeta = {
-  label: string;
-  description: string;
-};
-
-export type IncomeInsightItem = {
-  label: string;
-  value: string;
-  meta: string;
-};
 
 type IncomeOverviewSectionProps = {
   loading: boolean;
@@ -82,8 +61,6 @@ type IncomeFiltersSectionProps = {
 type IncomeBreakdownSectionProps = {
   loading: boolean;
   breakdown: IncomeDashboardResponse["breakdown"] | null | undefined;
-  insightItems: IncomeInsightItem[];
-  formatMoney: (value: number) => string;
 };
 
 type IncomeLedgerSectionProps = {
@@ -92,8 +69,6 @@ type IncomeLedgerSectionProps = {
   totalCount: number;
   currentPage: number;
   searchTerm: string;
-  selectedViewMeta: IncomeViewMeta;
-  generatedAtLabel: string;
   pageSize: number;
   formatMoney: (value: number) => string;
   onPageChange: (page: number) => void;
@@ -175,7 +150,7 @@ export function IncomeOverviewSection({
   formatMoney,
 }: IncomeOverviewSectionProps) {
   return (
-    <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
       <AccountingStatCard
         eyebrow="Periodo"
         label="Ingresos cobrados"
@@ -191,22 +166,6 @@ export function IncomeOverviewSection({
         detail={`${summary?.movimientosPendientes || 0} registro${(summary?.movimientosPendientes || 0) === 1 ? "" : "s"} con saldo pendiente.`}
         tone="warning"
         icon={<Clock3 size={18} />}
-      />
-      <AccountingStatCard
-        eyebrow="Periodo"
-        label="Ticket promedio"
-        value={loading ? "..." : formatMoney(summary?.ticketPromedio || 0)}
-        detail={`${summary?.totalIngresos || 0} movimiento${(summary?.totalIngresos || 0) === 1 ? "" : "s"} registrado${(summary?.totalIngresos || 0) === 1 ? "" : "s"}.`}
-        tone="primary"
-        icon={<Wallet size={18} />}
-      />
-      <AccountingStatCard
-        eyebrow="Periodo"
-        label="Cobranza efectiva"
-        value={loading ? "..." : `${(summary?.cobranzaPorcentaje || 0).toFixed(1)}%`}
-        detail={`Anulado: ${formatMoney(summary?.ingresosAnulados || 0)}`}
-        tone="default"
-        icon={<Layers size={18} />}
       />
     </div>
   );
@@ -378,19 +337,27 @@ export function IncomeFiltersSection({
   );
 }
 
-export function IncomeBreakdownSection({
-  loading,
-  breakdown,
-  insightItems,
-  formatMoney,
-}: IncomeBreakdownSectionProps) {
+export function IncomeBreakdownSection({ loading, breakdown }: IncomeBreakdownSectionProps) {
   if (!breakdown || loading) {
     return null;
   }
 
   return (
     <div className="mb-4 space-y-4">
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_360px]">
+      <div className="px-1">
+        <p className="text-[11px] font-semibold tracking-[0.18em] text-[#7b8591] uppercase">
+          Distribución del recaudo
+        </p>
+        <h3 className="mt-2 text-lg font-semibold text-[#111214] dark:text-[#f5f5f7]">
+          Lee categoría y método sin ruido adicional
+        </h3>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#66707a] dark:text-[#aeb6bf]">
+          Dejamos visibles solo las dos aperturas que ayudan a entender rapido de donde entra el
+          dinero antes de bajar al libro operativo.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <AccountingBreakdownCard
           title="Ingresos por categoría"
           subtitle="Qué tipo de servicio explica más recaudo en el periodo."
@@ -405,52 +372,6 @@ export function IncomeBreakdownSection({
           labelKey="metodo_pago"
           emptyLabel="Sin datos de métodos."
         />
-        <AccountingPanel
-          title="Lecturas clave"
-          description="Una vista rápida de qué está moviendo el recaudo antes de entrar al libro."
-        >
-          <div className="space-y-3">
-            {insightItems.map((item) => (
-              <div
-                key={item.label}
-                className="rounded-[20px] bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]"
-              >
-                <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
-                  {item.label}
-                </p>
-                <p className="mt-2 text-sm font-semibold text-[#111214] dark:text-[#f5f5f7]">
-                  {item.value}
-                </p>
-                <p className="mt-1 text-xs leading-5 text-[#66707a] dark:text-[#aeb6bf]">
-                  {item.meta}
-                </p>
-              </div>
-            ))}
-          </div>
-        </AccountingPanel>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <AccountingMiniList
-          title="Líneas con mayor recaudo"
-          description="Qué área del negocio está traccionando más dinero en el rango seleccionado."
-          emptyLabel="Sin datos de líneas."
-          items={(breakdown.ingresosPorLinea || []).slice(0, 5).map((row) => ({
-            label: row.nombre || "Sin línea",
-            value: formatMoney(row.total),
-            meta: `${row.cantidad} movimiento${row.cantidad !== 1 ? "s" : ""}`,
-          }))}
-        />
-        <AccountingMiniList
-          title="Conceptos con mayor impacto"
-          description="Los conceptos que más empujan el recaudo cuando llega el dinero."
-          emptyLabel="Sin datos de conceptos."
-          items={(breakdown.topConceptosIngreso || []).slice(0, 5).map((row) => ({
-            label: row.concepto || "Sin concepto",
-            value: formatMoney(row.total),
-            meta: `${row.cantidad} movimiento${row.cantidad !== 1 ? "s" : ""}`,
-          }))}
-        />
       </div>
     </div>
   );
@@ -462,8 +383,6 @@ export function IncomeLedgerSection({
   totalCount,
   currentPage,
   searchTerm,
-  selectedViewMeta,
-  generatedAtLabel,
   pageSize,
   formatMoney,
   onPageChange,
@@ -546,42 +465,6 @@ export function IncomeLedgerSection({
       title="Libro de ingresos"
       description="Detalle editable del periodo. Úsalo para revisar soportes, corregir movimientos y exportar el libro."
     >
-      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div className="rounded-[20px] bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]">
-          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
-            Movimientos en consulta
-          </p>
-          <p className="mt-2 text-lg font-semibold text-[#111214] dark:text-[#f5f5f7]">
-            {loading ? "..." : totalCount}
-          </p>
-          <p className="mt-1 text-xs text-[#66707a] dark:text-[#aeb6bf]">
-            Resultado total para esta combinación de periodo, vista y filtros.
-          </p>
-        </div>
-        <div className="rounded-[20px] bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]">
-          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
-            Alcance de la vista
-          </p>
-          <p className="mt-2 text-lg font-semibold text-[#111214] dark:text-[#f5f5f7]">
-            {selectedViewMeta.label}
-          </p>
-          <p className="mt-1 text-xs text-[#66707a] dark:text-[#aeb6bf]">
-            {selectedViewMeta.description}
-          </p>
-        </div>
-        <div className="rounded-[20px] bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]">
-          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
-            Última actualización
-          </p>
-          <p className="mt-2 text-lg font-semibold text-[#111214] dark:text-[#f5f5f7]">
-            {generatedAtLabel}
-          </p>
-          <p className="mt-1 text-xs text-[#66707a] dark:text-[#aeb6bf]">
-            El libro se refresca con la misma lógica de filtros y paginación del módulo.
-          </p>
-        </div>
-      </div>
-
       <DataTable
         key="libro-ingresos"
         columns={columns}

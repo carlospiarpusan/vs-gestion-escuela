@@ -19,7 +19,12 @@ describe("dashboard navigation config", () => {
       "platform",
     ]);
     expect(navigation[1]?.modules.map((module) => module.id)).toEqual(["exams"]);
-    expect(navigation[2]?.modules.map((module) => module.id)).toEqual(["permissions", "arco"]);
+    expect(navigation[2]?.modules.map((module) => module.id)).toEqual([
+      "permissions",
+      "contracts",
+      "compliance",
+      "arco",
+    ]);
     expect(navigation[3]?.modules.map((module) => module.id)).toEqual([
       "schools",
       "subscriptions",
@@ -56,7 +61,8 @@ describe("dashboard navigation config", () => {
     expect(navigation[4]?.modules.map((module) => module.id)).toEqual([
       "instructors",
       "staff",
-      "permissions",
+      "contracts",
+      "compliance",
       "branches",
       "arco",
     ]);
@@ -70,6 +76,12 @@ describe("dashboard navigation config", () => {
     });
     expect(findDashboardModuleByPath("/dashboard/permisos")).toMatchObject({
       id: "permissions",
+    });
+    expect(findDashboardModuleByPath("/dashboard/cumplimiento")).toMatchObject({
+      id: "compliance",
+    });
+    expect(findDashboardModuleByPath("/dashboard/contratos")).toMatchObject({
+      id: "contracts",
     });
     expect(findDashboardModuleByPath("/dashboard/suscripciones")).toMatchObject({
       id: "subscriptions",
@@ -91,6 +103,7 @@ describe("dashboard navigation config", () => {
       "hours",
       "income",
       "automation",
+      "contracts",
     ]);
   });
 

@@ -15,6 +15,20 @@ describe("dashboard access control", () => {
     expect(canAccessDashboardPath("instructor", "/dashboard/permisos")).toBe(false);
   });
 
+  it("exposes cumplimiento only to super_admin and admin_escuela", () => {
+    expect(canAccessDashboardPath("super_admin", "/dashboard/cumplimiento")).toBe(true);
+    expect(canAccessDashboardPath("admin_escuela", "/dashboard/cumplimiento")).toBe(true);
+    expect(canAccessDashboardPath("admin_sede", "/dashboard/cumplimiento")).toBe(false);
+    expect(canAccessDashboardPath("administrativo", "/dashboard/cumplimiento")).toBe(false);
+  });
+
+  it("exposes contratos only to super_admin and admin_escuela", () => {
+    expect(canAccessDashboardPath("super_admin", "/dashboard/contratos")).toBe(true);
+    expect(canAccessDashboardPath("admin_escuela", "/dashboard/contratos")).toBe(true);
+    expect(canAccessDashboardPath("admin_sede", "/dashboard/contratos")).toBe(false);
+    expect(canAccessDashboardPath("administrativo", "/dashboard/contratos")).toBe(false);
+  });
+
   it("blocks super_admin from school-level operational modules", () => {
     expect(canAccessDashboardPath("super_admin", "/dashboard/alumnos")).toBe(false);
     expect(canAccessDashboardPath("super_admin", "/dashboard/ingresos")).toBe(false);

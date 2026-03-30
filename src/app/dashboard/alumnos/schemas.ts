@@ -4,7 +4,14 @@ export const alumnoSchema = z.object({
   nombre: z.string().min(2, "El nombre debe tener al menos 2 caracteres."),
   apellidos: z.string().min(2, "Los apellidos deben tener al menos 2 caracteres."),
   dni: z.string().min(5, "La cédula debe tener al menos 5 caracteres."),
+  tipo_documento: z.enum(["CC", "CE", "TI", "PAS"], {
+    message: "Selecciona el tipo de documento.",
+  }),
   telefono: z.string().min(7, "El teléfono debe tener al menos 7 dígitos."),
+  lugar_expedicion_documento: z
+    .string()
+    .trim()
+    .min(2, "Debes indicar el lugar de expedición del documento."),
   email: z.string().email("Correo electrónico inválido.").or(z.literal("")).optional(),
   fecha_nacimiento: z.string().optional(),
   valor_total: z
@@ -52,7 +59,6 @@ export const abonoSchema = z.object({
 });
 
 export const matriculaSchema = z.object({
-  numero_contrato: z.string().optional(),
   valor_total: z
     .string()
     .refine((val) => !val || !Number.isNaN(Number(val)), "El valor total debe ser numérico.")

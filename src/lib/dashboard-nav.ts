@@ -28,8 +28,10 @@ export type DashboardIconKey =
   | "schools"
   | "subscriptions"
   | "payroll"
+  | "contracts"
   | "logbook"
   | "permissions"
+  | "compliance"
   | "analytics"
   | "arco";
 
@@ -52,8 +54,10 @@ export type DashboardModuleId =
   | "schools"
   | "subscriptions"
   | "payroll"
+  | "contracts"
   | "logbook"
   | "permissions"
+  | "compliance"
   | "analytics"
   | "arco";
 
@@ -78,6 +82,7 @@ export type DashboardModuleDescriptor = {
   mobilePriority?: number;
   homePriority?: number;
   visibleInNav?: boolean;
+  hiddenInNavRoles?: Rol[];
 };
 
 export type DashboardNavConfig = DashboardAreaDescriptor & {
@@ -333,6 +338,32 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     icon: "permissions",
     roles: getDashboardRolesForCapabilityModule("permissions"),
     priority: 125,
+    hiddenInNavRoles: ["admin_escuela"],
+  },
+  {
+    id: "compliance",
+    label: "Cumplimiento",
+    shortLabel: "Cumplimiento",
+    href: "/dashboard/cumplimiento",
+    pathPrefix: "/dashboard/cumplimiento",
+    description: "Gobierno interno, evidencia documental, respaldos, incidentes y retención.",
+    area: "configuration",
+    icon: "compliance",
+    roles: getDashboardRolesForCapabilityModule("compliance"),
+    priority: 126,
+  },
+  {
+    id: "contracts",
+    label: "Contratos",
+    shortLabel: "Contratos",
+    href: "/dashboard/contratos",
+    pathPrefix: "/dashboard/contratos",
+    description: "Datos legales y plantillas de contrato congeladas por escuela.",
+    area: "configuration",
+    icon: "contracts",
+    roles: getDashboardRolesForCapabilityModule("contracts"),
+    priority: 125.5,
+    homePriority: 56,
   },
   {
     id: "branches",
@@ -453,6 +484,7 @@ export function getDashboardModulesForRole(
   return DASHBOARD_MODULES.filter((module) => {
     if (!isDashboardModuleVisibleToRole(module, rol)) return false;
     if (navOnly && module.visibleInNav === false) return false;
+    if (navOnly && rol && module.hiddenInNavRoles?.includes(rol)) return false;
     return true;
   }).sort((a, b) => a.priority - b.priority);
 }
@@ -524,7 +556,7 @@ export function getDashboardHomePriorityModules(rol?: Rol | null) {
   return getDashboardModulesForRole(rol, { navOnly: true })
     .filter((module) => typeof module.homePriority === "number" && module.id !== "home")
     .sort((a, b) => (a.homePriority ?? 999) - (b.homePriority ?? 999))
-    .slice(0, rol === "alumno" ? 2 : rol === "instructor" ? 4 : 6);
+    .slice(0, rol === "alumno" ? 2 : rol === "instructor" ? 4 : rol === "admin_escuela" ? 7 : 6);
 }
 
 export function getDashboardDefaultRoute(rol?: Rol | null) {

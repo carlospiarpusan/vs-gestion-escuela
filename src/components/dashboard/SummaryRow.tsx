@@ -11,7 +11,7 @@ type SummaryItem = {
 
 type SummaryRowProps = {
   items: SummaryItem[];
-  columns?: "auto" | 2 | 3 | 4;
+  columns?: "auto" | 2 | 3 | 4 | 5;
 };
 
 const toneStyles: Record<NonNullable<SummaryItem["tone"]>, string> = {
@@ -26,6 +26,7 @@ function getGridClass(columns: SummaryRowProps["columns"]) {
   if (columns === 2) return "md:grid-cols-2";
   if (columns === 3) return "md:grid-cols-2 xl:grid-cols-3";
   if (columns === 4) return "md:grid-cols-2 xl:grid-cols-4";
+  if (columns === 5) return "md:grid-cols-2 xl:grid-cols-5";
   return "md:grid-cols-2 xl:grid-cols-4";
 }
 
@@ -33,14 +34,11 @@ export default function SummaryRow({ items, columns = "auto" }: SummaryRowProps)
   return (
     <div className={`grid grid-cols-1 gap-4 ${getGridClass(columns)}`}>
       {items.map((item) => (
-        <article
-          key={item.id}
-          className="apple-panel-muted rounded-[24px] px-5 py-5 sm:px-6"
-        >
+        <article key={item.id} className="apple-panel-muted rounded-[24px] px-5 py-5 sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="apple-kicker">{item.label}</p>
-              <p className="mt-3 truncate text-2xl font-semibold tracking-tight text-foreground">
+              <p className="text-foreground mt-3 truncate text-2xl font-semibold tracking-tight">
                 {item.value}
               </p>
             </div>
@@ -54,9 +52,7 @@ export default function SummaryRow({ items, columns = "auto" }: SummaryRowProps)
               </div>
             ) : null}
           </div>
-          {item.detail ? (
-            <p className="apple-copy mt-3 text-sm leading-6">{item.detail}</p>
-          ) : null}
+          {item.detail ? <p className="apple-copy mt-3 text-sm leading-6">{item.detail}</p> : null}
         </article>
       ))}
     </div>

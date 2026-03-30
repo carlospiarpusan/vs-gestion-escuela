@@ -1,4 +1,8 @@
-import { getClientResourceCached, invalidateClientResourceCache } from "@/lib/client-resource-cache";
+import {
+  type ClientResourceCachePolicy,
+  getClientResourceCached,
+  invalidateClientResourceCache,
+} from "@/lib/client-resource-cache";
 import { serializeSearchParams } from "@/lib/dashboard-client-cache";
 
 export function buildFinanceCacheKey(prefix: string, params?: URLSearchParams | string) {
@@ -13,13 +17,15 @@ export async function getFinanceResourceCached<T>({
   params,
   ttlMs,
   forceFresh = false,
-  persistToSession = false,
+  policy = "list",
+  persistToSession,
   loader,
 }: {
   prefix: string;
   params?: URLSearchParams | string;
   ttlMs: number;
   forceFresh?: boolean;
+  policy?: Extract<ClientResourceCachePolicy, "list" | "heavy-report">;
   persistToSession?: boolean;
   loader: () => Promise<T>;
 }) {
@@ -27,6 +33,7 @@ export async function getFinanceResourceCached<T>({
     key: buildFinanceCacheKey(prefix, params),
     ttlMs,
     forceFresh,
+    policy,
     persistToSession,
     loader,
   });

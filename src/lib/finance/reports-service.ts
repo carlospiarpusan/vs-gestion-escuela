@@ -35,6 +35,7 @@ export async function fetchFinanceReportsDashboard(
     prefix: FINANCE_REPORTS_CACHE_PREFIX,
     params,
     ttlMs: FINANCE_DASHBOARD_CACHE_TTL_MS,
+    policy: "heavy-report",
     forceFresh: options?.forceFresh,
     loader: () => fetchAccountingReportFresh(params, options?.forceFresh),
   });

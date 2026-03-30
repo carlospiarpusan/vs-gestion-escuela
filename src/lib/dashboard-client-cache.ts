@@ -31,10 +31,12 @@ function serializeScope(scope: CacheScope) {
 }
 
 export function serializeSearchParams(params: URLSearchParams) {
-  const entries = Array.from(params.entries()).sort(([leftKey, leftValue], [rightKey, rightValue]) => {
-    if (leftKey === rightKey) return leftValue.localeCompare(rightValue);
-    return leftKey.localeCompare(rightKey);
-  });
+  const entries = Array.from(params.entries()).sort(
+    ([leftKey, leftValue], [rightKey, rightValue]) => {
+      if (leftKey === rightKey) return leftValue.localeCompare(rightValue);
+      return leftKey.localeCompare(rightKey);
+    }
+  );
 
   return new URLSearchParams(entries).toString();
 }
@@ -66,7 +68,7 @@ export async function getDashboardSummaryCached<T>({
     key: buildDashboardSummaryClientCacheKey(kind, scope),
     ttlMs: DASHBOARD_SUMMARY_CACHE_TTL_MS,
     forceFresh,
-    persistToSession: true,
+    policy: "summary",
     loader,
   });
 }
@@ -107,7 +109,7 @@ export async function getDashboardCatalogCached<T>({
     key: buildDashboardCatalogCacheKey(name, scope, params),
     ttlMs,
     forceFresh,
-    persistToSession: true,
+    policy: "catalog",
     loader,
   });
 }
@@ -141,7 +143,7 @@ export async function getDashboardListCached<T>({
     key: buildDashboardListCacheKey(name, scope, params),
     ttlMs,
     forceFresh,
-    persistToSession: false,
+    policy: "list",
     loader,
   });
 }

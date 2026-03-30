@@ -38,19 +38,19 @@ export default function Navbar() {
     <>
       <nav
         className={cn(
-          "fixed top-[max(0.75rem,env(safe-area-inset-top))] left-1/2 z-50 w-[min(1120px,calc(100%-1rem))] -translate-x-1/2 transition-all duration-300 sm:top-4 sm:w-[min(1120px,calc(100%-2rem))]",
+          "fixed top-[max(0.75rem,env(safe-area-inset-top))] left-1/2 z-50 w-[min(1120px,calc(100%-0.75rem))] -translate-x-1/2 transition-all duration-300 sm:top-4 sm:w-[min(1120px,calc(100%-2rem))]",
           scrolled || menuOpen ? "opacity-100" : "opacity-95"
         )}
       >
         <div
           className={cn(
-            "apple-toolbar rounded-[24px] px-4 py-3 sm:px-5",
+            "apple-toolbar rounded-[24px] px-3 py-3 sm:px-5",
             scrolled || menuOpen
               ? "shadow-[0_18px_40px_rgba(15,23,42,0.12)]"
               : "shadow-[0_10px_26px_rgba(15,23,42,0.08)]"
           )}
         >
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-3 sm:gap-4">
             <Link
               href="/"
               className="z-50 flex items-center gap-3 transition-opacity hover:opacity-85"
@@ -95,23 +95,16 @@ export default function Navbar() {
               </Link>
             </div>
 
-            {/* Mobile: login button + hamburger */}
-            <div className="z-50 flex items-center gap-3 md:hidden">
-              <Link
-                href="/login"
-                className="text-[13px] font-semibold text-blue-500 transition-colors hover:text-blue-600"
-              >
-                Ingresar
-              </Link>
+            <div className="z-50 flex items-center gap-2 md:hidden">
               <Link
                 href="/registro"
-                className="apple-button-primary min-h-[36px] px-3 py-1.5 text-[12px] font-medium shadow-sm"
+                className="apple-button-primary hidden min-h-[38px] px-3.5 py-1.5 text-[12px] font-semibold shadow-sm min-[360px]:inline-flex"
               >
-                Empezar
+                Crear cuenta
               </Link>
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="apple-icon-button"
+                className="apple-icon-button h-10 w-10 shrink-0"
                 aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
               >
                 <AnimatePresence mode="wait">
@@ -150,11 +143,11 @@ export default function Navbar() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="apple-overlay fixed inset-0 z-40 px-4 pt-[calc(env(safe-area-inset-top)+5.25rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] md:hidden"
+            className="apple-overlay fixed inset-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+5.15rem)] pb-[calc(env(safe-area-inset-bottom)+0.75rem)] md:hidden"
             onClick={() => setMenuOpen(false)}
           >
             <div
-              className="apple-panel mx-auto flex h-full max-w-md flex-col overflow-hidden p-5"
+              className="mx-auto flex h-full max-w-md flex-col overflow-hidden rounded-[30px] border border-white/70 bg-white p-4 shadow-[0_26px_60px_rgba(15,23,42,0.18)] sm:p-5 dark:border-white/10 dark:bg-slate-950"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="mb-4">

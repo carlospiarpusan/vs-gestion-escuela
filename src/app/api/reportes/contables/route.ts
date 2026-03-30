@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import { normalizeUuid } from "@/lib/dashboard-scope";
 import { parseExpenseSearch } from "@/lib/expense-search";
 import {
@@ -10,7 +10,7 @@ import {
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildFinanceCacheTags } from "@/lib/server-cache-tags";
-import { buildFinanceServerCacheKey } from "@/lib/finance/server/request";
+import { ALLOWED_FINANCE_ROLES, buildFinanceServerCacheKey } from "@/lib/finance/server/request";
 import {
   PAYABLE_BUCKET_LABELS,
   RECEIVABLE_BUCKET_LABELS,
@@ -74,11 +74,22 @@ type ReportInclude =
   | "options"
   | "summary"
   | "breakdown"
+  | "breakdown_income_lines"
+  | "breakdown_expense_categories"
+  | "breakdown_income_concepts"
+  | "breakdown_expense_concepts"
   | "series"
+  | "series_daily"
+  | "series_monthly"
   | "ledger"
   | "receivables"
   | "payables"
+  | "payables_summary"
+  | "payables_top_proveedores"
+  | "payables_top_tramitadores"
   | "contracts"
+  | "contracts_summary"
+  | "contracts_oldest_pending"
   | "students";
 
 type LedgerRow = {
@@ -147,6 +158,13 @@ type CounterpartyAggregateRow = {
   nombre: string | null;
   cantidad: number | string | null;
   total: number | string | null;
+};
+
+type PayablesSummaryRow = {
+  total_pendiente: number | string | null;
+  vencido: number | string | null;
+  vence_pronto: number | string | null;
+  al_dia: number | string | null;
 };
 
 type DailySeriesSqlRow = {
@@ -236,11 +254,22 @@ const ALL_REPORT_INCLUDES: ReportInclude[] = [
   "options",
   "summary",
   "breakdown",
+  "breakdown_income_lines",
+  "breakdown_expense_categories",
+  "breakdown_income_concepts",
+  "breakdown_expense_concepts",
   "series",
+  "series_daily",
+  "series_monthly",
   "ledger",
   "receivables",
   "payables",
+  "payables_summary",
+  "payables_top_proveedores",
+  "payables_top_tramitadores",
   "contracts",
+  "contracts_summary",
+  "contracts_oldest_pending",
   "students",
 ];
 const VEHICULAR_EXPENSE_CATEGORIES = [
@@ -261,6 +290,8 @@ const ADMINISTRATIVE_EXPENSE_CATEGORIES = [
 const PEOPLE_EXPENSE_CATEGORIES = ["nominas", "tramitador"];
 const TRAMITADOR_EXPENSE_CATEGORY = "tramitador";
 const REPORT_CACHE_TTL_MS = 120 * 1000;
+const CSV_DELIMITER = ";";
+const CSV_BATCH_SIZE = 1000;
 
 function parseDateInput(value: string | null, fallback: string) {
   if (!value) return fallback;
@@ -305,6 +336,10 @@ function parseReportIncludes(value: string | null) {
 
   return new Set<ReportInclude>(validIncludes.length > 0 ? validIncludes : DEFAULT_REPORT_INCLUDES);
 }
+
+export const __accountingReportRouteInternals = {
+  parseReportIncludes,
+};
 
 function resolveScope(
   request: Request,
@@ -831,6 +866,121 @@ function formatCsvCell(value: string | number | null) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function buildLedgerUnionSql(ledgerTipo: "ingreso" | "gasto" | null) {
+  const normalizedLedgerTipo =
+    ledgerTipo === "ingreso" || ledgerTipo === "gasto" ? ledgerTipo : null;
+  const statements: string[] = [];
+
+  if (normalizedLedgerTipo !== "gasto") {
+    statements.push(`
+      select
+        id::text as id,
+        fecha,
+        'ingreso'::text as tipo,
+        categoria,
+        concepto,
+        monto,
+        estado,
+        metodo_pago,
+        numero_factura,
+        contraparte,
+        documento,
+        contrato,
+        created_at
+      from filtered_ingresos
+    `);
+  }
+
+  if (normalizedLedgerTipo !== "ingreso") {
+    statements.push(`
+      select
+        id::text as id,
+        fecha,
+        'gasto'::text as tipo,
+        categoria,
+        concepto,
+        monto,
+        estado,
+        metodo_pago,
+        numero_factura,
+        contraparte,
+        documento,
+        contrato,
+        created_at
+      from filtered_gastos
+    `);
+  }
+
+  return statements.join("\nunion all\n");
+}
+
+function buildCsvHeaderLine() {
+  return [
+    "Fecha",
+    "Tipo",
+    "Categoría",
+    "Concepto",
+    "Monto",
+    "Estado",
+    "Método de pago",
+    "Factura",
+    "Contraparte",
+    "Documento",
+    "Contrato",
+  ]
+    .map(formatCsvCell)
+    .join(CSV_DELIMITER);
+}
+
+function buildCsvLedgerLine(row: LedgerRow) {
+  return [
+    normalizeDateOnly(row.fecha),
+    row.tipo === "ingreso" ? "Ingreso" : "Gasto",
+    row.categoria,
+    row.concepto,
+    toNumber(row.monto),
+    row.estado,
+    row.metodo_pago,
+    row.numero_factura,
+    row.contraparte,
+    row.documento,
+    row.contrato,
+  ]
+    .map((value) => formatCsvCell(value as string | number | null))
+    .join(CSV_DELIMITER);
+}
+
+async function fetchLedgerRowsChunk({
+  pool,
+  parts,
+  ledgerTipo,
+  limit,
+  offset,
+}: {
+  pool: ReturnType<typeof getServerDbPool>;
+  parts: QueryParts;
+  ledgerTipo: "ingreso" | "gasto" | null;
+  limit: number;
+  offset: number;
+}) {
+  const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`;
+  const limitRef = `$${parts.values.length + 1}`;
+  const offsetRef = `$${parts.values.length + 2}`;
+
+  return pool.query<LedgerRow & { created_at: string }>(
+    `
+      ${cte}
+      select *
+      from (
+        ${buildLedgerUnionSql(ledgerTipo)}
+      ) ledger
+      order by fecha desc, created_at desc
+      limit ${limitRef} offset ${offsetRef}
+    `,
+    [...parts.values, String(limit), String(offset)]
+  );
+}
+
 function normalizeDateOnly(value: unknown) {
   if (!value) return "";
 
@@ -1079,12 +1229,30 @@ async function buildJsonResponse({
   const offsetRef = `$${parts.values.length + 2}`;
   const needsOptions = includes.has("options");
   const needsSummary = includes.has("summary");
-  const needsBreakdown = includes.has("breakdown");
-  const needsSeries = includes.has("series");
+  const needsFullBreakdown = includes.has("breakdown");
+  const needsBreakdownIncomeLines = needsFullBreakdown || includes.has("breakdown_income_lines");
+  const needsBreakdownExpenseCategories =
+    needsFullBreakdown || includes.has("breakdown_expense_categories");
+  const needsBreakdownIncomeConcepts =
+    needsFullBreakdown || includes.has("breakdown_income_concepts");
+  const needsBreakdownExpenseConcepts =
+    needsFullBreakdown || includes.has("breakdown_expense_concepts");
+  const needsSeriesDaily = includes.has("series") || includes.has("series_daily");
+  const needsSeriesMonthly = includes.has("series") || includes.has("series_monthly");
   const needsLedger = includes.has("ledger");
   const needsReceivables = includes.has("receivables");
-  const needsPayables = includes.has("payables");
-  const needsContracts = includes.has("contracts");
+  const needsFullPayables = includes.has("payables");
+  const needsPayablesSummary = needsFullPayables || includes.has("payables_summary");
+  const needsPayablesTopTramitadores =
+    needsFullPayables || includes.has("payables_top_tramitadores");
+  const needsPayablesTopProviders = needsFullPayables || includes.has("payables_top_proveedores");
+  const needsPayables =
+    needsPayablesSummary || needsPayablesTopTramitadores || needsPayablesTopProviders;
+  const needsFullContracts = includes.has("contracts");
+  const needsContractsSummary = needsFullContracts || includes.has("contracts_summary");
+  const needsContractsOldestPending =
+    needsFullContracts || includes.has("contracts_oldest_pending");
+  const needsContracts = needsContractsSummary || needsContractsOldestPending;
   const needsStudents = includes.has("students");
 
   const [
@@ -1104,6 +1272,7 @@ async function buildJsonResponse({
     ledgerRes,
     receivablesBucketsRes,
     receivablesTopRes,
+    payablesSummaryRes,
     payablesBucketsRes,
     payablesTramitadoresRes,
     payablesTopRes,
@@ -1142,7 +1311,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as SummaryRow[] }),
-    needsBreakdown
+    needsFullBreakdown
       ? pool.query<AggregateRow>(
           `
             ${cte}
@@ -1154,7 +1323,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as AggregateRow[] }),
-    needsBreakdown
+    needsBreakdownIncomeLines
       ? pool.query<NamedAggregateRow>(
           `
             ${cte}
@@ -1174,7 +1343,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as NamedAggregateRow[] }),
-    needsBreakdown
+    needsBreakdownExpenseCategories
       ? pool.query<AggregateRow>(
           `
             ${cte}
@@ -1186,7 +1355,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as AggregateRow[] }),
-    needsBreakdown
+    needsFullBreakdown
       ? pool.query<AggregateRow>(
           `
             ${cte}
@@ -1198,7 +1367,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as AggregateRow[] }),
-    needsBreakdown
+    needsFullBreakdown
       ? pool.query<AggregateRow>(
           `
             ${cte}
@@ -1210,7 +1379,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as AggregateRow[] }),
-    needsSeries
+    needsSeriesDaily
       ? pool.query<DailySeriesSqlRow>(
           `
             ${dailySeriesCte}
@@ -1227,7 +1396,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as DailySeriesSqlRow[] }),
-    needsSeries
+    needsSeriesMonthly
       ? pool.query<MonthlySeriesSqlRow>(
           `
             ${monthlySeriesCte}
@@ -1243,7 +1412,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as MonthlySeriesSqlRow[] }),
-    needsBreakdown
+    needsBreakdownIncomeConcepts
       ? pool.query<AggregateRow>(
           `
             ${cte}
@@ -1256,7 +1425,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as AggregateRow[] }),
-    needsBreakdown
+    needsBreakdownExpenseConcepts
       ? pool.query<AggregateRow>(
           `
             ${cte}
@@ -1269,7 +1438,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as AggregateRow[] }),
-    needsBreakdown
+    needsFullBreakdown
       ? pool.query<NamedAggregateRow>(
           `
             ${cte}
@@ -1286,7 +1455,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as NamedAggregateRow[] }),
-    needsBreakdown
+    needsFullBreakdown
       ? pool.query<AggregateRow>(
           `
             ${cte}
@@ -1321,27 +1490,7 @@ async function buildJsonResponse({
             ${cte}
             select *
             from (
-              ${
-                ledgerTipo !== "gasto"
-                  ? `
-              select
-                id::text as id, fecha, 'ingreso'::text as tipo, categoria, concepto, monto, estado,
-                metodo_pago, numero_factura, contraparte, documento, contrato, created_at
-              from filtered_ingresos
-              `
-                  : ""
-              }
-              ${!ledgerTipo ? "union all" : ""}
-              ${
-                ledgerTipo !== "ingreso"
-                  ? `
-              select
-                id::text as id, fecha, 'gasto'::text as tipo, categoria, concepto, monto,
-                estado, metodo_pago, numero_factura, contraparte, documento, contrato, created_at
-              from filtered_gastos
-              `
-                  : ""
-              }
+              ${buildLedgerUnionSql(ledgerTipo)}
             ) ledger
             order by fecha desc, created_at desc
             limit ${limitRef} offset ${offsetRef}
@@ -1386,7 +1535,43 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as CounterpartyAggregateRow[] }),
-    needsPayables
+    needsPayablesSummary
+      ? pool.query<PayablesSummaryRow>(
+          `
+            ${cte}
+            select
+              coalesce(sum(monto), 0) as total_pendiente,
+              coalesce(
+                sum(case when fecha_vencimiento < current_date then monto else 0 end),
+                0
+              ) as vencido,
+              coalesce(
+                sum(
+                  case
+                    when fecha_vencimiento >= current_date
+                      and fecha_vencimiento <= current_date + interval '7 day'
+                    then monto
+                    else 0
+                  end
+                ),
+                0
+              ) as vence_pronto,
+              coalesce(
+                sum(
+                  case
+                    when fecha_vencimiento > current_date + interval '7 day' then monto
+                    else 0
+                  end
+                ),
+                0
+              ) as al_dia
+            from filtered_gastos
+            where estado = 'pendiente'
+          `,
+          parts.values
+        )
+      : Promise.resolve({ rows: [] as PayablesSummaryRow[] }),
+    needsFullPayables
       ? pool.query<AgingBucketRow>(
           `
             ${cte}
@@ -1406,7 +1591,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as AgingBucketRow[] }),
-    needsPayables
+    needsPayablesTopTramitadores
       ? pool.query<CounterpartyAggregateRow>(
           `
             ${cte}
@@ -1423,7 +1608,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as CounterpartyAggregateRow[] }),
-    needsPayables
+    needsPayablesTopProviders
       ? pool.query<CounterpartyAggregateRow>(
           `
             ${cte}
@@ -1440,7 +1625,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as CounterpartyAggregateRow[] }),
-    needsBreakdown || needsPayables
+    needsFullBreakdown
       ? pool.query<TramitadorPortfolioRow>(
           `
             ${cte}
@@ -1481,7 +1666,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as TramitadorPortfolioRow[] }),
-    needsContracts
+    needsContractsSummary
       ? pool.query<ContractsSummaryRow>(
           `
             ${cte}
@@ -1496,7 +1681,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as ContractsSummaryRow[] }),
-    needsContracts
+    needsFullContracts
       ? pool.query<ContractsMonthlyRow>(
           `
             ${cte}
@@ -1513,7 +1698,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as ContractsMonthlyRow[] }),
-    needsContracts
+    needsContractsOldestPending
       ? pool.query<ContractOldDebtRow>(
           `
             ${cte}
@@ -1534,7 +1719,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as ContractOldDebtRow[] }),
-    needsContracts
+    needsFullContracts
       ? pool.query<LedgerCountRow>(
           `
             ${cte}
@@ -1545,7 +1730,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as LedgerCountRow[] }),
-    needsContracts
+    needsFullContracts
       ? pool.query<ContractPendingSqlRow>(
           `
             ${cte}
@@ -1569,7 +1754,7 @@ async function buildJsonResponse({
           [...parts.values, String(pageSize), String(offset)]
         )
       : Promise.resolve({ rows: [] as ContractPendingSqlRow[] }),
-    needsContracts
+    needsFullContracts
       ? pool.query<AgingBucketRow>(
           `
             ${cte}
@@ -1589,7 +1774,7 @@ async function buildJsonResponse({
           parts.values
         )
       : Promise.resolve({ rows: [] as AgingBucketRow[] }),
-    needsContracts
+    needsFullContracts
       ? pool.query<CounterpartyAggregateRow>(
           `
             ${cte}
@@ -1654,6 +1839,7 @@ async function buildJsonResponse({
   const balanceNeto = ingresosCobrados - gastosTotales;
   const contractsSummaryRow =
     (contractsSummaryRes as { rows: ContractsSummaryRow[] }).rows[0] ?? {};
+  const payablesSummaryRow = (payablesSummaryRes as { rows: PayablesSummaryRow[] }).rows[0] ?? {};
 
   return {
     generatedAt: new Date().toISOString(),
@@ -1689,76 +1875,100 @@ async function buildJsonResponse({
       alumnosNuevosAptitud: Number(summaryRow.alumnos_aptitud || 0),
     },
     breakdown: {
-      ingresosPorCategoria: ingresosCategoriaRes.rows.map((row: AggregateRow) => ({
-        categoria: row.categoria,
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      ingresosPorLinea: ingresosLineaRes.rows.map((row: NamedAggregateRow) => ({
-        nombre: row.nombre || "Otros",
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      gastosPorCategoria: gastosCategoriaRes.rows.map((row: AggregateRow) => ({
-        categoria: row.categoria,
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      ingresosPorMetodo: metodosRes.rows.map((row: AggregateRow) => ({
-        metodo_pago: row.metodo_pago,
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      gastosPorMetodo: gastosMetodoRes.rows.map((row: AggregateRow) => ({
-        metodo_pago: row.metodo_pago,
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      topConceptosIngreso: topIngresosRes.rows.map((row: AggregateRow) => ({
-        concepto: row.concepto,
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      topConceptosGasto: topGastosRes.rows.map((row: AggregateRow) => ({
-        concepto: row.concepto,
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      topTramitadoresGasto: topTramitadoresGastoRes.rows.map((row: NamedAggregateRow) => ({
-        nombre: row.nombre || "Sin tramitador",
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
-      tramitadorPortfolio: tramitadorPortfolioRes.rows.map((row: TramitadorPortfolioRow) => ({
-        nombre: row.nombre || "Sin tramitador",
-        movimientos: Number(row.movimientos || 0),
-        pagado: toNumber(row.pagado),
-        pendiente: toNumber(row.pendiente),
-        vencido: toNumber(row.vencido),
-        porVencer: toNumber(row.por_vencer),
-        ticketPromedio: toNumber(row.ticket_promedio),
-        ultimaFecha: normalizeDateOnly(row.ultima_fecha),
-      })),
-      topProveedoresGasto: topProveedoresGastoRes.rows.map((row: AggregateRow) => ({
-        concepto: row.concepto,
-        cantidad: Number(row.cantidad || 0),
-        total: toNumber(row.total),
-      })),
+      ingresosPorCategoria: needsFullBreakdown
+        ? ingresosCategoriaRes.rows.map((row: AggregateRow) => ({
+            categoria: row.categoria,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          }))
+        : [],
+      ingresosPorLinea: needsBreakdownIncomeLines
+        ? ingresosLineaRes.rows.map((row: NamedAggregateRow) => ({
+            nombre: row.nombre || "Otros",
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          }))
+        : [],
+      gastosPorCategoria: needsBreakdownExpenseCategories
+        ? gastosCategoriaRes.rows.map((row: AggregateRow) => ({
+            categoria: row.categoria,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          }))
+        : [],
+      ingresosPorMetodo: needsFullBreakdown
+        ? metodosRes.rows.map((row: AggregateRow) => ({
+            metodo_pago: row.metodo_pago,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          }))
+        : [],
+      gastosPorMetodo: needsFullBreakdown
+        ? gastosMetodoRes.rows.map((row: AggregateRow) => ({
+            metodo_pago: row.metodo_pago,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          }))
+        : [],
+      topConceptosIngreso: needsBreakdownIncomeConcepts
+        ? topIngresosRes.rows.map((row: AggregateRow) => ({
+            concepto: row.concepto,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          }))
+        : [],
+      topConceptosGasto: needsBreakdownExpenseConcepts
+        ? topGastosRes.rows.map((row: AggregateRow) => ({
+            concepto: row.concepto,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          }))
+        : [],
+      topTramitadoresGasto: needsFullBreakdown
+        ? topTramitadoresGastoRes.rows.map((row: NamedAggregateRow) => ({
+            nombre: row.nombre || "Sin tramitador",
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          }))
+        : [],
+      tramitadorPortfolio: needsFullBreakdown
+        ? tramitadorPortfolioRes.rows.map((row: TramitadorPortfolioRow) => ({
+            nombre: row.nombre || "Sin tramitador",
+            movimientos: Number(row.movimientos || 0),
+            pagado: toNumber(row.pagado),
+            pendiente: toNumber(row.pendiente),
+            vencido: toNumber(row.vencido),
+            porVencer: toNumber(row.por_vencer),
+            ticketPromedio: toNumber(row.ticket_promedio),
+            ultimaFecha: normalizeDateOnly(row.ultima_fecha),
+          }))
+        : [],
+      topProveedoresGasto: needsFullBreakdown
+        ? topProveedoresGastoRes.rows.map((row: AggregateRow) => ({
+            concepto: row.concepto,
+            cantidad: Number(row.cantidad || 0),
+            total: toNumber(row.total),
+          }))
+        : [],
     },
     series: {
-      diaria: serieDiariaRes.rows.map((row: DailySeriesSqlRow) => ({
-        fecha: normalizeDateOnly(row.fecha),
-        ingresos: toNumber(row.ingresos),
-        pendientes: toNumber(row.pendientes),
-        gastos: toNumber(row.gastos),
-        balance: toNumber(row.balance),
-      })),
-      mensual: serieMensualRes.rows.map((row: MonthlySeriesSqlRow) => ({
-        periodo: normalizePeriod(row.periodo),
-        ingresos: toNumber(row.ingresos),
-        gastos: toNumber(row.gastos),
-        balance: toNumber(row.balance),
-      })),
+      diaria: needsSeriesDaily
+        ? serieDiariaRes.rows.map((row: DailySeriesSqlRow) => ({
+            fecha: normalizeDateOnly(row.fecha),
+            ingresos: toNumber(row.ingresos),
+            pendientes: toNumber(row.pendientes),
+            gastos: toNumber(row.gastos),
+            balance: toNumber(row.balance),
+          }))
+        : [],
+      mensual: needsSeriesMonthly
+        ? serieMensualRes.rows.map((row: MonthlySeriesSqlRow) => ({
+            periodo: normalizePeriod(row.periodo),
+            ingresos: toNumber(row.ingresos),
+            gastos: toNumber(row.gastos),
+            balance: toNumber(row.balance),
+          }))
+        : [],
     },
     ledger: {
       totalCount: needsLedger ? Number(ledgerCountRes.rows[0]?.total || 0) : 0,
@@ -1799,28 +2009,31 @@ async function buildJsonResponse({
       : undefined,
     payables: needsPayables
       ? {
-          totalPendiente: payablesBucketsRes.rows.reduce(
-            (sum, row) => sum + toNumber(row.total),
-            0
-          ),
-          vencido: sumBucketTotal(payablesBucketsRes.rows, PAYABLE_BUCKET_LABELS.overdue),
-          vencePronto: sumBucketTotal(payablesBucketsRes.rows, PAYABLE_BUCKET_LABELS.dueSoon),
-          alDia: sumBucketTotal(payablesBucketsRes.rows, PAYABLE_BUCKET_LABELS.current),
-          buckets: payablesBucketsRes.rows.map((row: AgingBucketRow) => ({
-            bucket: row.bucket,
-            cantidad: Number(row.cantidad || 0),
-            total: toNumber(row.total),
-          })),
-          topProveedores: payablesTopRes.rows.map((row: CounterpartyAggregateRow) => ({
-            nombre: row.nombre || "Sin proveedor",
-            cantidad: Number(row.cantidad || 0),
-            total: toNumber(row.total),
-          })),
-          topTramitadores: payablesTramitadoresRes.rows.map((row: CounterpartyAggregateRow) => ({
-            nombre: row.nombre || "Sin tramitador",
-            cantidad: Number(row.cantidad || 0),
-            total: toNumber(row.total),
-          })),
+          totalPendiente: needsPayablesSummary ? toNumber(payablesSummaryRow.total_pendiente) : 0,
+          vencido: needsPayablesSummary ? toNumber(payablesSummaryRow.vencido) : 0,
+          vencePronto: needsPayablesSummary ? toNumber(payablesSummaryRow.vence_pronto) : 0,
+          alDia: needsPayablesSummary ? toNumber(payablesSummaryRow.al_dia) : 0,
+          buckets: needsFullPayables
+            ? payablesBucketsRes.rows.map((row: AgingBucketRow) => ({
+                bucket: row.bucket,
+                cantidad: Number(row.cantidad || 0),
+                total: toNumber(row.total),
+              }))
+            : [],
+          topProveedores: needsPayablesTopProviders
+            ? payablesTopRes.rows.map((row: CounterpartyAggregateRow) => ({
+                nombre: row.nombre || "Sin proveedor",
+                cantidad: Number(row.cantidad || 0),
+                total: toNumber(row.total),
+              }))
+            : [],
+          topTramitadores: needsPayablesTopTramitadores
+            ? payablesTramitadoresRes.rows.map((row: CounterpartyAggregateRow) => ({
+                nombre: row.nombre || "Sin tramitador",
+                cantidad: Number(row.cantidad || 0),
+                total: toNumber(row.total),
+              }))
+            : [],
         }
       : undefined,
     contracts: needsContracts
@@ -1829,47 +2042,59 @@ async function buildJsonResponse({
           totalEsperado: toNumber(contractsSummaryRow.total_esperado),
           totalCobrado: toNumber(contractsSummaryRow.total_cobrado),
           totalPendiente: toNumber(contractsSummaryRow.total_pendiente),
-          buckets: contractsBucketsRes.rows.map((row: AgingBucketRow) => ({
-            bucket: row.bucket,
-            cantidad: Number(row.cantidad || 0),
-            total: toNumber(row.total),
-          })),
-          topDeudores: contractsTopDeudoresRes.rows.map((row: CounterpartyAggregateRow) => ({
-            nombre: row.nombre || "Sin alumno asociado",
-            cantidad: Number(row.cantidad || 0),
-            total: toNumber(row.total),
-          })),
-          monthly: contractsMonthlyRes.rows.map((row: ContractsMonthlyRow) => ({
-            periodo: normalizePeriod(row.periodo),
-            registros: Number(row.registros || 0),
-            valorEsperado: toNumber(row.valor_esperado),
-            valorCobrado: toNumber(row.valor_cobrado),
-            saldoPendiente: toNumber(row.saldo_pendiente),
-          })),
-          oldestPending: contractsOldestRes.rows.map((row: ContractOldDebtRow) => ({
-            nombre: row.nombre || "Sin alumno asociado",
-            documento: row.documento || null,
-            referencia: row.referencia || null,
-            tipoRegistro: row.tipo_registro || null,
-            saldoPendiente: toNumber(row.saldo_pendiente),
-            fechaRegistro: normalizeDateOnly(row.fecha_registro),
-            fechaReferencia: normalizeDateOnly(row.fecha_referencia),
-            diasPendiente: Number(row.dias_pendiente || 0),
-          })),
-          pendingCount: Number(contractsPendingCountRes.rows[0]?.total || 0),
-          pendingRows: contractsPendingRowsRes.rows.map((row: ContractPendingSqlRow) => ({
-            obligationId: row.obligation_id,
-            nombre: row.nombre || "Sin alumno asociado",
-            documento: row.documento || null,
-            referencia: row.referencia || null,
-            tipoRegistro: row.tipo_registro || null,
-            fechaRegistro: normalizeDateOnly(row.fecha_registro),
-            fechaReferencia: normalizeDateOnly(row.fecha_referencia),
-            valorEsperado: toNumber(row.valor_esperado),
-            valorCobrado: toNumber(row.valor_cobrado),
-            saldoPendiente: toNumber(row.saldo_pendiente),
-            diasPendiente: Number(row.dias_pendiente || 0),
-          })),
+          buckets: needsFullContracts
+            ? contractsBucketsRes.rows.map((row: AgingBucketRow) => ({
+                bucket: row.bucket,
+                cantidad: Number(row.cantidad || 0),
+                total: toNumber(row.total),
+              }))
+            : [],
+          topDeudores: needsFullContracts
+            ? contractsTopDeudoresRes.rows.map((row: CounterpartyAggregateRow) => ({
+                nombre: row.nombre || "Sin alumno asociado",
+                cantidad: Number(row.cantidad || 0),
+                total: toNumber(row.total),
+              }))
+            : [],
+          monthly: needsFullContracts
+            ? contractsMonthlyRes.rows.map((row: ContractsMonthlyRow) => ({
+                periodo: normalizePeriod(row.periodo),
+                registros: Number(row.registros || 0),
+                valorEsperado: toNumber(row.valor_esperado),
+                valorCobrado: toNumber(row.valor_cobrado),
+                saldoPendiente: toNumber(row.saldo_pendiente),
+              }))
+            : [],
+          oldestPending: needsContractsOldestPending
+            ? contractsOldestRes.rows.map((row: ContractOldDebtRow) => ({
+                nombre: row.nombre || "Sin alumno asociado",
+                documento: row.documento || null,
+                referencia: row.referencia || null,
+                tipoRegistro: row.tipo_registro || null,
+                saldoPendiente: toNumber(row.saldo_pendiente),
+                fechaRegistro: normalizeDateOnly(row.fecha_registro),
+                fechaReferencia: normalizeDateOnly(row.fecha_referencia),
+                diasPendiente: Number(row.dias_pendiente || 0),
+              }))
+            : [],
+          pendingCount: needsFullContracts
+            ? Number(contractsPendingCountRes.rows[0]?.total || 0)
+            : 0,
+          pendingRows: needsFullContracts
+            ? contractsPendingRowsRes.rows.map((row: ContractPendingSqlRow) => ({
+                obligationId: row.obligation_id,
+                nombre: row.nombre || "Sin alumno asociado",
+                documento: row.documento || null,
+                referencia: row.referencia || null,
+                tipoRegistro: row.tipo_registro || null,
+                fechaRegistro: normalizeDateOnly(row.fecha_registro),
+                fechaReferencia: normalizeDateOnly(row.fecha_referencia),
+                valorEsperado: toNumber(row.valor_esperado),
+                valorCobrado: toNumber(row.valor_cobrado),
+                saldoPendiente: toNumber(row.saldo_pendiente),
+                diasPendiente: Number(row.dias_pendiente || 0),
+              }))
+            : [],
         }
       : undefined,
     students: needsStudents
@@ -1922,79 +2147,40 @@ async function buildCsvResponse({
   to: string;
   ledgerTipo: "ingreso" | "gasto" | null;
 }) {
-  const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`;
-  const ledgerRes = await pool.query<LedgerRow & { created_at: string }>(
-    `
-      ${cte}
-      select *
-      from (
-        ${
-          ledgerTipo !== "gasto"
-            ? `
-        select
-          fecha, 'ingreso'::text as tipo, categoria, concepto, monto, estado,
-          metodo_pago, numero_factura, contraparte, documento, contrato, created_at
-        from filtered_ingresos
-        `
-            : ""
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        controller.enqueue(encoder.encode(`\uFEFF${buildCsvHeaderLine()}\n`));
+
+        let offset = 0;
+
+        while (true) {
+          const ledgerRes = await fetchLedgerRowsChunk({
+            pool,
+            parts,
+            ledgerTipo,
+            limit: CSV_BATCH_SIZE,
+            offset,
+          });
+
+          if (ledgerRes.rows.length === 0) break;
+
+          const chunk = ledgerRes.rows.map((row) => buildCsvLedgerLine(row)).join("\n");
+          controller.enqueue(encoder.encode(`${chunk}\n`));
+
+          offset += ledgerRes.rows.length;
+          if (ledgerRes.rows.length < CSV_BATCH_SIZE) break;
         }
-        ${!ledgerTipo ? "union all" : ""}
-        ${
-          ledgerTipo !== "ingreso"
-            ? `
-        select
-          fecha, 'gasto'::text as tipo, categoria, concepto, monto, estado,
-          metodo_pago, numero_factura, contraparte, documento, contrato, created_at
-        from filtered_gastos
-        `
-            : ""
-        }
-      ) ledger
-      order by fecha desc, created_at desc
-    `,
-    parts.values
-  );
 
-  const CSV_DELIMITER = ";";
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
 
-  const lines = [
-    [
-      "Fecha",
-      "Tipo",
-      "Categoría",
-      "Concepto",
-      "Monto",
-      "Estado",
-      "Método de pago",
-      "Factura",
-      "Contraparte",
-      "Documento",
-      "Contrato",
-    ]
-      .map(formatCsvCell)
-      .join(CSV_DELIMITER),
-    ...ledgerRes.rows.map((row: LedgerRow & { created_at: string }) =>
-      [
-        normalizeDateOnly(row.fecha),
-        row.tipo === "ingreso" ? "Ingreso" : "Gasto",
-        row.categoria,
-        row.concepto,
-        toNumber(row.monto),
-        row.estado,
-        row.metodo_pago,
-        row.numero_factura,
-        row.contraparte,
-        row.documento,
-        row.contrato,
-      ]
-        .map((value) => formatCsvCell(value as string | number | null))
-        .join(CSV_DELIMITER)
-    ),
-  ];
-
-  const csvContent = "\uFEFF" + lines.join("\n");
-
-  return new NextResponse(csvContent, {
+  return new NextResponse(stream, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
@@ -2005,19 +2191,21 @@ async function buildCsvResponse({
 
 export async function GET(request: Request) {
   const timing = createServerTiming();
-  // Bypassing auth for testing filters
-  const perfil = {
-    id: "mock-id",
-    rol: "admin_escuela" as const,
-    escuela_id: "a5320c4a-3bf6-4da5-b365-da17d7001d4f",
-    sede_id: null,
-    activo: true,
-  } as AllowedPerfil;
+  const authz = await timing.measure(
+    "authz",
+    () => authorizeApiRequest(ALLOWED_FINANCE_ROLES),
+    "Autorizacion reportes"
+  );
+  if (!authz.ok) return authz.response;
+
+  const perfil = authz.perfil as AllowedPerfil;
 
   if (perfil.rol === "super_admin") {
-    return NextResponse.json(
-      { error: "El super admin no tiene acceso a reportes financieros de escuelas." },
-      { status: 403 }
+    return timing.apply(
+      NextResponse.json(
+        { error: "El super admin no tiene acceso a reportes financieros de escuelas." },
+        { status: 403 }
+      )
     );
   }
   const url = new URL(request.url);
@@ -2030,7 +2218,9 @@ export async function GET(request: Request) {
   const requestedSchoolId = normalizeUuid(url.searchParams.get("escuela_id"));
   const requestedSedeId = normalizeUuid(url.searchParams.get("sede_id"));
   const format = url.searchParams.get("format");
-  const ledgerTipo = url.searchParams.get("ledger_tipo") as "ingreso" | "gasto" | null;
+  const rawLedgerTipo = url.searchParams.get("ledger_tipo");
+  const ledgerTipo =
+    rawLedgerTipo === "ingreso" || rawLedgerTipo === "gasto" ? rawLedgerTipo : null;
   const includes = parseReportIncludes(url.searchParams.get("include"));
   const filters: QueryFilters = {
     alumnoId: normalizeUuid(url.searchParams.get("alumno_id")),

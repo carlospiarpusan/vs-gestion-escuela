@@ -96,11 +96,21 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const enableVercelObservability = process.env.VERCEL === "1";
+
   return (
     <html lang="es" data-device-variant="desktop">
       <head>
-        <link rel="preconnect" href="https://va.vercel-scripts.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://vitals.vercel-insights.com" crossOrigin="anonymous" />
+        {enableVercelObservability ? (
+          <>
+            <link rel="preconnect" href="https://va.vercel-scripts.com" crossOrigin="anonymous" />
+            <link
+              rel="preconnect"
+              href="https://vitals.vercel-insights.com"
+              crossOrigin="anonymous"
+            />
+          </>
+        ) : null}
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
@@ -109,8 +119,12 @@ export default function RootLayout({
         <DeviceVariantProvider initialVariant="desktop">
           {children}
           <PerformanceVitals />
-          <Analytics />
-          <SpeedInsights />
+          {enableVercelObservability ? (
+            <>
+              <Analytics />
+              <SpeedInsights />
+            </>
+          ) : null}
         </DeviceVariantProvider>
       </body>
     </html>

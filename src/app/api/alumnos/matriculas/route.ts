@@ -6,7 +6,7 @@ import {
   ensureSedeScope,
   parseJsonBody,
 } from "@/lib/api-auth";
-import { normalizeContractNumber } from "@/lib/contract-number";
+import { getContractSchemaCapabilities, reserveNextContractNumber } from "@/lib/contracts-server";
 import { getServerDbPool } from "@/lib/server-db";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags, buildFinanceCacheTags } from "@/lib/server-cache-tags";
@@ -24,7 +24,6 @@ const createMatriculaSchema = z
   .object({
     alumno_id: z.string().uuid(),
     sede_id: z.string().uuid(),
-    numero_contrato: z.string().trim().max(120).optional().nullable(),
     fecha_inscripcion: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     categorias: z.array(z.string().trim().min(1)).min(1).max(20),
     valor_total: z.number().min(0).nullable().optional(),
@@ -147,30 +146,115 @@ export async function POST(request: Request) {
 
   try {
     await client.query("BEGIN");
+    const contractCapabilities = await getContractSchemaCapabilities(client);
+    const nextContract = await reserveNextContractNumber(client, {
+      escuelaId: alumno.escuela_id,
+      categorias: payload.categorias,
+    });
 
     const matriculaRes = await client.query<{ id: string }>(
-      `
-        insert into public.matriculas_alumno (
-          escuela_id, sede_id, alumno_id, created_by, numero_contrato, categorias,
-          valor_total, fecha_inscripcion, estado, notas, tiene_tramitador, tramitador_nombre, tramitador_valor
-        )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, 'activo', $9, $10, $11, $12)
-        returning id
-      `,
-      [
-        alumno.escuela_id,
-        payload.sede_id,
-        alumno.id,
-        authz.perfil.id,
-        normalizeContractNumber(payload.numero_contrato ?? "", payload.categorias),
-        payload.categorias,
-        payload.valor_total ?? null,
-        payload.fecha_inscripcion,
-        payload.notas?.trim() || null,
-        payload.tiene_tramitador,
-        tramitadorNombre,
-        tramitadorValor,
-      ]
+      contractCapabilities.matriculaConsecutive && contractCapabilities.matriculaPrefix
+        ? `
+            insert into public.matriculas_alumno (
+              escuela_id, sede_id, alumno_id, created_by, numero_contrato, prefijo_contrato,
+              consecutivo_contrato, categorias, valor_total, fecha_inscripcion, estado, notas, tiene_tramitador,
+              tramitador_nombre, tramitador_valor
+            )
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'activo', $11, $12, $13, $14)
+            returning id
+          `
+        : contractCapabilities.matriculaConsecutive
+          ? `
+              insert into public.matriculas_alumno (
+                escuela_id, sede_id, alumno_id, created_by, numero_contrato, consecutivo_contrato,
+                categorias, valor_total, fecha_inscripcion, estado, notas, tiene_tramitador,
+                tramitador_nombre, tramitador_valor
+              )
+              values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'activo', $10, $11, $12, $13)
+              returning id
+            `
+          : contractCapabilities.matriculaPrefix
+            ? `
+                insert into public.matriculas_alumno (
+                  escuela_id, sede_id, alumno_id, created_by, numero_contrato, prefijo_contrato,
+                  categorias, valor_total, fecha_inscripcion, estado, notas, tiene_tramitador,
+                  tramitador_nombre, tramitador_valor
+                )
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'activo', $10, $11, $12, $13)
+                returning id
+              `
+            : `
+            insert into public.matriculas_alumno (
+              escuela_id, sede_id, alumno_id, created_by, numero_contrato,
+              categorias, valor_total, fecha_inscripcion, estado, notas, tiene_tramitador,
+              tramitador_nombre, tramitador_valor
+            )
+            values ($1, $2, $3, $4, $5, $6, $7, $8, 'activo', $9, $10, $11, $12)
+            returning id
+          `,
+      contractCapabilities.matriculaConsecutive && contractCapabilities.matriculaPrefix
+        ? [
+            alumno.escuela_id,
+            payload.sede_id,
+            alumno.id,
+            authz.perfil.id,
+            nextContract.nextNumber,
+            nextContract.prefix,
+            nextContract.nextSequence,
+            payload.categorias,
+            payload.valor_total ?? null,
+            payload.fecha_inscripcion,
+            payload.notas?.trim() || null,
+            payload.tiene_tramitador,
+            tramitadorNombre,
+            tramitadorValor,
+          ]
+        : contractCapabilities.matriculaConsecutive
+          ? [
+              alumno.escuela_id,
+              payload.sede_id,
+              alumno.id,
+              authz.perfil.id,
+              nextContract.nextNumber,
+              nextContract.nextSequence,
+              payload.categorias,
+              payload.valor_total ?? null,
+              payload.fecha_inscripcion,
+              payload.notas?.trim() || null,
+              payload.tiene_tramitador,
+              tramitadorNombre,
+              tramitadorValor,
+            ]
+          : contractCapabilities.matriculaPrefix
+            ? [
+                alumno.escuela_id,
+                payload.sede_id,
+                alumno.id,
+                authz.perfil.id,
+                nextContract.nextNumber,
+                nextContract.prefix,
+                payload.categorias,
+                payload.valor_total ?? null,
+                payload.fecha_inscripcion,
+                payload.notas?.trim() || null,
+                payload.tiene_tramitador,
+                tramitadorNombre,
+                tramitadorValor,
+              ]
+            : [
+                alumno.escuela_id,
+                payload.sede_id,
+                alumno.id,
+                authz.perfil.id,
+                nextContract.nextNumber,
+                payload.categorias,
+                payload.valor_total ?? null,
+                payload.fecha_inscripcion,
+                payload.notas?.trim() || null,
+                payload.tiene_tramitador,
+                tramitadorNombre,
+                tramitadorValor,
+              ]
     );
 
     const matriculaId = matriculaRes.rows[0]?.id;
@@ -229,7 +313,15 @@ export async function POST(request: Request) {
       ...buildFinanceCacheTags("income", scope),
     ]);
 
-    return NextResponse.json({ ok: true, matricula_id: matriculaId });
+    return NextResponse.json({
+      ok: true,
+      matricula_id: matriculaId,
+      numero_contrato: nextContract.nextNumber,
+      prefijo_contrato: contractCapabilities.matriculaPrefix ? nextContract.prefix : null,
+      consecutivo_contrato: contractCapabilities.matriculaConsecutive
+        ? nextContract.nextSequence
+        : null,
+    });
   } catch (error) {
     await client.query("ROLLBACK");
     return NextResponse.json(

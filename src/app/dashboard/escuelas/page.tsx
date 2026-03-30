@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
 import { clearSchoolCategoriesCache } from "@/lib/school-categories";
@@ -11,7 +12,7 @@ import {
 } from "@/lib/school-plans";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
-import { getPasswordValidationError } from "@/lib/password-policy";
+import { getPasswordValidationError, PASSWORD_POLICY_HINT } from "@/lib/password-policy";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import type { EstadoEscuela, PlanEscuela, PlanConfig } from "@/types/database";
 import {
@@ -143,6 +144,10 @@ function timeAgo(dateStr: string | null) {
 function capacityPct(current: number, max: number) {
   if (max <= 0) return 0;
   return Math.min(Math.round((current / max) * 100), 100);
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 /* ------------------------------------------------------------------ */
@@ -539,12 +544,14 @@ function PlanEditorCard({
 
 export default function EscuelasPage() {
   const { perfil } = useAuth();
+  const inlineErrorRef = useRef<HTMLParagraphElement | null>(null);
+  const planesRequestedRef = useRef(false);
 
   // Data
   const [escuelas, setEscuelas] = useState<EscuelaEnriquecida[]>([]);
   const [planesConfig, setPlanesConfig] = useState<PlanConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [planesLoading, setPlanesLoading] = useState(true);
+  const [planesLoading, setPlanesLoading] = useState(false);
 
   // Tab
   const [activeTab, setActiveTab] = useState<TabId>("escuelas");
@@ -603,6 +610,7 @@ export default function EscuelasPage() {
   }, []);
 
   const fetchPlanes = useCallback(async () => {
+    setPlanesLoading(true);
     try {
       const data = await fetchJsonWithRetry<{ planes: PlanConfig[] }>("/api/planes");
       setPlanesConfig(data.planes);
@@ -616,10 +624,21 @@ export default function EscuelasPage() {
   useEffect(() => {
     if (perfil) {
       fetchEscuelas();
-      fetchPlanes();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perfil?.id]);
+
+  useEffect(() => {
+    planesRequestedRef.current = false;
+    setPlanesConfig([]);
+    setPlanesLoading(false);
+  }, [perfil?.id]);
+
+  useEffect(() => {
+    if (!perfil || activeTab !== "planes" || planesRequestedRef.current) return;
+    planesRequestedRef.current = true;
+    void fetchPlanes();
+  }, [activeTab, fetchPlanes, perfil]);
 
   /* ---------- Sorting + Filtering --------------------------------- */
 
@@ -693,6 +712,14 @@ export default function EscuelasPage() {
 
   /* ---------- CRUD ------------------------------------------------ */
 
+  const revealError = useCallback((message: string) => {
+    setError(message);
+    toast.error(message);
+    requestAnimationFrame(() => {
+      inlineErrorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, []);
+
   const toggleCategoria = (cat: string) => {
     setEscuelaForm((prev) => ({
       ...prev,
@@ -741,17 +768,25 @@ export default function EscuelasPage() {
 
   const handleSave = async () => {
     if (!escuelaForm.nombre.trim() || !escuelaForm.cif.trim()) {
-      setError("El nombre y el NIT son obligatorios.");
+      revealError("El nombre y el NIT son obligatorios.");
+      return;
+    }
+    if (escuelaForm.email.trim() && !isValidEmail(escuelaForm.email)) {
+      revealError("Ingresa un correo valido para la escuela o dejalo vacio.");
       return;
     }
     if (!editing && crearAdmin) {
       if (!adminForm.nombre.trim() || !adminForm.email.trim() || !adminForm.password) {
-        setError("Completa todos los datos del administrador.");
+        revealError("Completa todos los datos del administrador.");
+        return;
+      }
+      if (!isValidEmail(adminForm.email)) {
+        revealError("Ingresa un correo valido para el administrador.");
         return;
       }
       const passwordError = getPasswordValidationError(adminForm.password);
       if (passwordError) {
-        setError(passwordError);
+        revealError(passwordError);
         return;
       }
     }
@@ -815,7 +850,7 @@ export default function EscuelasPage() {
         err instanceof Error
           ? err.message
           : (err as { message?: string })?.message || "Error al guardar";
-      setError(msg);
+      revealError(msg);
     } finally {
       setSaving(false);
     }
@@ -878,6 +913,10 @@ export default function EscuelasPage() {
   /* ---------- Render ---------------------------------------------- */
 
   const selectedPlan = getSchoolPlanDescriptor(escuelaForm.plan);
+  const adminPasswordError =
+    !editing && crearAdmin && adminForm.password
+      ? getPasswordValidationError(adminForm.password)
+      : null;
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-zinc-50 pb-12 dark:bg-[#09090b]">
@@ -1702,7 +1741,7 @@ export default function EscuelasPage() {
                               password: e.target.value,
                             })
                           }
-                          placeholder="Mín. 6 caracteres"
+                          placeholder="Min. 8, 1 mayuscula y 1 numero"
                           className="apple-input pr-9"
                         />
                         <button
@@ -1713,6 +1752,13 @@ export default function EscuelasPage() {
                           {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                         </button>
                       </div>
+                      <p
+                        className={`mt-1 text-xs ${
+                          adminPasswordError ? "text-red-500" : "text-[#86868b]"
+                        }`}
+                      >
+                        {adminPasswordError ?? PASSWORD_POLICY_HINT}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1725,6 +1771,14 @@ export default function EscuelasPage() {
           )}
 
           {/* Botones */}
+          {error && (
+            <p
+              ref={inlineErrorRef}
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300"
+            >
+              {error}
+            </p>
+          )}
           <div className="flex justify-end gap-3 pt-1">
             <button
               onClick={() => setModalOpen(false)}

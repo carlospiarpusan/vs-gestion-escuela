@@ -344,7 +344,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
 
         <main
           className={`relative z-10 flex-1 ${
-            isMobile ? "px-3 pt-4" : "px-3 pt-5 pb-6 sm:px-6 sm:pb-8"
+            isMobile ? "px-3 pt-3.5" : "px-3 pt-5 pb-6 sm:px-6 sm:pb-8"
           }`}
         >
           <div className="mx-auto w-full max-w-[1520px]">
@@ -354,7 +354,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
 
         {isMobile && (
           <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-            <nav className="apple-toolbar mx-auto flex max-w-[560px] items-center justify-between rounded-[26px] px-3 py-2 shadow-[0_22px_44px_rgba(15,23,42,0.18)]">
+            <nav className="apple-toolbar mx-auto flex max-w-[560px] items-center gap-1 overflow-x-auto rounded-[26px] px-2 py-2 shadow-[0_22px_44px_rgba(15,23,42,0.18)] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {mobilePrimaryNav.map((item) => {
                 const active = currentPageMeta.module?.id === item.id;
 
@@ -362,7 +362,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
                   <Link
                     key={item.id}
                     href={item.href}
-                    className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-[18px] px-2 py-2 text-[11px] font-semibold transition-colors ${
+                    className={`flex min-w-[4.45rem] shrink-0 flex-col items-center gap-1 rounded-[18px] px-2 py-2 text-[11px] font-semibold transition-colors ${
                       active
                         ? "bg-[linear-gradient(135deg,var(--brand-600),var(--brand-500))] text-white shadow-[0_12px_22px_rgba(37,99,235,0.24)]"
                         : "text-[var(--gray-500)] dark:text-[var(--gray-600)]"
@@ -377,7 +377,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className={`ml-2 flex w-[4.25rem] shrink-0 flex-col items-center gap-1 rounded-[18px] px-2 py-2 text-[11px] font-semibold transition-colors ${
+                className={`flex min-w-[4.45rem] shrink-0 flex-col items-center gap-1 rounded-[18px] px-2 py-2 text-[11px] font-semibold transition-colors ${
                   sidebarOpen
                     ? "bg-[linear-gradient(135deg,var(--brand-600),var(--brand-500))] text-white"
                     : "text-[var(--gray-500)] dark:text-[var(--gray-600)]"

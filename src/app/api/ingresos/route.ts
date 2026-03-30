@@ -4,12 +4,7 @@ import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { createServerTiming } from "@/lib/server-timing";
 import { buildQueryParts } from "@/app/api/reportes/contables/query-builder";
-import type {
-  AggregateRow,
-  AllowedPerfil,
-  NamedAggregateRow,
-  QueryFilters,
-} from "@/app/api/reportes/contables/types";
+import type { AggregateRow, AllowedPerfil, QueryFilters } from "@/app/api/reportes/contables/types";
 import {
   ALLOWED_FINANCE_ROLES,
   buildFinanceListContext,
@@ -110,17 +105,10 @@ export async function GET(request: Request) {
             const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`;
             const offset = page * pageSize;
 
-            const [
-              summaryRes,
-              receivablesRes,
-              byCategoryRes,
-              byLineRes,
-              byMethodRes,
-              topConceptsRes,
-              ledgerRowsRes,
-            ] = await Promise.all([
-              pool.query<IncomeSummarySqlRow>(
-                `
+            const [summaryRes, receivablesRes, byCategoryRes, byMethodRes, ledgerRowsRes] =
+              await Promise.all([
+                pool.query<IncomeSummarySqlRow>(
+                  `
                   ${cte}
                   select
                     coalesce(sum(case when estado = 'cobrado' then monto else 0 end), 0) as ingresos_cobrados,
@@ -130,10 +118,10 @@ export async function GET(request: Request) {
                     (count(*) filter (where estado = 'cobrado'))::int as movimientos_cobrados
                   from filtered_ingresos
                 `,
-                parts.values
-              ),
-              pool.query<IncomeReceivablesSqlRow>(
-                `
+                  parts.values
+                ),
+                pool.query<IncomeReceivablesSqlRow>(
+                  `
                   ${cte}
                   select
                     coalesce(sum(saldo_pendiente), 0) as total_pendiente,
@@ -141,59 +129,30 @@ export async function GET(request: Request) {
                   from filtered_obligations
                   where saldo_pendiente > 0
                 `,
-                parts.values
-              ),
-              pool.query<AggregateRow>(
-                `
+                  parts.values
+                ),
+                pool.query<AggregateRow>(
+                  `
                   ${cte}
                   select categoria, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
                   from filtered_ingresos
                   group by categoria
                   order by total desc, categoria asc
                 `,
-                parts.values
-              ),
-              pool.query<NamedAggregateRow>(
-                `
-                  ${cte}
-                  select
-                    case
-                      when categoria in ('matricula', 'mensualidad', 'material', 'tasas_dgt') then 'Cursos'
-                      when categoria = 'clase_suelta' then 'Practica adicional'
-                      when categoria in ('examen_teorico', 'examen_practico', 'examen_aptitud') then 'Examenes'
-                      else 'Otros'
-                    end as nombre,
-                    count(*)::int as cantidad,
-                    coalesce(sum(monto), 0) as total
-                  from filtered_ingresos
-                  group by 1
-                  order by total desc, nombre asc
-                `,
-                parts.values
-              ),
-              pool.query<AggregateRow>(
-                `
+                  parts.values
+                ),
+                pool.query<AggregateRow>(
+                  `
                   ${cte}
                   select metodo_pago, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
                   from filtered_ingresos
                   group by metodo_pago
                   order by total desc, metodo_pago asc
                 `,
-                parts.values
-              ),
-              pool.query<AggregateRow>(
-                `
-                  ${cte}
-                  select concepto, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
-                  from filtered_ingresos
-                  group by concepto
-                  order by total desc, cantidad desc, concepto asc
-                  limit 8
-                `,
-                parts.values
-              ),
-              pool.query<IncomeLedgerSqlRow>(
-                `
+                  parts.values
+                ),
+                pool.query<IncomeLedgerSqlRow>(
+                  `
                   ${cte}
                   select
                     id::text as id,
@@ -212,9 +171,9 @@ export async function GET(request: Request) {
                   order by fecha desc, created_at desc
                   limit $${parts.values.length + 1} offset $${parts.values.length + 2}
                 `,
-                [...parts.values, String(pageSize), String(offset)]
-              ),
-            ]);
+                  [...parts.values, String(pageSize), String(offset)]
+                ),
+              ]);
 
             const summary = summaryRes.rows[0];
             const receivablesSummary = receivablesRes.rows[0];
@@ -229,21 +188,13 @@ export async function GET(request: Request) {
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),
                 })),
-                ingresosPorLinea: byLineRes.rows.map((row) => ({
-                  nombre: row.nombre || "Otros",
-                  cantidad: Number(row.cantidad || 0),
-                  total: toNumber(row.total),
-                })),
+                ingresosPorLinea: [],
                 ingresosPorMetodo: byMethodRes.rows.map((row) => ({
                   metodo_pago: row.metodo_pago,
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),
                 })),
-                topConceptosIngreso: topConceptsRes.rows.map((row) => ({
-                  concepto: row.concepto,
-                  cantidad: Number(row.cantidad || 0),
-                  total: toNumber(row.total),
-                })),
+                topConceptosIngreso: [],
               },
               ledger: {
                 totalCount: Number(summary?.total_ingresos || 0),

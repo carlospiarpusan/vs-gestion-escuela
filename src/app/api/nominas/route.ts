@@ -7,9 +7,11 @@ import {
   ensureSedeScope,
   parseJsonBody,
 } from "@/lib/api-auth";
+import { buildLegacyInstructorPayrollRows } from "@/lib/payroll";
+import type { InstructorPayrollClosure } from "@/lib/payroll";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
-import type { Rol } from "@/types/database";
+import type { EstadoPagoGasto, Rol } from "@/types/database";
 
 // ── Roles con acceso al módulo de nóminas ────────────────────────────
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
@@ -23,6 +25,14 @@ type NominaUpdate = {
   total_devengado?: number;
   total_deducciones?: number;
   neto_pagar?: number;
+};
+
+type GastoLegacyRow = {
+  id: string;
+  proveedor: string | null;
+  fecha: string;
+  estado_pago: EstadoPagoGasto;
+  notas: string | null;
 };
 
 // ── Helper: invalidar cache de nóminas ───────────────────────────────
@@ -39,7 +49,7 @@ export async function GET(request: Request) {
   const perfil = authz.perfil;
   const url = new URL(request.url);
   const escuelaId = perfil.escuela_id ?? url.searchParams.get("escuela_id");
-  const sedeId = url.searchParams.get("sede_id") ?? perfil.sede_id;
+  const selectedSedeId = url.searchParams.get("sede_id") ?? perfil.sede_id;
   const anio = Number(url.searchParams.get("anio")) || new Date().getFullYear();
   const mes = Number(url.searchParams.get("mes")) || new Date().getMonth() + 1;
   const empleadoTipo = url.searchParams.get("tipo"); // "instructor" | "administrativo" | null
@@ -53,6 +63,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: scopeErr }, { status: 403 });
   }
 
+  if (selectedSedeId) {
+    const sedeErr = ensureSedeScope(perfil, selectedSedeId);
+    if (sedeErr) {
+      return NextResponse.json({ error: sedeErr }, { status: 403 });
+    }
+  }
+
   const supabase = buildSupabaseAdminClient();
   let query = supabase
     .from("nominas")
@@ -62,8 +79,8 @@ export async function GET(request: Request) {
     .eq("periodo_mes", mes)
     .order("empleado_nombre", { ascending: true });
 
-  if (sedeId && perfil.rol !== "admin_escuela" && perfil.rol !== "super_admin") {
-    query = query.eq("sede_id", sedeId);
+  if (selectedSedeId) {
+    query = query.eq("sede_id", selectedSedeId);
   }
 
   if (empleadoTipo === "instructor" || empleadoTipo === "administrativo") {
@@ -81,28 +98,50 @@ export async function GET(request: Request) {
   let instructores: Array<{ id: string; nombre: string; sede_id: string | null }> = [];
   let administrativos: Array<{ id: string; nombre: string; sede_id: string | null }> = [];
   let sedes: Array<{ id: string; nombre: string; es_principal: boolean }> = [];
+  let cierres: InstructorPayrollClosure[] = [];
+  let legacyInstructorExpenses = new Map<string, GastoLegacyRow>();
 
   try {
-    const [instructoresRes, administrativosRes, sedesRes] = await Promise.all([
-      supabase
-        .from("instructores")
-        .select("id, nombre, apellidos, sede_id")
-        .eq("escuela_id", escuelaId)
-        .eq("estado", "activo")
-        .order("nombre"),
-      supabase
-        .from("perfiles")
-        .select("id, nombre, sede_id")
-        .eq("escuela_id", escuelaId)
-        .eq("activo", true)
-        .in("rol", ["administrativo", "admin_sede", "recepcion"])
-        .order("nombre"),
-      supabase
-        .from("sedes")
-        .select("id, nombre, es_principal")
-        .eq("escuela_id", escuelaId)
-        .eq("estado", "activa")
-        .order("es_principal", { ascending: false }),
+    let instructoresQuery = supabase
+      .from("instructores")
+      .select("id, nombre, apellidos, sede_id")
+      .eq("escuela_id", escuelaId)
+      .eq("estado", "activo")
+      .order("nombre");
+    let administrativosQuery = supabase
+      .from("perfiles")
+      .select("id, nombre, sede_id")
+      .eq("escuela_id", escuelaId)
+      .eq("activo", true)
+      .in("rol", ["administrativo", "admin_sede", "recepcion"])
+      .order("nombre");
+    let sedesQuery = supabase
+      .from("sedes")
+      .select("id, nombre, es_principal")
+      .eq("escuela_id", escuelaId)
+      .eq("estado", "activa")
+      .order("es_principal", { ascending: false });
+    let cierresQuery = supabase
+      .from("cierres_horas_instructores")
+      .select(
+        "id, instructor_id, sede_id, gasto_id, periodo_anio, periodo_mes, fecha_cierre, total_horas, valor_hora, monto_total"
+      )
+      .eq("escuela_id", escuelaId)
+      .eq("periodo_anio", anio)
+      .eq("periodo_mes", mes);
+
+    if (selectedSedeId) {
+      instructoresQuery = instructoresQuery.eq("sede_id", selectedSedeId);
+      administrativosQuery = administrativosQuery.eq("sede_id", selectedSedeId);
+      sedesQuery = sedesQuery.eq("id", selectedSedeId);
+      cierresQuery = cierresQuery.eq("sede_id", selectedSedeId);
+    }
+
+    const [instructoresRes, administrativosRes, sedesRes, cierresRes] = await Promise.all([
+      instructoresQuery,
+      administrativosQuery,
+      sedesQuery,
+      cierresQuery,
     ]);
 
     instructores = (instructoresRes.data ?? []).map((i) => ({
@@ -116,15 +155,65 @@ export async function GET(request: Request) {
       sede_id: a.sede_id,
     }));
     sedes = sedesRes.data ?? [];
+    cierres = (cierresRes.data ?? []).map((closure) => ({
+      ...closure,
+      periodo_anio: Number(closure.periodo_anio || 0),
+      periodo_mes: Number(closure.periodo_mes || 0),
+      total_horas: Number(closure.total_horas || 0),
+      valor_hora: Number(closure.valor_hora || 0),
+      monto_total: Number(closure.monto_total || 0),
+    }));
+
+    const expenseIds = Array.from(
+      new Set(cierres.map((closure) => closure.gasto_id).filter((id): id is string => Boolean(id)))
+    );
+
+    if (expenseIds.length > 0) {
+      let gastosQuery = supabase
+        .from("gastos")
+        .select("id, proveedor, fecha, estado_pago, notas")
+        .eq("escuela_id", escuelaId)
+        .eq("categoria", "nominas")
+        .in("id", expenseIds);
+
+      if (selectedSedeId) {
+        gastosQuery = gastosQuery.eq("sede_id", selectedSedeId);
+      }
+
+      const { data: gastosData } = await gastosQuery;
+      legacyInstructorExpenses = new Map(
+        ((gastosData ?? []) as GastoLegacyRow[]).map((expense) => [expense.id, expense])
+      );
+    }
   } catch (err) {
     console.error("[API NOMINAS GET selectors]", err);
   }
 
+  const normalizedNominas = (data ?? []).map((row) => ({
+    ...row,
+    origen: "nomina" as const,
+  }));
+  const instructorNames = new Map(instructores.map((row) => [row.id, row.nombre]));
+  const legacyInstructorRows = buildLegacyInstructorPayrollRows({
+    closures: cierres,
+    expensesById: legacyInstructorExpenses,
+    instructorNames,
+    existingInstructorIds: new Set(
+      normalizedNominas
+        .filter((row) => row.empleado_tipo === "instructor")
+        .map((row) => row.empleado_id)
+    ),
+  });
+  const nominas = [...normalizedNominas, ...legacyInstructorRows].sort((a, b) =>
+    String(a.empleado_nombre || "").localeCompare(String(b.empleado_nombre || ""), "es-CO")
+  );
+
   return NextResponse.json({
-    nominas: data ?? [],
+    nominas,
     instructores,
     administrativos,
     sedes,
+    cierres,
     periodo: { anio, mes },
   });
 }

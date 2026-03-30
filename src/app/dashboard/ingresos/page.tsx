@@ -29,13 +29,11 @@ import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
 import { downloadSpreadsheetWorkbook } from "@/lib/spreadsheet-export";
 import type { CategoriaIngreso, EstadoIngreso, MetodoPago } from "@/types/database";
 import { Plus } from "lucide-react";
-import IngresoModal from "./IngresoModal";
 import {
   AlumnoOption,
   currentMonth,
   currentYear,
   emptyForm,
-  formatIncomeText,
   MatriculaOption,
   PAGE_SIZE,
   years,
@@ -49,6 +47,10 @@ import {
 } from "./IncomeSections";
 
 const DeleteConfirm = dynamic(() => import("@/components/dashboard/DeleteConfirm"), {
+  loading: () => null,
+});
+
+const IngresoModal = dynamic(() => import("./IngresoModal"), {
   loading: () => null,
 });
 
@@ -122,69 +124,92 @@ export default function IngresosPage() {
 
   const [alumnos, setAlumnos] = useState<AlumnoOption[]>([]);
   const [matriculas, setMatriculas] = useState<MatriculaOption[]>([]);
+  const [catalogsLoading, setCatalogsLoading] = useState(false);
   const catalogFetchIdRef = useRef(0);
+  const catalogsLoadedRef = useRef(false);
+  const catalogRequestRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
-    if (!perfil?.escuela_id) return;
-    const escuelaId = perfil.escuela_id;
-    const fetchId = ++catalogFetchIdRef.current;
-
-    const load = async () => {
-      try {
-        const catalogs = await getDashboardCatalogCached<{
-          alumnos: AlumnoOption[];
-          matriculas: MatriculaOption[];
-        }>({
-          name: "ingresos-form",
-          scope: {
-            id: perfil.id,
-            rol: perfil.rol,
-            escuelaId,
-            sedeId: perfil.sede_id,
-          },
-          loader: async () => {
-            const supabase = createClient();
-            const [a, m] = await Promise.all([
-              fetchAllSupabaseRows<AlumnoOption>((from, to) =>
-                supabase
-                  .from("alumnos")
-                  .select("id, nombre, apellidos")
-                  .eq("escuela_id", escuelaId)
-                  .order("nombre", { ascending: true })
-                  .order("apellidos", { ascending: true })
-                  .range(from, to)
-                  .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
-              ),
-              fetchAllSupabaseRows<MatriculaOption>((from, to) =>
-                supabase
-                  .from("matriculas_alumno")
-                  .select(
-                    "id, alumno_id, numero_contrato, categorias, valor_total, fecha_inscripcion"
-                  )
-                  .eq("escuela_id", escuelaId)
-                  .order("fecha_inscripcion", { ascending: false })
-                  .order("created_at", { ascending: false })
-                  .range(from, to)
-                  .then(({ data, error }) => ({ data: (data as MatriculaOption[]) ?? [], error }))
-              ),
-            ]);
-
-            return {
-              alumnos: a,
-              matriculas: m,
-            };
-          },
-        });
-        if (fetchId !== catalogFetchIdRef.current) return;
-        setAlumnos(catalogs.alumnos);
-        setMatriculas(catalogs.matriculas);
-      } catch (err) {
-        console.error("[IngresosPage] Error cargando catálogos:", err);
-      }
-    };
-
-    void load();
+    catalogsLoadedRef.current = false;
+    catalogRequestRef.current = null;
+    setAlumnos([]);
+    setMatriculas([]);
   }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
+
+  const loadIngresoCatalogs = useCallback(
+    async (forceFresh = false) => {
+      if (!perfil?.escuela_id) return;
+      if (catalogsLoadedRef.current && !forceFresh) return;
+      if (catalogRequestRef.current) return catalogRequestRef.current;
+
+      const escuelaId = perfil.escuela_id;
+      const fetchId = ++catalogFetchIdRef.current;
+      const request = (async () => {
+        setCatalogsLoading(true);
+        try {
+          const catalogs = await getDashboardCatalogCached<{
+            alumnos: AlumnoOption[];
+            matriculas: MatriculaOption[];
+          }>({
+            name: "ingresos-form",
+            scope: {
+              id: perfil.id,
+              rol: perfil.rol,
+              escuelaId,
+              sedeId: perfil.sede_id,
+            },
+            forceFresh,
+            loader: async () => {
+              const supabase = createClient();
+              const [a, m] = await Promise.all([
+                fetchAllSupabaseRows<AlumnoOption>((from, to) =>
+                  supabase
+                    .from("alumnos")
+                    .select("id, nombre, apellidos")
+                    .eq("escuela_id", escuelaId)
+                    .order("nombre", { ascending: true })
+                    .order("apellidos", { ascending: true })
+                    .range(from, to)
+                    .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
+                ),
+                fetchAllSupabaseRows<MatriculaOption>((from, to) =>
+                  supabase
+                    .from("matriculas_alumno")
+                    .select(
+                      "id, alumno_id, numero_contrato, categorias, valor_total, fecha_inscripcion"
+                    )
+                    .eq("escuela_id", escuelaId)
+                    .order("fecha_inscripcion", { ascending: false })
+                    .order("created_at", { ascending: false })
+                    .range(from, to)
+                    .then(({ data, error }) => ({ data: (data as MatriculaOption[]) ?? [], error }))
+                ),
+              ]);
+
+              return {
+                alumnos: a,
+                matriculas: m,
+              };
+            },
+          });
+
+          if (fetchId !== catalogFetchIdRef.current) return;
+          catalogsLoadedRef.current = true;
+          setAlumnos(catalogs.alumnos);
+          setMatriculas(catalogs.matriculas);
+        } finally {
+          if (fetchId === catalogFetchIdRef.current) {
+            setCatalogsLoading(false);
+          }
+          catalogRequestRef.current = null;
+        }
+      })();
+
+      catalogRequestRef.current = request;
+      return request;
+    },
+    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
+  );
 
   // ─── Ledger data ──────────────────────────────────────────────────
 
@@ -253,48 +278,6 @@ export default function IngresosPage() {
   const ledger = report?.ledger;
   const breakdown = report?.breakdown;
   const totalCount = ledger?.totalCount || 0;
-  const selectedViewMeta =
-    INCOME_VIEW_ITEMS.find((item) => item.id === filtroView) || INCOME_VIEW_ITEMS[0];
-  const generatedAtLabel = report?.generatedAt
-    ? new Intl.DateTimeFormat("es-CO", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(report.generatedAt))
-    : "Actualizando datos";
-  const leadingCategory = breakdown?.ingresosPorCategoria?.[0];
-  const leadingMethod = breakdown?.ingresosPorMetodo?.[0];
-  const leadingLine = breakdown?.ingresosPorLinea?.[0];
-  const leadingConcept = breakdown?.topConceptosIngreso?.[0];
-  const insightItems = [
-    {
-      label: "Línea líder",
-      value: leadingLine?.nombre || "Sin datos suficientes",
-      meta: leadingLine
-        ? `${fmt(leadingLine.total)} en ${leadingLine.cantidad} movimientos`
-        : "Aún no hay suficientes movimientos en el rango.",
-    },
-    {
-      label: "Método dominante",
-      value: formatIncomeText(leadingMethod?.metodo_pago),
-      meta: leadingMethod
-        ? `${fmt(leadingMethod.total)} procesados por este medio`
-        : "Sin datos de medios de pago en el rango.",
-    },
-    {
-      label: "Categoría principal",
-      value: formatIncomeText(leadingCategory?.categoria),
-      meta: leadingCategory
-        ? `${fmt(leadingCategory.total)} generados en esta categoría`
-        : "Sin datos de categorías en el rango.",
-    },
-    {
-      label: "Concepto que más recauda",
-      value: leadingConcept?.concepto || "Sin datos suficientes",
-      meta: leadingConcept
-        ? `${fmt(leadingConcept.total)} en ${leadingConcept.cantidad} movimientos`
-        : "No hay conceptos dominantes para mostrar.",
-    },
-  ];
 
   // ─── CRUD state ───────────────────────────────────────────────────
 
@@ -425,6 +408,9 @@ export default function IngresosPage() {
     restoreDraft(emptyForm);
     setError("");
     setModalOpen(true);
+    void loadIngresoCatalogs().catch((err) => {
+      console.error("[IngresosPage] Error cargando catálogos:", err);
+    });
   };
 
   const openEdit = (row: IncomeLedgerRow) => {
@@ -446,6 +432,9 @@ export default function IngresosPage() {
     });
     setError("");
     setModalOpen(true);
+    void loadIngresoCatalogs().catch((err) => {
+      console.error("[IngresosPage] Error cargando catálogos:", err);
+    });
   };
 
   const openDelete = (row: IncomeLedgerRow) => {
@@ -691,12 +680,7 @@ export default function IngresosPage() {
         </div>
       )}
 
-      <IncomeBreakdownSection
-        loading={loading}
-        breakdown={breakdown}
-        insightItems={insightItems}
-        formatMoney={fmt}
-      />
+      <IncomeBreakdownSection loading={loading} breakdown={breakdown} />
 
       <IncomeLedgerSection
         loading={loading}
@@ -704,8 +688,6 @@ export default function IngresosPage() {
         totalCount={totalCount}
         currentPage={currentPage}
         searchTerm={searchTerm}
-        selectedViewMeta={selectedViewMeta}
-        generatedAtLabel={generatedAtLabel}
         pageSize={PAGE_SIZE}
         formatMoney={fmt}
         onPageChange={setCurrentPage}
@@ -724,6 +706,7 @@ export default function IngresosPage() {
         form={form}
         alumnos={alumnos}
         matriculasDisponibles={matriculasDisponibles}
+        catalogsLoading={catalogsLoading}
         saving={saving}
         setForm={setForm}
         onAlumnoChange={handleAlumnoChange}

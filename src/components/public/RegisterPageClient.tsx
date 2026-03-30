@@ -1,31 +1,81 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
-import { getPasswordValidationError } from "@/lib/password-policy";
+import { getPasswordValidationError, PASSWORD_POLICY_HINT } from "@/lib/password-policy";
 import AuthWorkspace from "@/components/public/AuthWorkspace";
 
-function sanitizeAuthError(message: string): string {
+type AuthErrorLike = {
+  message?: string;
+  code?: string;
+  status?: number;
+} | null;
+
+function normalizeAuthErrorMessage(message: string): string {
+  return message.trim().replace(/\s+/g, " ").replace(/\.$/, "");
+}
+
+function describeUnknownAuthError(error: AuthErrorLike): string {
+  const message = normalizeAuthErrorMessage(error?.message ?? "");
+  const code = error?.code?.trim();
+  const status = error?.status;
+  const details = [code, status ? `HTTP ${status}` : ""].filter(Boolean).join(" · ");
+
+  if (message && !message.toLowerCase().includes("auth")) {
+    return `No pudimos crear la cuenta ahora. ${message}.`;
+  }
+
+  if (details) {
+    return `No pudimos crear la cuenta ahora. Código: ${details}.`;
+  }
+
+  return "No pudimos crear la cuenta ahora. Intenta de nuevo en unos minutos.";
+}
+
+function sanitizeAuthError(error: AuthErrorLike): string {
+  const message = error?.message ?? "";
+  const code = error?.code ?? "";
   const lower = message.toLowerCase();
+
+  if (code === "over_email_send_rate_limit" || lower.includes("rate limit")) {
+    return "Ya intentaste registrarte hace poco. Espera unos minutos y vuelve a intentarlo.";
+  }
   if (lower.includes("already registered") || lower.includes("already exists")) {
     return "Ya existe una cuenta con este correo electrónico.";
   }
-  if (lower.includes("invalid email")) {
+  if (
+    code === "email_address_invalid" ||
+    lower.includes("invalid email") ||
+    lower.includes("is invalid")
+  ) {
     return "El formato del correo electrónico no es válido.";
   }
   if (lower.includes("password")) {
     return "La contraseña no cumple los requisitos mínimos.";
   }
-  return "Error al crear la cuenta. Intenta de nuevo.";
+  if (
+    code === "unexpected_failure" ||
+    lower.includes("database error") ||
+    lower.includes("unexpected_failure") ||
+    lower.includes("internal")
+  ) {
+    return "No pudimos terminar el registro por un problema interno. Intenta de nuevo en unos minutos.";
+  }
+  if (lower.includes("fetch") || lower.includes("network")) {
+    return "No se pudo conectar con el servicio de registro. Verifica tu conexión e intenta de nuevo.";
+  }
+
+  return describeUnknownAuthError(error);
 }
 
 export default function RegisterPageClient() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     nombre: "",
@@ -38,9 +88,16 @@ export default function RegisterPageClient() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const passwordHint = useMemo(() => {
+    if (!formData.password) return PASSWORD_POLICY_HINT;
+
+    return getPasswordValidationError(formData.password) ?? PASSWORD_POLICY_HINT;
+  }, [formData.password]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setLoading(true);
 
     const nombre = formData.nombre.trim();
@@ -62,51 +119,69 @@ export default function RegisterPageClient() {
     }
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            nombre,
-            escuela,
-          },
-        },
+      const registerResponse = await fetch("/api/public/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre, email, escuela, password }),
       });
+      const registerPayload = (await registerResponse.json().catch(() => null)) as {
+        error?: string;
+      } | null;
 
-      if (error) {
-        setError(sanitizeAuthError(error.message));
+      if (!registerResponse.ok) {
+        const backendError =
+          registerPayload && typeof registerPayload.error === "string"
+            ? registerPayload.error
+            : "No se pudo crear la cuenta en este momento. Intenta de nuevo.";
+        setError(backendError);
         setLoading(false);
         return;
       }
 
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        setSuccess("Tu cuenta fue creada. Inicia sesión para entrar al panel de administración.");
+        setLoading(false);
+        router.push(`/login?registered=1&email=${encodeURIComponent(email)}`);
+        return;
+      }
+
+      router.refresh();
       router.push("/dashboard");
-    } catch {
-      setError("Error de conexión. Intenta de nuevo.");
+    } catch (error) {
+      const authError =
+        error && typeof error === "object"
+          ? {
+              message: "message" in error ? String(error.message ?? "") : "",
+              code: "code" in error ? String(error.code ?? "") : "",
+              status:
+                "status" in error && typeof error.status === "number" ? error.status : undefined,
+            }
+          : null;
+
+      console.error("[registro] signUp threw", authError ?? error);
+      setError(sanitizeAuthError(authError));
       setLoading(false);
     }
   };
 
   return (
     <AuthWorkspace
-      badge="Configuración inicial"
+      mode="register"
+      badge="Registro"
       title="Crea tu cuenta"
-      description="Registra tu autoescuela en Condusoft y deja lista la estructura básica para empezar a operar en Colombia."
+      description="Abre tu escuela en Condusoft con una base seria y lista para empezar a operar."
       backLabel="Volver al inicio"
-      helperTitle="Una base sólida para tu escuela"
+      helperTitle="Empieza con una base clara, sobria y lista para crecer"
       highlights={[
         {
-          title: "Escuela y sede",
-          description: "Se crea la base inicial para que no arranques con configuraciones vacías.",
+          title: "Base inicial lista",
+          description: "La escuela y el acceso administrador quedan listos desde el registro.",
         },
         {
-          title: "Control por módulos",
-          description:
-            "Alumnos, pagos, agenda, gastos y flota quedan listos dentro del mismo sistema.",
-        },
-        {
-          title: "Escalamiento limpio",
-          description: "Puedes crecer a más usuarios y sedes sin desordenar la operación.",
+          title: "Paso siguiente claro",
+          description: "Terminas el alta y entras al panel o vuelves al login con el correo listo.",
         },
       ]}
     >
@@ -116,40 +191,52 @@ export default function RegisterPageClient() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="nombre" className="apple-label">
-            Nombre completo
-          </label>
-          <input
-            id="nombre"
-            name="nombre"
-            type="text"
-            value={formData.nombre}
-            onChange={handleChange}
-            placeholder="Tu nombre"
-            required
-            autoComplete="name"
-            maxLength={100}
-            className="apple-input"
-          />
+      {success && (
+        <div className="mb-4 rounded-2xl border border-emerald-200/70 bg-emerald-50/80 p-3 text-center text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+          {success}
         </div>
+      )}
 
-        <div>
-          <label htmlFor="email" className="apple-label">
-            Correo electrónico
-          </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            value={formData.email}
-            onChange={handleChange}
-            placeholder="tu@email.com"
-            required
-            autoComplete="email"
-            className="apple-input"
-          />
+      <p className="apple-auth-field-hint mb-5">
+        Te dejamos la escuela creada y tu usuario administrador listo para entrar.
+      </p>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="nombre" className="apple-label">
+              Nombre completo
+            </label>
+            <input
+              id="nombre"
+              name="nombre"
+              type="text"
+              value={formData.nombre}
+              onChange={handleChange}
+              placeholder="Tu nombre"
+              required
+              autoComplete="name"
+              maxLength={100}
+              className="apple-input"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="email" className="apple-label">
+              Correo electrónico
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="tu@email.com"
+              required
+              autoComplete="email"
+              className="apple-input"
+            />
+          </div>
         </div>
 
         <div>
@@ -168,15 +255,18 @@ export default function RegisterPageClient() {
             maxLength={150}
             className="apple-input"
           />
+          <p className="apple-auth-field-hint mt-2">
+            Usamos este nombre para crear tu escuela inicial.
+          </p>
         </div>
 
         <div>
-          <label htmlFor="password" className="apple-label">
+          <label htmlFor="new-password" className="apple-label">
             Contraseña
           </label>
           <div className="relative">
             <input
-              id="password"
+              id="new-password"
               name="password"
               type={showPassword ? "text" : "password"}
               value={formData.password}
@@ -195,12 +285,21 @@ export default function RegisterPageClient() {
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+          <p
+            className={`mt-2 text-xs ${
+              formData.password && getPasswordValidationError(formData.password)
+                ? "text-red-500 dark:text-red-400"
+                : "text-[var(--gray-500)]"
+            }`}
+          >
+            {passwordHint}
+          </p>
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="apple-button-primary flex w-full justify-center py-3 text-sm font-medium disabled:opacity-50"
+          className="apple-button-primary flex min-h-[52px] w-full justify-center py-3.5 text-sm font-semibold disabled:opacity-50"
         >
           {loading ? (
             <>
@@ -211,16 +310,14 @@ export default function RegisterPageClient() {
             "Crear cuenta"
           )}
         </button>
+
+        <p className="apple-copy text-center text-xs leading-6">
+          Si no entra automáticamente, te llevamos al login con tu correo ya preparado.
+        </p>
       </form>
 
-      <div className="my-6 flex items-center gap-3">
-        <div className="apple-divider flex-1" />
-        <span className="text-xs text-[var(--gray-500)]">o</span>
-        <div className="apple-divider flex-1" />
-      </div>
-
-      <p className="text-center text-sm text-[var(--gray-500)]">
-        ¿Ya tienes cuenta?{" "}
+      <p className="apple-copy mt-6 text-center text-sm">
+        ¿Ya tienes acceso?{" "}
         <Link href="/login" className="apple-link">
           Iniciar sesión
         </Link>

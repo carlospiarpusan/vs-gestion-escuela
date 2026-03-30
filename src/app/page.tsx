@@ -20,7 +20,7 @@ import {
 } from "@/lib/site-metadata";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "Condusoft | El mejor software para autoescuelas en Colombia (CEA)",
+  title: "Condusoft | Software para autoescuelas en Colombia con cumplimiento interno",
   description: SITE_DESCRIPTION,
   path: "/",
   keywords: SITE_KEYWORDS,
@@ -78,6 +78,9 @@ export default function Home() {
           "Gestión financiera",
           "Gestión de flota",
           "Centros de Enseñanza Automovilística (CEA)",
+          "Protección de datos",
+          "Solicitudes ARCO",
+          "Cumplimiento interno",
         ],
       },
       {

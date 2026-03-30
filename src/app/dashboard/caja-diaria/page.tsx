@@ -1,21 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { createClient } from "@/lib/supabase";
 import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
-import {
-  downloadCsv,
-  formatAccountingMoney,
-  MONTH_OPTIONS,
-} from "@/lib/accounting-dashboard";
+import { downloadCsv, formatAccountingMoney, MONTH_OPTIONS } from "@/lib/accounting-dashboard";
 import { fetchDailyCashDashboard } from "@/lib/finance/daily-cash-service";
 import { AccountingWorkspaceHeader } from "@/components/dashboard/accounting/AccountingWorkspace";
 import ExportFormatActions from "@/components/dashboard/ExportFormatActions";
 import type { DailyCashRow, DailyCashStats } from "@/lib/finance/types";
 import { downloadSpreadsheetWorkbook } from "@/lib/spreadsheet-export";
+import { getDashboardCatalogCached } from "@/lib/dashboard-client-cache";
 import {
   AlumnoOption,
+  currentDate,
   currentMonth,
   currentYear,
   emptyStats,
@@ -69,34 +67,86 @@ export default function CajaDiariaPage() {
 
   const [alumnos, setAlumnos] = useState<AlumnoOption[]>([]);
   const catalogFetchIdRef = useRef(0);
+  const catalogRequestRef = useRef<Promise<void> | null>(null);
 
-  useEffect(() => {
+  const loadAlumnoCatalog = useCallback(async () => {
     if (!perfil?.escuela_id) return;
+    if (catalogRequestRef.current) return catalogRequestRef.current;
+
     const escuelaId = perfil.escuela_id;
     const fetchId = ++catalogFetchIdRef.current;
-    const supabase = createClient();
-
-    const load = async () => {
+    const request = (async () => {
       try {
-        const a = await fetchAllSupabaseRows<AlumnoOption>((from, to) =>
-          supabase
-            .from("alumnos")
-            .select("id, nombre, apellidos")
-            .eq("escuela_id", escuelaId)
-            .order("nombre", { ascending: true })
-            .order("apellidos", { ascending: true })
-            .range(from, to)
-            .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
-        );
-        if (fetchId !== catalogFetchIdRef.current) return;
-        setAlumnos(a);
-      } catch (err) {
-        console.error("[CajaDiariaPage] Error cargando alumnos:", err);
+        const payload = await getDashboardCatalogCached<AlumnoOption[]>({
+          name: "caja-diaria-alumnos",
+          scope: {
+            id: perfil.id,
+            rol: perfil.rol,
+            escuelaId,
+            sedeId: perfil.sede_id,
+          },
+          loader: async () => {
+            const supabase = createClient();
+            return fetchAllSupabaseRows<AlumnoOption>((from, to) =>
+              supabase
+                .from("alumnos")
+                .select("id, nombre, apellidos")
+                .eq("escuela_id", escuelaId)
+                .order("nombre", { ascending: true })
+                .order("apellidos", { ascending: true })
+                .range(from, to)
+                .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
+            );
+          },
+        });
+
+        if (fetchId === catalogFetchIdRef.current) {
+          setAlumnos(payload);
+        }
+      } finally {
+        catalogRequestRef.current = null;
       }
+    })();
+
+    catalogRequestRef.current = request;
+    return request;
+  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
+
+  useEffect(() => {
+    setAlumnos([]);
+    catalogRequestRef.current = null;
+  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
+
+  useEffect(() => {
+    if (!perfil?.escuela_id || typeof window === "undefined") return;
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let idleId: number | null = null;
+
+    const triggerLoad = () => {
+      if (cancelled) return;
+      void loadAlumnoCatalog().catch((err) => {
+        console.error("[CajaDiariaPage] Error cargando alumnos:", err);
+      });
     };
 
-    void load();
-  }, [perfil?.escuela_id]);
+    if ("requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(triggerLoad, { timeout: 400 });
+    } else {
+      timeoutId = setTimeout(triggerLoad, 120);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId !== null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [loadAlumnoCatalog, perfil?.escuela_id]);
 
   // ─── Data ─────────────────────────────────────────────────────────
 
@@ -155,6 +205,9 @@ export default function CajaDiariaPage() {
 
   const selectedMonthLabel =
     MONTH_OPTIONS.find((item) => item.value === filtroMes)?.label || "Mes actual";
+  const showTodaySummary =
+    Number(filtroYear) === currentYear && (!filtroMes || Number(filtroMes) === currentMonth);
+  const todayRow = showTodaySummary ? rows.find((row) => row.fecha === currentDate) || null : null;
 
   const handleExport = async (format: "csv" | "xls") => {
     if (rows.length === 0) return;
@@ -257,6 +310,8 @@ export default function CajaDiariaPage() {
         stats={stats}
         formatMoney={fmt}
         periodLabel={selectedMonthLabel}
+        showTodaySummary={showTodaySummary}
+        todayRow={todayRow}
       />
 
       {error && (

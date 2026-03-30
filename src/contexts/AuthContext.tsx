@@ -74,6 +74,24 @@ interface AuthContextValue {
   logout: () => Promise<void>;
 }
 
+const noopAsync = async () => {};
+
+const FALLBACK_AUTH_CONTEXT: AuthContextValue = {
+  user: null,
+  perfil: null,
+  escuelaNombre: null,
+  sedeNombre: null,
+  schoolOptions: [],
+  activeEscuelaId: null,
+  setActiveEscuelaId: noopAsync,
+  refreshProfile: noopAsync,
+  loading: true,
+  error: null,
+  logout: noopAsync,
+};
+
+let warnedAboutMissingAuthProvider = false;
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 /* ─── Proveedor ─── */
@@ -428,6 +446,15 @@ export function AuthProvider({
 /* ─── Hook consumidor ─── */
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth debe usarse dentro de <AuthProvider>");
-  return ctx;
+  if (ctx) return ctx;
+
+  if (process.env.NODE_ENV !== "production" && !warnedAboutMissingAuthProvider) {
+    // eslint-disable-next-line react-hooks/globals
+    warnedAboutMissingAuthProvider = true;
+    console.warn(
+      "[AuthContext] useAuth se renderizo sin <AuthProvider>; devolviendo fallback seguro."
+    );
+  }
+
+  return FALLBACK_AUTH_CONTEXT;
 }

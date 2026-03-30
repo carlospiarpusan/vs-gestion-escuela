@@ -5,7 +5,6 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   AccountingChipTabs,
   AccountingMiniList,
-  AccountingPanel,
   AccountingStatCard,
   AccountingWorkspaceHeader,
 } from "@/components/dashboard/accounting/AccountingWorkspace";
@@ -172,94 +171,91 @@ export default function CarteraPage() {
     [report?.pendingRows]
   );
   const totalCount = report?.pendingCount || 0;
-  const pageTotal = useMemo(
-    () => rows.reduce((sum, r) => sum + Number(r.saldoPendiente || 0), 0),
-    [rows]
-  );
-  const monthly = report?.monthly || [];
   const oldPending = report?.oldestPending || [];
   const veryOldTotal = oldPending
     .filter((r) => r.diasPendiente >= 60)
     .reduce((s, r) => s + Number(r.saldoPendiente || 0), 0);
-  const buckets = report?.buckets || [];
   const topDeudores = report?.topDeudores || [];
 
   // ─── Export ───────────────────────────────────────────────────────
 
   const [exportingFormat, setExportingFormat] = useState<"csv" | "xls" | null>(null);
 
-  const handleExport = useCallback(async (format: "csv" | "xls") => {
-    if (!perfil?.escuela_id) return;
-    setExportingFormat(format);
+  const handleExport = useCallback(
+    async (format: "csv" | "xls") => {
+      if (!perfil?.escuela_id) return;
+      setExportingFormat(format);
 
-    try {
-      const { from, to } = filtroYear
-        ? getMonthDateRange(Number(filtroYear), filtroMes)
-        : { from: "2000-01-01", to: "2099-12-31" };
-      const params = new URLSearchParams({
-        from,
-        to,
-        page: "0",
-        pageSize: "10000",
-      });
-      if (activeView !== "all") params.set("view", activeView);
-      if (filtroMetodo) params.set("metodo", filtroMetodo);
-      if (searchTerm) params.set("q", searchTerm);
+      try {
+        const { from, to } = filtroYear
+          ? getMonthDateRange(Number(filtroYear), filtroMes)
+          : { from: "2000-01-01", to: "2099-12-31" };
+        const params = new URLSearchParams({
+          from,
+          to,
+          page: "0",
+          pageSize: "10000",
+        });
+        if (activeView !== "all") params.set("view", activeView);
+        if (filtroMetodo) params.set("metodo", filtroMetodo);
+        if (searchTerm) params.set("q", searchTerm);
 
-      const payload = await fetchPortfolioDashboard(params, { useCache: false });
-      const allRows = payload.pendingRows || [];
-      if (allRows.length === 0) return;
-      const headers = [
-        "Registro",
-        "Alumno",
-        "Documento",
-        "Referencia",
-        "Tipo",
-        "Esperado",
-        "Cobrado",
-        "Saldo",
-        "Días pendiente",
-      ];
-      const rows = allRows.map((r) => [
-        r.fechaRegistro,
-        r.nombre,
-        r.documento,
-        r.referencia,
-        r.tipoRegistro,
-        Number(r.valorEsperado),
-        Number(r.valorCobrado),
-        Number(r.saldoPendiente),
-        r.diasPendiente,
-      ]);
+        const payload = await fetchPortfolioDashboard(params, { useCache: false });
+        const allRows = payload.pendingRows || [];
+        if (allRows.length === 0) return;
+        const headers = [
+          "Registro",
+          "Alumno",
+          "Documento",
+          "Referencia",
+          "Tipo",
+          "Esperado",
+          "Cobrado",
+          "Saldo",
+          "Días pendiente",
+        ];
+        const rows = allRows.map((r) => [
+          r.fechaRegistro,
+          r.nombre,
+          r.documento,
+          r.referencia,
+          r.tipoRegistro,
+          Number(r.valorEsperado),
+          Number(r.valorCobrado),
+          Number(r.saldoPendiente),
+          r.diasPendiente,
+        ]);
 
-      if (format === "csv") {
-        downloadCsv("cartera-pendiente.csv", headers, rows);
-        return;
+        if (format === "csv") {
+          downloadCsv("cartera-pendiente.csv", headers, rows);
+          return;
+        }
+
+        await downloadSpreadsheetWorkbook("cartera-pendiente.xls", [
+          {
+            name: "Resumen cartera",
+            headers: ["Indicador", "Valor"],
+            rows: [
+              ["Registros pendientes", payload.summary?.registros || 0],
+              ["Total esperado", payload.summary?.totalEsperado || 0],
+              ["Total cobrado", payload.summary?.totalCobrado || 0],
+              ["Total pendiente", payload.summary?.totalPendiente || 0],
+            ],
+          },
+          {
+            name: "Pendientes",
+            headers,
+            rows,
+          },
+        ]);
+      } catch {
+        // silent
+      } finally {
+        setExportingFormat(null);
       }
-
-      await downloadSpreadsheetWorkbook("cartera-pendiente.xls", [
-        {
-          name: "Resumen cartera",
-          headers: ["Indicador", "Valor"],
-          rows: [
-            ["Registros pendientes", payload.summary?.registros || 0],
-            ["Total esperado", payload.summary?.totalEsperado || 0],
-            ["Total cobrado", payload.summary?.totalCobrado || 0],
-            ["Total pendiente", payload.summary?.totalPendiente || 0],
-          ],
-        },
-        {
-          name: "Pendientes",
-          headers,
-          rows,
-        },
-      ]);
-    } catch {
-      // silent
-    } finally {
-      setExportingFormat(null);
-    }
-  }, [perfil?.escuela_id, activeView, filtroYear, filtroMes, filtroMetodo, searchTerm]);
+    },
+    [perfil?.escuela_id, activeView, filtroYear, filtroMes, filtroMetodo, searchTerm]
+  );
 
   // ─── Columns ──────────────────────────────────────────────────────
 
@@ -445,9 +441,6 @@ export default function CarteraPage() {
                 Limpiar
               </button>
             </div>
-            <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
-              Pendiente: {fmt(pageTotal)}
-            </p>
           </div>
         )}
       </div>
@@ -494,113 +487,55 @@ export default function CarteraPage() {
         />
       </div>
 
-      {/* Aging + Top deudores */}
-      {!loading && (buckets.length > 0 || topDeudores.length > 0) && (
-        <div className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <AccountingBreakdownCard
-            title="Antigüedad de cartera"
-            subtitle="Distribución de los saldos pendientes por estado de vencimiento."
-            rows={buckets.map(
-              (r) =>
-                ({
-                  ...r,
-                  concepto: r.bucket,
-                  cantidad: r.cantidad,
-                  total: r.total,
-                }) as AccountingBreakdownRow
-            )}
-            labelKey="concepto"
-            emptyLabel="Sin cartera pendiente."
-          />
-          <AccountingBreakdownCard
-            title="Top deudores"
-            subtitle="Alumnos o referencias con mayor saldo pendiente."
-            rows={topDeudores.map(
-              (r) =>
-                ({
-                  ...r,
-                  concepto: r.nombre,
-                  cantidad: r.cantidad,
-                  total: r.total,
-                }) as AccountingBreakdownRow
-            )}
-            labelKey="concepto"
-            emptyLabel="Sin deudores pendientes."
-          />
-        </div>
-      )}
+      {/* Follow-up priorities */}
+      {!loading && (topDeudores.length > 0 || oldPending.length > 0) && (
+        <div className="mb-4 space-y-4">
+          <div className="px-1">
+            <p className="text-[11px] font-semibold tracking-[0.18em] text-[#7b8591] uppercase">
+              Prioridades de seguimiento
+            </p>
+            <h3 className="mt-2 text-lg font-semibold text-[#111214] dark:text-[#f5f5f7]">
+              Enfoca la gestión donde la deuda pesa más
+            </h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#66707a] dark:text-[#aeb6bf]">
+              Dejamos solo los bloques que ayudan a decidir a quién llamar primero y qué saldos
+              llevan más tiempo abiertos.
+            </p>
+          </div>
 
-      {/* Cohort + Oldest pending */}
-      {!loading && (monthly.length > 0 || oldPending.length > 0) && (
-        <div className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <AccountingPanel
-            title="Esperado vs cobrado por cohorte"
-            description="Cuánto debía entrar por registros creados en cada mes y cuánto sigue pendiente."
-          >
-            {monthly.length === 0 ? (
-              <p className="text-sm text-[#86868b]">No hay registros contractuales.</p>
-            ) : (
-              <div className="space-y-3">
-                {monthly.slice(0, 6).map((row) => (
-                  <div
-                    key={row.periodo}
-                    className="rounded-2xl bg-[#f7f9fc] px-4 py-3 dark:bg-[#111214]"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                          {row.periodo}
-                        </p>
-                        <p className="mt-1 text-xs text-[#86868b]">
-                          {row.registros} registro{row.registros === 1 ? "" : "s"} · Esperado{" "}
-                          {fmt(row.valorEsperado)}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                          {fmt(row.valorCobrado)}
-                        </p>
-                        <p className="text-xs text-amber-600 dark:text-amber-400">
-                          Pendiente {fmt(row.saldoPendiente)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                      <div
-                        className="h-full rounded-full bg-[#0071e3]"
-                        style={{
-                          width: `${Math.max(6, Math.min(100, row.valorEsperado > 0 ? Math.round((row.valorCobrado / row.valorEsperado) * 100) : 0))}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </AccountingPanel>
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <AccountingBreakdownCard
+              title="Top deudores"
+              subtitle="Alumnos o referencias con mayor saldo pendiente."
+              rows={topDeudores.map(
+                (r) =>
+                  ({
+                    ...r,
+                    concepto: r.nombre,
+                    cantidad: r.cantidad,
+                    total: r.total,
+                  }) as AccountingBreakdownRow
+              )}
+              labelKey="concepto"
+              emptyLabel="Sin deudores pendientes."
+            />
 
-          <AccountingMiniList
-            title="Pendientes más antiguos"
-            description="Saldos abiertos desde hace más tiempo para priorizar seguimiento."
-            emptyLabel="No hay saldos antiguos pendientes."
-            items={oldPending.slice(0, 5).map((row) => ({
-              label: row.nombre,
-              value: fmt(Number(row.saldoPendiente || 0)),
-              meta: `${row.diasPendiente} día${row.diasPendiente === 1 ? "" : "s"} · ${row.referencia || row.documento || "Sin referencia"}`,
-            }))}
-          />
+            <AccountingMiniList
+              title="Pendientes más antiguos"
+              description="Saldos abiertos desde hace más tiempo para priorizar seguimiento."
+              emptyLabel="No hay saldos antiguos pendientes."
+              items={oldPending.slice(0, 5).map((row) => ({
+                label: row.nombre,
+                value: fmt(Number(row.saldoPendiente || 0)),
+                meta: `${row.diasPendiente} día${row.diasPendiente === 1 ? "" : "s"} · ${row.referencia || row.documento || "Sin referencia"}`,
+              }))}
+            />
+          </div>
         </div>
       )}
 
       {/* DataTable */}
       <div className="apple-panel rounded-[24px] p-4 sm:p-6">
-        {rows.length > 0 && (
-          <div className="mb-3 flex justify-end">
-            <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
-              Pendiente en página: {fmt(pageTotal)}
-            </p>
-          </div>
-        )}
         <DataTable
           key="cartera"
           columns={columns}

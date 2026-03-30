@@ -1,10 +1,10 @@
 "use client";
 
 import Modal from "@/components/dashboard/Modal";
-import { getContractPrefixHint, normalizeContractNumber } from "@/lib/contract-number";
 import type { MetodoPago } from "@/types/database";
 import type { Dispatch, SetStateAction } from "react";
 import type { AlumnoRow, MatriculaFormType } from "./constants";
+import { useContractPreview } from "./useContractPreview";
 import {
   metodosPago,
   TODAS_CATEGORIAS,
@@ -22,6 +22,7 @@ interface MatriculaModalProps {
   matriculaSaving: boolean;
   handleSaveMatricula: () => void;
   toggleMatriculaCategoria: (cat: string) => void;
+  catalogsLoading?: boolean;
   categoriasEscuela: string[];
   tramitadorOptions: string[];
 }
@@ -35,10 +36,20 @@ export default function MatriculaModal({
   matriculaSaving,
   handleSaveMatricula,
   toggleMatriculaCategoria,
+  catalogsLoading = false,
   categoriasEscuela,
   tramitadorOptions,
 }: MatriculaModalProps) {
   const tramitadorListId = "matricula-tramitador-options";
+  const {
+    preview: contractPreview,
+    loading: loadingContractPreview,
+    error: contractPreviewError,
+    hasCategorias,
+  } = useContractPreview({
+    enabled: matriculaOpen,
+    categorias: matriculaForm.categorias,
+  });
 
   return (
     <Modal
@@ -48,6 +59,12 @@ export default function MatriculaModal({
       maxWidth="max-w-xl"
     >
       <div className="space-y-4">
+        {catalogsLoading && (
+          <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[#66707a] dark:text-[#aeb6bf]">
+            Cargando categorías y sugerencias para la matrícula...
+          </div>
+        )}
+
         {matriculaAlumno && matriculaAlumno.matriculas.length > 0 && (
           <div className="rounded-xl bg-gray-50 px-4 py-3 dark:bg-[#0a0a0a]">
             <p className="mb-2 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
@@ -107,26 +124,28 @@ export default function MatriculaModal({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={labelClass}>N° contrato</label>
+            <label className={labelClass}>N° contrato automático</label>
             <input
               type="text"
-              value={matriculaForm.numero_contrato}
-              onChange={(e) =>
-                setMatriculaForm({ ...matriculaForm, numero_contrato: e.target.value })
+              value={contractPreview?.nextNumber || ""}
+              readOnly
+              placeholder={
+                !hasCategorias
+                  ? "Selecciona categorías"
+                  : loadingContractPreview
+                    ? "Calculando..."
+                    : "Se asigna al guardar"
               }
-              onBlur={(e) =>
-                setMatriculaForm({
-                  ...matriculaForm,
-                  numero_contrato:
-                    normalizeContractNumber(e.target.value, matriculaForm.categorias) ?? "",
-                })
-              }
-              placeholder={getContractPrefixHint(matriculaForm.categorias)}
               className={inputClass}
             />
             <p className="mt-1 text-xs text-[#86868b]">
-              Se guarda con prefijo obligatorio segun la categoria:{" "}
-              {getContractPrefixHint(matriculaForm.categorias)}.
+              {loadingContractPreview
+                ? "Consultando el siguiente consecutivo..."
+                : contractPreview
+                  ? `Se reservará ${contractPreview.nextNumber} al guardar. Solo se usa ${contractPreview.prefix} y el consecutivo siguiente.`
+                  : contractPreviewError
+                    ? "No pudimos previsualizar el contrato. Se reservará automáticamente al guardar."
+                    : "El contrato se reserva automáticamente al guardar como MOT, CAR o COM más el consecutivo."}
             </p>
           </div>
           <div>

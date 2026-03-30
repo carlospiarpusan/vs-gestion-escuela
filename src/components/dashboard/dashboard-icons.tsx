@@ -15,6 +15,7 @@ import {
   Fingerprint,
   Home,
   Landmark,
+  LifeBuoy,
   ReceiptText,
   ShieldCheck,
   TrendingDown,
@@ -64,10 +65,14 @@ export function renderDashboardIcon(icon: DashboardIconKey, size = 18): ReactNod
       return <CreditCard size={size} />;
     case "payroll":
       return <Banknote size={size} />;
+    case "contracts":
+      return <FileText size={size} />;
     case "logbook":
       return <BookOpen size={size} />;
     case "permissions":
       return <ShieldCheck size={size} />;
+    case "compliance":
+      return <LifeBuoy size={size} />;
     case "analytics":
       return <Activity size={size} />;
     case "arco":

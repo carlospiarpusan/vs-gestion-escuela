@@ -13,9 +13,9 @@ export default function Pricing() {
   return (
     <section
       id="pricing"
-      className="border-y border-gray-100 bg-[linear-gradient(180deg,rgba(244,247,252,0.9),rgba(255,255,255,0.96))] py-16 sm:py-24 md:py-32 dark:border-gray-900 dark:bg-[linear-gradient(180deg,rgba(10,10,12,0.95),rgba(0,0,0,1))]"
+      className="scroll-mt-28 border-y border-gray-100 bg-[linear-gradient(180deg,rgba(244,247,252,0.9),rgba(255,255,255,0.96))] py-16 sm:scroll-mt-32 sm:py-24 md:py-32 dark:border-gray-900 dark:bg-[linear-gradient(180deg,rgba(10,10,12,0.95),rgba(0,0,0,1))]"
     >
-      <div className="mx-auto max-w-[1180px] px-6">
+      <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
         <SectionIntro
           badge="Planes para autoescuelas"
           title="Elige el plan según la etapa real de tu escuela"
@@ -123,13 +123,13 @@ export default function Pricing() {
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/registro"
-                className="apple-button-primary min-h-[48px] justify-center text-sm font-semibold"
+                className="apple-button-primary min-h-[48px] w-full justify-center text-sm font-semibold sm:w-auto"
               >
                 Crear cuenta
               </Link>
               <a
                 href="#contacto"
-                className="apple-button-secondary min-h-[48px] justify-center text-sm font-semibold"
+                className="apple-button-secondary min-h-[48px] w-full justify-center text-sm font-semibold sm:w-auto"
               >
                 Solicitar acompañamiento
               </a>

@@ -13,9 +13,9 @@ import {
 } from "lucide-react";
 import Modal from "@/components/dashboard/Modal";
 import { DEPARTAMENTOS_COLOMBIA } from "@/lib/colombia";
-import { getContractPrefixHint, normalizeContractNumber } from "@/lib/contract-number";
 import type { EstadoAlumno, MetodoPago, TipoRegistroAlumno } from "@/types/database";
 import type { AlumnoFormType, AlumnoRow, MatriculaResumen } from "./constants";
+import { useContractPreview } from "./useContractPreview";
 import {
   CATEGORIAS_APTITUD,
   TODAS_CATEGORIAS,
@@ -42,6 +42,7 @@ interface AlumnoModalProps {
   handleSave: () => void;
   toggleCategoria: (cat: string) => void;
   openNewMatricula: (alumno: AlumnoRow) => void;
+  catalogsLoading?: boolean;
   categoriasEscuela: string[];
   tramitadorOptions: string[];
 }
@@ -106,14 +107,30 @@ export default function AlumnoModal({
   handleSave,
   toggleCategoria,
   openNewMatricula,
+  catalogsLoading = false,
   categoriasEscuela,
   tramitadorOptions,
 }: AlumnoModalProps) {
   const tramitadorListId = "alumno-tramitador-options";
+  const isRegularForm = !isAptitudForm && !isPracticeForm;
   const valorTotal = parseFloat(String(form.valor_total)) || 0;
   const pagoInicial = parseFloat(String(form.abono)) || 0;
   const saldoPendiente = Math.max(valorTotal - pagoInicial, 0);
   const selectedCategorias = form.categorias.filter(Boolean);
+  const lockedRegularContractNumber =
+    isRegularForm && !editingHasMultipleMatriculas
+      ? editingMatricula?.numero_contrato || null
+      : null;
+  const {
+    preview: contractPreview,
+    loading: loadingContractPreview,
+    error: contractPreviewError,
+    hasCategorias,
+  } = useContractPreview({
+    enabled: modalOpen && isRegularForm && !editingHasMultipleMatriculas,
+    categorias: selectedCategorias,
+    lockedNumber: lockedRegularContractNumber,
+  });
   const regularCategories = categoriasEscuela.length > 0 ? categoriasEscuela : TODAS_CATEGORIAS;
   const title = editing
     ? isAptitudForm
@@ -136,6 +153,11 @@ export default function AlumnoModal({
         : isPracticeForm
           ? "Crear registro de práctica"
           : "Crear alumno";
+  const effectiveReferenceLabel = isRegularForm
+    ? editingHasMultipleMatriculas
+      ? "Gestionado por matrícula"
+      : lockedRegularContractNumber || contractPreview?.nextNumber || "Se generará automáticamente"
+    : form.numero_contrato || "Se genera si la dejas vacía";
 
   return (
     <Modal
@@ -159,6 +181,12 @@ export default function AlumnoModal({
               <BookOpen size={16} />
               Nueva matrícula
             </button>
+          </div>
+        )}
+
+        {catalogsLoading && (
+          <div className="rounded-[18px] border border-[var(--surface-border)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[#66707a] dark:text-[#aeb6bf]">
+            Cargando categorías y sugerencias del formulario...
           </div>
         )}
 
@@ -191,7 +219,7 @@ export default function AlumnoModal({
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Cédula *</label>
+                  <label className={labelClass}>Número de documento *</label>
                   <input
                     type="text"
                     value={form.dni}
@@ -199,6 +227,24 @@ export default function AlumnoModal({
                     className={inputClass}
                     placeholder="Número de documento"
                   />
+                </div>
+                <div>
+                  <label className={labelClass}>Tipo de documento *</label>
+                  <select
+                    value={form.tipo_documento}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        tipo_documento: event.target.value as typeof form.tipo_documento,
+                      })
+                    }
+                    className={selectClass}
+                  >
+                    <option value="CC">CC</option>
+                    <option value="CE">CE</option>
+                    <option value="TI">TI</option>
+                    <option value="PAS">PAS</option>
+                  </select>
                 </div>
                 <div>
                   <label className={labelClass}>Teléfono *</label>
@@ -218,6 +264,18 @@ export default function AlumnoModal({
                     onChange={(event) => setForm({ ...form, email: event.target.value })}
                     className={inputClass}
                     placeholder="correo@ejemplo.com"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Lugar de expedición *</label>
+                  <input
+                    type="text"
+                    value={form.lugar_expedicion_documento}
+                    onChange={(event) =>
+                      setForm({ ...form, lugar_expedicion_documento: event.target.value })
+                    }
+                    className={inputClass}
+                    placeholder="Ciudad de expedición"
                   />
                 </div>
                 <div>
@@ -303,6 +361,7 @@ export default function AlumnoModal({
                             : nextType === "practica_adicional"
                               ? prev.empresa_convenio || "Práctica adicional"
                               : "",
+                        numero_contrato: nextType === "regular" ? "" : prev.numero_contrato,
                         tiene_tramitador: nextType === "regular" ? prev.tiene_tramitador : false,
                         tramitador_nombre: nextType === "regular" ? prev.tramitador_nombre : "",
                         tramitador_valor: nextType === "regular" ? prev.tramitador_valor : "",
@@ -635,25 +694,30 @@ export default function AlumnoModal({
 
                   <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
-                      <label className={labelClass}>N° contrato</label>
+                      <label className={labelClass}>N° contrato automático</label>
                       <input
                         type="text"
-                        value={form.numero_contrato}
-                        onChange={(event) =>
-                          setForm({ ...form, numero_contrato: event.target.value })
-                        }
-                        onBlur={(event) =>
-                          setForm({
-                            ...form,
-                            numero_contrato:
-                              normalizeContractNumber(event.target.value, form.categorias) ?? "",
-                          })
-                        }
+                        value={lockedRegularContractNumber || contractPreview?.nextNumber || ""}
+                        readOnly
                         className={inputClass}
-                        placeholder={getContractPrefixHint(form.categorias)}
+                        placeholder={
+                          !hasCategorias
+                            ? "Selecciona categorías"
+                            : loadingContractPreview
+                              ? "Calculando..."
+                              : "Se asigna al guardar"
+                        }
                       />
                       <p className="mt-2 text-xs text-[#66707a] dark:text-[#aeb6bf]">
-                        Se normaliza con el prefijo correspondiente según la categoría seleccionada.
+                        {lockedRegularContractNumber
+                          ? "Este contrato ya quedó asignado a la matrícula activa."
+                          : loadingContractPreview
+                            ? "Consultando el siguiente consecutivo disponible..."
+                            : contractPreview
+                              ? `Formato final: ${contractPreview.nextNumber}. Solo se usa ${contractPreview.prefix} y el consecutivo siguiente.`
+                              : contractPreviewError
+                                ? "No pudimos previsualizar el contrato. El número definitivo se reserva automáticamente al guardar."
+                                : "El número definitivo se reserva automáticamente al guardar la matrícula como MOT, CAR o COM más el consecutivo."}
                       </p>
                     </div>
                     <div>
@@ -862,13 +926,17 @@ export default function AlumnoModal({
 
                 <div className="rounded-[18px] border border-[var(--surface-border)] bg-[var(--surface-strong)] p-4">
                   <p className="text-xs font-semibold tracking-[0.12em] text-[#7b8591] uppercase">
-                    Referencia
+                    {isRegularForm ? "Contrato" : "Referencia"}
                   </p>
                   <p className="mt-2 text-sm font-semibold text-[#111214] dark:text-[#f5f5f7]">
-                    {form.numero_contrato || "Se generará automáticamente"}
+                    {effectiveReferenceLabel}
                   </p>
                   <p className="mt-2 text-sm text-[#66707a] dark:text-[#aeb6bf]">
-                    Fecha base: {form.fecha_inscripcion || "Sin fecha definida"}
+                    {isRegularForm
+                      ? editingHasMultipleMatriculas
+                        ? "Las matrículas adicionales administran su propio contrato."
+                        : "El número definitivo se toma desde la matrícula guardada."
+                      : `Fecha base: ${form.fecha_inscripcion || "Sin fecha definida"}`}
                   </p>
                 </div>
 

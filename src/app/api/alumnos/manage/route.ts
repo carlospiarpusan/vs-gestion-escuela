@@ -12,7 +12,14 @@ import {
   normalizeEmail,
   parseJsonBody,
 } from "@/lib/api-auth";
-import { normalizeContractNumber } from "@/lib/contract-number";
+import {
+  inferHistoricContractPrefix,
+  normalizeContractSequencePrefix,
+  parseHistoricContractConsecutive,
+  parseHistoricContractPrefix,
+  type ContractSequencePrefix,
+} from "@/lib/contracts";
+import { getContractSchemaCapabilities, reserveNextContractNumber } from "@/lib/contracts-server";
 import { getServerDbPool } from "@/lib/server-db";
 import type { MetodoPago, Rol, TipoRegistroAlumno } from "@/types/database";
 
@@ -32,8 +39,10 @@ const manageAlumnoSchema = z
     nombre: z.string().trim().min(1).max(200),
     apellidos: z.string().trim().min(1).max(200),
     dni: z.string().trim().min(5).max(30),
+    tipo_documento: z.enum(["CC", "CE", "TI", "PAS"]),
     email: z.string().email().optional().nullable(),
     telefono: z.string().trim().min(1).max(80),
+    lugar_expedicion_documento: z.string().trim().min(1).max(160),
     fecha_nacimiento: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -91,6 +100,10 @@ const manageAlumnoSchema = z
     }
   });
 
+const deleteAlumnoSchema = z.object({
+  alumno_id: z.string().uuid(),
+});
+
 type ExistingAlumnoRow = {
   id: string;
   user_id: string;
@@ -109,6 +122,8 @@ type ExistingMatriculaRow = {
   id: string;
   notas: string | null;
   numero_contrato: string | null;
+  prefijo_contrato: ContractSequencePrefix | null;
+  consecutivo_contrato: number | string | null;
   tiene_tramitador: boolean | null;
   tramitador_valor: number | string | null;
 };
@@ -235,6 +250,7 @@ async function provisionAlumnoAuthUser(input: {
 
 async function loadExistingAlumno(alumnoId: string) {
   const pool = getServerDbPool();
+  const contractCapabilities = await getContractSchemaCapabilities(pool);
   const alumnoRes = await pool.query<ExistingAlumnoRow>(
     `
       select id, user_id, escuela_id, sede_id, numero_contrato, tipo_permiso, categorias, valor_total, fecha_inscripcion, estado, tipo_registro
@@ -249,12 +265,33 @@ async function loadExistingAlumno(alumnoId: string) {
   if (!alumno) return null;
 
   const matriculasRes = await pool.query<ExistingMatriculaRow>(
-    `
-      select id, notas, numero_contrato, tiene_tramitador, tramitador_valor
-      from public.matriculas_alumno
-      where alumno_id = $1
-      order by created_at desc
-    `,
+    contractCapabilities.matriculaConsecutive || contractCapabilities.matriculaPrefix
+      ? `
+          select
+            id,
+            notas,
+            numero_contrato,
+            ${contractCapabilities.matriculaPrefix ? "prefijo_contrato" : "null::text as prefijo_contrato"},
+            ${contractCapabilities.matriculaConsecutive ? "consecutivo_contrato" : "null::bigint as consecutivo_contrato"},
+            tiene_tramitador,
+            tramitador_valor
+          from public.matriculas_alumno
+          where alumno_id = $1
+          order by created_at desc
+        `
+      : `
+          select
+            id,
+            notas,
+            numero_contrato,
+            null::text as prefijo_contrato,
+            null as consecutivo_contrato,
+            tiene_tramitador,
+            tramitador_valor
+          from public.matriculas_alumno
+          where alumno_id = $1
+          order by created_at desc
+        `,
     [alumnoId]
   );
 
@@ -403,10 +440,6 @@ async function handleMutation(request: Request, mode: "create" | "update") {
       alumnoUserId = createdAuthUser.userId;
     }
 
-    const numeroContratoRegular =
-      !isAptitud && !isPractice
-        ? normalizeContractNumber(payload.numero_contrato ?? "", payload.categorias)
-        : null;
     const numeroContratoReferencia = isAptitud
       ? payload.numero_contrato?.trim() ||
         existing?.alumno.numero_contrato ||
@@ -444,6 +477,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
 
     try {
       await client.query("BEGIN");
+      const contractCapabilities = await getContractSchemaCapabilities(client);
 
       let alumnoId = payload.alumno_id ?? null;
 
@@ -459,23 +493,25 @@ async function handleMutation(request: Request, mode: "create" | "update") {
               nombre = $6,
               apellidos = $7,
               dni = $8,
-              email = $9,
-              telefono = $10,
-              fecha_nacimiento = $11,
-              direccion = $12,
-              ciudad = $13,
-              departamento = $14,
-              tipo_permiso = $15,
-              categorias = $16,
-              estado = $17,
-              notas = $18,
-              valor_total = $19,
-              fecha_inscripcion = $20,
-              empresa_convenio = $21,
-              nota_examen_teorico = $22,
-              fecha_examen_teorico = $23,
-              nota_examen_practico = $24,
-              fecha_examen_practico = $25,
+              tipo_documento = $9,
+              email = $10,
+              telefono = $11,
+              lugar_expedicion_documento = $12,
+              fecha_nacimiento = $13,
+              direccion = $14,
+              ciudad = $15,
+              departamento = $16,
+              tipo_permiso = $17,
+              categorias = $18,
+              estado = $19,
+              notas = $20,
+              valor_total = $21,
+              fecha_inscripcion = $22,
+              empresa_convenio = $23,
+              nota_examen_teorico = $24,
+              fecha_examen_teorico = $25,
+              nota_examen_practico = $26,
+              fecha_examen_practico = $27,
               tiene_tramitador = false,
               tramitador_nombre = null,
               tramitador_valor = null
@@ -491,8 +527,10 @@ async function handleMutation(request: Request, mode: "create" | "update") {
             payload.nombre,
             payload.apellidos,
             dni,
+            payload.tipo_documento,
             email,
             payload.telefono.trim(),
+            payload.lugar_expedicion_documento.trim(),
             payload.fecha_nacimiento || null,
             payload.direccion?.trim() || null,
             payload.ciudad?.trim() || null,
@@ -527,8 +565,10 @@ async function handleMutation(request: Request, mode: "create" | "update") {
               nombre,
               apellidos,
               dni,
+              tipo_documento,
               email,
               telefono,
+              lugar_expedicion_documento,
               fecha_nacimiento,
               direccion,
               ciudad,
@@ -553,7 +593,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
             values (
               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
               $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-              $21, $22, $23, $24, $25, false, null, null,
+              $21, $22, $23, $24, $25, $26, $27, false, null, null,
               true, now()
             )
             returning id
@@ -567,8 +607,10 @@ async function handleMutation(request: Request, mode: "create" | "update") {
             payload.nombre,
             payload.apellidos,
             dni,
+            payload.tipo_documento,
             email,
             payload.telefono.trim(),
+            payload.lugar_expedicion_documento.trim(),
             payload.fecha_nacimiento || null,
             payload.direccion?.trim() || null,
             payload.ciudad?.trim() || null,
@@ -600,35 +642,177 @@ async function handleMutation(request: Request, mode: "create" | "update") {
       let matriculaId: string | null = null;
       if (gestionaMatricula) {
         if (editingMatricula) {
-          await client.query(
-            `
-              update public.matriculas_alumno
-              set
-                sede_id = $2,
-                numero_contrato = $3,
-                categorias = $4,
-                valor_total = $5,
-                fecha_inscripcion = $6,
-                estado = 'activo',
-                notas = $7,
-                tiene_tramitador = $8,
-                tramitador_nombre = $9,
-                tramitador_valor = $10
-              where id = $1
-            `,
-            [
-              editingMatricula.id,
-              payload.sede_id,
-              numeroContratoRegular,
-              payload.categorias,
-              payload.valor_total ?? null,
-              payload.fecha_inscripcion || hoy,
-              editingMatricula.notas,
-              payload.tiene_tramitador,
-              tramitadorNombre,
-              tramitadorValor,
-            ]
-          );
+          const hadStoredContractNumber = Boolean(editingMatricula.numero_contrato?.trim());
+          const canPersistHistoricalPrefix =
+            contractCapabilities.matriculaPrefix &&
+            (!hadStoredContractNumber || editingMatricula.prefijo_contrato != null);
+          const canPersistHistoricalSequence =
+            contractCapabilities.matriculaConsecutive &&
+            (!hadStoredContractNumber || editingMatricula.consecutivo_contrato != null);
+          let contractNumber = editingMatricula.numero_contrato?.trim() || null;
+          let contractPrefix =
+            normalizeContractSequencePrefix(editingMatricula.prefijo_contrato) ??
+            parseHistoricContractPrefix(contractNumber) ??
+            inferHistoricContractPrefix({
+              numeroContrato: contractNumber,
+              categorias: payload.categorias,
+            });
+          let contractSequence =
+            editingMatricula.consecutivo_contrato == null
+              ? parseHistoricContractConsecutive(contractNumber)
+              : toNumber(editingMatricula.consecutivo_contrato);
+
+          if (!contractNumber) {
+            const nextContract = await reserveNextContractNumber(client, {
+              escuelaId: schoolId,
+              categorias: payload.categorias,
+            });
+            contractNumber = nextContract.nextNumber;
+            contractPrefix = nextContract.prefix;
+            contractSequence = nextContract.nextSequence;
+          }
+
+          if (canPersistHistoricalSequence && canPersistHistoricalPrefix) {
+            await client.query(
+              `
+                update public.matriculas_alumno
+                set
+                  sede_id = $2,
+                  numero_contrato = $3,
+                  prefijo_contrato = $4,
+                  consecutivo_contrato = $5,
+                  categorias = $6,
+                  valor_total = $7,
+                  fecha_inscripcion = $8,
+                  estado = 'activo',
+                  notas = $9,
+                  tiene_tramitador = $10,
+                  tramitador_nombre = $11,
+                  tramitador_valor = $12,
+                  updated_by = $13,
+                  updated_at = now()
+                where id = $1
+              `,
+              [
+                editingMatricula.id,
+                payload.sede_id,
+                contractNumber,
+                contractPrefix,
+                contractSequence,
+                payload.categorias,
+                payload.valor_total ?? null,
+                payload.fecha_inscripcion || hoy,
+                editingMatricula.notas,
+                payload.tiene_tramitador,
+                tramitadorNombre,
+                tramitadorValor,
+                authz.perfil.id,
+              ]
+            );
+          } else if (canPersistHistoricalSequence) {
+            await client.query(
+              `
+                update public.matriculas_alumno
+                set
+                  sede_id = $2,
+                  numero_contrato = $3,
+                  consecutivo_contrato = $4,
+                  categorias = $5,
+                  valor_total = $6,
+                  fecha_inscripcion = $7,
+                  estado = 'activo',
+                  notas = $8,
+                  tiene_tramitador = $9,
+                  tramitador_nombre = $10,
+                  tramitador_valor = $11,
+                  updated_by = $12,
+                  updated_at = now()
+                where id = $1
+              `,
+              [
+                editingMatricula.id,
+                payload.sede_id,
+                contractNumber,
+                contractSequence,
+                payload.categorias,
+                payload.valor_total ?? null,
+                payload.fecha_inscripcion || hoy,
+                editingMatricula.notas,
+                payload.tiene_tramitador,
+                tramitadorNombre,
+                tramitadorValor,
+                authz.perfil.id,
+              ]
+            );
+          } else if (canPersistHistoricalPrefix) {
+            await client.query(
+              `
+                update public.matriculas_alumno
+                set
+                  sede_id = $2,
+                  numero_contrato = $3,
+                  prefijo_contrato = $4,
+                  categorias = $5,
+                  valor_total = $6,
+                  fecha_inscripcion = $7,
+                  estado = 'activo',
+                  notas = $8,
+                  tiene_tramitador = $9,
+                  tramitador_nombre = $10,
+                  tramitador_valor = $11,
+                  updated_by = $12,
+                  updated_at = now()
+                where id = $1
+              `,
+              [
+                editingMatricula.id,
+                payload.sede_id,
+                contractNumber,
+                contractPrefix,
+                payload.categorias,
+                payload.valor_total ?? null,
+                payload.fecha_inscripcion || hoy,
+                editingMatricula.notas,
+                payload.tiene_tramitador,
+                tramitadorNombre,
+                tramitadorValor,
+                authz.perfil.id,
+              ]
+            );
+          } else {
+            await client.query(
+              `
+                update public.matriculas_alumno
+                set
+                  sede_id = $2,
+                  numero_contrato = $3,
+                  categorias = $4,
+                  valor_total = $5,
+                  fecha_inscripcion = $6,
+                  estado = 'activo',
+                  notas = $7,
+                  tiene_tramitador = $8,
+                  tramitador_nombre = $9,
+                  tramitador_valor = $10,
+                  updated_by = $11,
+                  updated_at = now()
+                where id = $1
+              `,
+              [
+                editingMatricula.id,
+                payload.sede_id,
+                contractNumber,
+                payload.categorias,
+                payload.valor_total ?? null,
+                payload.fecha_inscripcion || hoy,
+                editingMatricula.notas,
+                payload.tiene_tramitador,
+                tramitadorNombre,
+                tramitadorValor,
+                authz.perfil.id,
+              ]
+            );
+          }
           matriculaId = editingMatricula.id;
 
           if (payload.tiene_tramitador && (payload.tramitador_valor ?? 0) > 0) {
@@ -660,29 +844,113 @@ async function handleMutation(request: Request, mode: "create" | "update") {
             }
           }
         } else {
+          const nextContract = await reserveNextContractNumber(client, {
+            escuelaId: schoolId,
+            categorias: payload.categorias,
+          });
           const matriculaRes = await client.query<{ id: string }>(
-            `
-              insert into public.matriculas_alumno (
-                escuela_id, sede_id, alumno_id, created_by, numero_contrato, categorias,
-                valor_total, fecha_inscripcion, estado, notas, tiene_tramitador, tramitador_nombre, tramitador_valor
-              )
-              values ($1, $2, $3, $4, $5, $6, $7, $8, 'activo', $9, $10, $11, $12)
-              returning id
-            `,
-            [
-              schoolId,
-              payload.sede_id,
-              alumnoId,
-              authz.perfil.id,
-              numeroContratoRegular,
-              payload.categorias,
-              payload.valor_total ?? null,
-              payload.fecha_inscripcion || hoy,
-              null,
-              payload.tiene_tramitador,
-              tramitadorNombre,
-              tramitadorValor,
-            ]
+            contractCapabilities.matriculaConsecutive && contractCapabilities.matriculaPrefix
+              ? `
+                  insert into public.matriculas_alumno (
+                    escuela_id, sede_id, alumno_id, created_by, numero_contrato, prefijo_contrato,
+                    consecutivo_contrato, categorias, valor_total, fecha_inscripcion, estado, notas, tiene_tramitador,
+                    tramitador_nombre, tramitador_valor
+                  )
+                  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'activo', $11, $12, $13, $14)
+                  returning id
+                `
+              : contractCapabilities.matriculaConsecutive
+                ? `
+                    insert into public.matriculas_alumno (
+                      escuela_id, sede_id, alumno_id, created_by, numero_contrato, consecutivo_contrato,
+                      categorias, valor_total, fecha_inscripcion, estado, notas, tiene_tramitador,
+                      tramitador_nombre, tramitador_valor
+                    )
+                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'activo', $10, $11, $12, $13)
+                    returning id
+                  `
+                : contractCapabilities.matriculaPrefix
+                  ? `
+                      insert into public.matriculas_alumno (
+                        escuela_id, sede_id, alumno_id, created_by, numero_contrato, prefijo_contrato,
+                        categorias, valor_total, fecha_inscripcion, estado, notas, tiene_tramitador,
+                        tramitador_nombre, tramitador_valor
+                      )
+                      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'activo', $10, $11, $12, $13)
+                      returning id
+                    `
+                  : `
+                  insert into public.matriculas_alumno (
+                    escuela_id, sede_id, alumno_id, created_by, numero_contrato,
+                    categorias, valor_total, fecha_inscripcion, estado, notas, tiene_tramitador,
+                    tramitador_nombre, tramitador_valor
+                  )
+                  values ($1, $2, $3, $4, $5, $6, $7, $8, 'activo', $9, $10, $11, $12)
+                  returning id
+                `,
+            contractCapabilities.matriculaConsecutive && contractCapabilities.matriculaPrefix
+              ? [
+                  schoolId,
+                  payload.sede_id,
+                  alumnoId,
+                  authz.perfil.id,
+                  nextContract.nextNumber,
+                  nextContract.prefix,
+                  nextContract.nextSequence,
+                  payload.categorias,
+                  payload.valor_total ?? null,
+                  payload.fecha_inscripcion || hoy,
+                  null,
+                  payload.tiene_tramitador,
+                  tramitadorNombre,
+                  tramitadorValor,
+                ]
+              : contractCapabilities.matriculaConsecutive
+                ? [
+                    schoolId,
+                    payload.sede_id,
+                    alumnoId,
+                    authz.perfil.id,
+                    nextContract.nextNumber,
+                    nextContract.nextSequence,
+                    payload.categorias,
+                    payload.valor_total ?? null,
+                    payload.fecha_inscripcion || hoy,
+                    null,
+                    payload.tiene_tramitador,
+                    tramitadorNombre,
+                    tramitadorValor,
+                  ]
+                : contractCapabilities.matriculaPrefix
+                  ? [
+                      schoolId,
+                      payload.sede_id,
+                      alumnoId,
+                      authz.perfil.id,
+                      nextContract.nextNumber,
+                      nextContract.prefix,
+                      payload.categorias,
+                      payload.valor_total ?? null,
+                      payload.fecha_inscripcion || hoy,
+                      null,
+                      payload.tiene_tramitador,
+                      tramitadorNombre,
+                      tramitadorValor,
+                    ]
+                  : [
+                      schoolId,
+                      payload.sede_id,
+                      alumnoId,
+                      authz.perfil.id,
+                      nextContract.nextNumber,
+                      payload.categorias,
+                      payload.valor_total ?? null,
+                      payload.fecha_inscripcion || hoy,
+                      null,
+                      payload.tiene_tramitador,
+                      tramitadorNombre,
+                      tramitadorValor,
+                    ]
           );
           matriculaId = matriculaRes.rows[0]?.id ?? null;
 
@@ -766,10 +1034,115 @@ async function handleMutation(request: Request, mode: "create" | "update") {
   }
 }
 
+async function handleDelete(request: Request) {
+  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  if (!authz.ok) return authz.response;
+
+  const parsed = await parseJsonBody(request, deleteAlumnoSchema);
+  if (!parsed.ok) return parsed.response;
+
+  const existing = await loadExistingAlumno(parsed.data.alumno_id);
+  if (!existing) {
+    return NextResponse.json({ error: "El alumno ya no existe." }, { status: 404 });
+  }
+
+  const schoolScopeError = ensureSchoolScope(authz.perfil, existing.alumno.escuela_id);
+  if (schoolScopeError) {
+    return NextResponse.json({ error: schoolScopeError }, { status: 403 });
+  }
+
+  const sedeScopeError = ensureSedeScope(authz.perfil, existing.alumno.sede_id);
+  if (sedeScopeError) {
+    return NextResponse.json({ error: sedeScopeError }, { status: 403 });
+  }
+
+  const supabaseAdmin = buildSupabaseAdminClient();
+  const pool = getServerDbPool();
+  const client = await pool.connect();
+
+  try {
+    const [perfilRes, linkedStudentsRes] = await Promise.all([
+      client.query<{ rol: Rol }>(
+        `
+          select rol
+          from public.perfiles
+          where id = $1
+          limit 1
+        `,
+        [existing.alumno.user_id]
+      ),
+      client.query<{ total: number | string | null }>(
+        `
+          select count(*)::int as total
+          from public.alumnos
+          where user_id = $1
+        `,
+        [existing.alumno.user_id]
+      ),
+    ]);
+
+    const perfilRol = perfilRes.rows[0]?.rol ?? null;
+    const linkedStudents = Number(linkedStudentsRes.rows[0]?.total || 0);
+    const ownsDedicatedAlumnoUser = perfilRol === "alumno" && linkedStudents <= 1;
+
+    if (ownsDedicatedAlumnoUser) {
+      const deleteAuthResult = await supabaseAdmin.auth.admin
+        .deleteUser(existing.alumno.user_id)
+        .catch((error) => ({ error }));
+      const deleteAuthError =
+        deleteAuthResult && typeof deleteAuthResult === "object" && "error" in deleteAuthResult
+          ? (deleteAuthResult.error as { message?: string } | null | undefined)
+          : null;
+
+      await client.query("BEGIN");
+      await client.query(
+        `
+          delete from public.perfiles
+          where id = $1
+        `,
+        [existing.alumno.user_id]
+      );
+      await client.query("COMMIT");
+
+      if (deleteAuthError?.message) {
+        console.warn(
+          `[alumnos.delete] No se pudo eliminar auth.users para ${existing.alumno.user_id}: ${deleteAuthError.message}`
+        );
+      }
+    } else {
+      await client.query("BEGIN");
+      await client.query(
+        `
+          delete from public.alumnos
+          where id = $1
+        `,
+        [existing.alumno.id]
+      );
+      await client.query("COMMIT");
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "No se pudo eliminar el alumno.",
+      },
+      { status: 400 }
+    );
+  } finally {
+    client.release();
+  }
+}
+
 export async function POST(request: Request) {
   return handleMutation(request, "create");
 }
 
 export async function PUT(request: Request) {
   return handleMutation(request, "update");
+}
+
+export async function DELETE(request: Request) {
+  return handleDelete(request);
 }

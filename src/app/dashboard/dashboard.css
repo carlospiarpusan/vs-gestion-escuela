@@ -193,3 +193,146 @@ body[data-device-variant="mobile"] .apple-select {
 body[data-device-variant="mobile"] .apple-textarea {
   font-size: 16px;
 }
+
+body[data-device-variant="mobile"] .apple-table-shell {
+  border-radius: 22px;
+}
+
+body[data-device-variant="mobile"] .apple-segmented {
+  display: flex;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+body[data-device-variant="mobile"] .apple-segmented::-webkit-scrollbar {
+  display: none;
+}
+
+body[data-device-variant="mobile"] .apple-segmented-button {
+  min-height: 2.8rem;
+  flex: 1 0 auto;
+}
+
+.contract-editor-shell {
+  border-radius: 24px;
+  border: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, var(--surface-strong), var(--surface-soft));
+  overflow: hidden;
+}
+
+.contract-editor-toolbar,
+.contract-editor-token-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.9rem;
+  border-bottom: 1px solid var(--surface-border);
+  background: color-mix(in srgb, var(--surface-muted) 90%, transparent);
+}
+
+.contract-editor-token-bar {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.contract-editor-toolbar-button,
+.contract-editor-token-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.15rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border);
+  background: color-mix(in srgb, var(--surface-strong) 96%, transparent);
+  color: var(--gray-600);
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease;
+}
+
+.contract-editor-toolbar-button:hover,
+.contract-editor-token-button:hover {
+  color: var(--foreground);
+  border-color: var(--surface-border-strong);
+}
+
+.contract-editor-toolbar-button.is-active {
+  border-color: color-mix(in srgb, var(--blue-apple) 45%, transparent);
+  background: color-mix(in srgb, var(--blue-apple) 10%, var(--surface-strong));
+  color: var(--blue-apple);
+}
+
+.contract-editor-token-button {
+  color: var(--blue-apple);
+}
+
+.contract-editor-content {
+  min-height: 520px;
+  padding: 1.2rem;
+}
+
+.contract-editor-content .ProseMirror {
+  min-height: 480px;
+  outline: none;
+  color: var(--foreground);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.contract-editor-content .ProseMirror p,
+.contract-editor-content .ProseMirror ul,
+.contract-editor-content .ProseMirror ol,
+.contract-editor-content .ProseMirror blockquote,
+.contract-editor-content .ProseMirror h1,
+.contract-editor-content .ProseMirror h2,
+.contract-editor-content .ProseMirror hr {
+  margin-bottom: 0.9rem;
+}
+
+.contract-editor-content .ProseMirror h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.contract-editor-content .ProseMirror h2 {
+  font-size: 1.12rem;
+  font-weight: 700;
+}
+
+.contract-editor-content .ProseMirror ul,
+.contract-editor-content .ProseMirror ol {
+  padding-left: 1.35rem;
+}
+
+.contract-editor-content .ProseMirror blockquote {
+  border-left: 3px solid color-mix(in srgb, var(--blue-apple) 40%, transparent);
+  padding-left: 1rem;
+  color: var(--gray-600);
+}
+
+.contract-editor-content .ProseMirror .contract-token-node {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--blue-apple) 24%, transparent);
+  background: color-mix(in srgb, var(--blue-apple) 10%, transparent);
+  color: var(--blue-apple);
+  padding: 0.18rem 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.contract-editor-content .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--gray-500);
+  pointer-events: none;
+  height: 0;
+}

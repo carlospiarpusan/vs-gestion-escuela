@@ -10,13 +10,15 @@ import { IDLE_LOGOUT_REASON, IDLE_LOGOUT_MINUTES } from "@/lib/session-timeout";
 
 export default function LoginPageClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const loggedOutByInactivity = searchParams.get("reason") === IDLE_LOGOUT_REASON;
+  const pendingRegistration = searchParams.get("registered") === "1";
+  const registeredEmail = searchParams.get("email")?.trim().toLowerCase() ?? "";
   const [showPassword, setShowPassword] = useState(false);
-  const [identifier, setIdentifier] = useState("");
+  const [identifier, setIdentifier] = useState(registeredEmail);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const searchParams = useSearchParams();
-  const loggedOutByInactivity = searchParams.get("reason") === IDLE_LOGOUT_REASON;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,22 +76,22 @@ export default function LoginPageClient() {
 
   return (
     <AuthWorkspace
-      badge="Acceso seguro"
+      mode="login"
+      badge="Login"
       title="Inicia sesión"
-      description="Entra a Condusoft para revisar operación, pagos, alumnos, evaluaciones y el día a día de tu autoescuela."
+      description="Entra con tu correo o cédula y vuelve directo a alumnos, pagos y agenda."
       backLabel="Inicio"
+      helperTitle="La operación de tu escuela, lista al entrar"
+      heroVariant="minimal"
+      securityNote="Correo para administradores. Cédula para alumnos, instructores y administrativos."
       highlights={[
         {
-          title: "Operación diaria",
-          description: "Consulta clases, alumnos, instructores y flota sin cambiar de sistema.",
+          title: "Acceso sin fricción",
+          description: "Correo o cédula, contraseña y entrada directa al panel.",
         },
         {
-          title: "Finanzas claras",
-          description: "Revisa ingresos, gastos, cartera y caja diaria desde el mismo panel.",
-        },
-        {
-          title: "Acceso por rol",
-          description: "Cada usuario entra directo a lo que necesita según su responsabilidad.",
+          title: "Mensajes claros",
+          description: "Errores visibles y una jerarquía sobria para entrar sin dudas.",
         },
       ]}
     >
@@ -97,6 +99,12 @@ export default function LoginPageClient() {
         <div className="mb-4 rounded-2xl border border-amber-200/70 bg-amber-50/80 p-3 text-center text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
           Cerramos tu sesión por inactividad después de {IDLE_LOGOUT_MINUTES} minutos. Vuelve a
           entrar para seguir trabajando.
+        </div>
+      )}
+
+      {pendingRegistration && !loggedOutByInactivity && !error && (
+        <div className="mb-4 rounded-2xl border border-emerald-200/70 bg-emerald-50/80 p-3 text-center text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+          Revisa tu correo y confirma tu cuenta antes de iniciar sesión.
         </div>
       )}
 
@@ -108,28 +116,34 @@ export default function LoginPageClient() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="identifier" className="apple-label">
-            Correo electrónico o número de cédula
+          <label htmlFor="auth-identifier" className="apple-label">
+            Correo o cédula
           </label>
           <input
-            id="identifier"
+            id="auth-identifier"
+            name="username"
             type="text"
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
-            placeholder="tu@email.com o número de cédula"
+            placeholder="tu@email.com o 12345678"
             required
             autoComplete="username"
             className="apple-input"
           />
+          <p className="apple-auth-field-hint mt-2">
+            Usa tu correo si eres administrador. Si eres alumno, instructor o administrativo, entra
+            con tu cédula.
+          </p>
         </div>
 
         <div>
-          <label htmlFor="password" className="apple-label">
+          <label htmlFor="current-password" className="apple-label">
             Contraseña
           </label>
           <div className="relative">
             <input
-              id="password"
+              id="current-password"
+              name="current-password"
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -152,27 +166,21 @@ export default function LoginPageClient() {
         <button
           type="submit"
           disabled={loading}
-          className="apple-button-primary flex w-full justify-center py-3 text-sm font-medium disabled:opacity-50"
+          className="apple-button-primary flex min-h-[52px] w-full justify-center py-3.5 text-sm font-semibold disabled:opacity-50"
         >
           {loading ? (
             <>
               <Loader2 size={16} className="animate-spin" />
-              Iniciando sesión...
+              Entrando...
             </>
           ) : (
-            "Iniciar Sesión"
+            "Entrar"
           )}
         </button>
       </form>
 
-      <div className="my-6 flex items-center gap-3">
-        <div className="apple-divider flex-1" />
-        <span className="text-xs text-[var(--gray-500)]">o</span>
-        <div className="apple-divider flex-1" />
-      </div>
-
-      <p className="text-center text-sm text-[var(--gray-500)]">
-        ¿No tienes cuenta?{" "}
+      <p className="apple-copy mt-6 text-center text-sm">
+        ¿Primera vez en Condusoft?{" "}
         <Link href="/registro" className="apple-link">
           Crear cuenta
         </Link>

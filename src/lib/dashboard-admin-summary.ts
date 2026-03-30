@@ -215,5 +215,5 @@ export function buildDashboardSummaryCacheKey(
     sede_id?: string | null;
   }
 ) {
-  return `dashboard-summary:${kind}:${scope.id || "anon"}:${scope.rol || "unknown"}:${scope.escuela_id || "global"}:${scope.sede_id || "all"}`;
+  return `dashboard-summary:v2:${kind}:${scope.id || "anon"}:${scope.rol || "unknown"}:${scope.escuela_id || "global"}:${scope.sede_id || "all"}`;
 }

@@ -20,7 +20,19 @@ describe("role capabilities", () => {
     expect(canAuditedRolePerformAction("super_admin", "reports", "view")).toBe(false);
     expect(canAuditedRolePerformAction("super_admin", "exams", "configure")).toBe(true);
     expect(canAuditedRolePerformAction("super_admin", "subscriptions", "view")).toBe(true);
+    expect(canAuditedRolePerformAction("super_admin", "compliance", "view")).toBe(true);
+    expect(canAuditedRolePerformAction("super_admin", "compliance", "edit")).toBe(false);
     expect(canAuditedRolePerformAction("admin_escuela", "subscriptions", "view")).toBe(false);
+  });
+
+  it("lets admin_escuela govern compliance for its school only", () => {
+    expect(canAuditedRolePerformAction("admin_escuela", "compliance", "view")).toBe(true);
+    expect(canAuditedRolePerformAction("admin_escuela", "compliance", "edit")).toBe(true);
+    expect(canAuditedRolePerformAction("admin_escuela", "compliance", "export")).toBe(true);
+    expect(canAuditedRolePerformAction("admin_escuela", "contracts", "configure")).toBe(true);
+    expect(canAuditedRolePerformAction("admin_sede", "compliance", "view")).toBe(false);
+    expect(canAuditedRolePerformAction("administrativo", "compliance", "view")).toBe(false);
+    expect(canAuditedRolePerformAction("admin_sede", "contracts", "view")).toBe(false);
   });
 
   it("keeps admin_sede readonly in sedes and administrativos", () => {

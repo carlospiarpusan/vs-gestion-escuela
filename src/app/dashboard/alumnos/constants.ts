@@ -4,6 +4,7 @@ import type {
   Alumno,
   MatriculaAlumno,
   MetodoPago,
+  TipoDocumentoAlumno,
   TipoPermiso,
   TipoRegistroAlumno,
 } from "@/types/database";
@@ -76,6 +77,8 @@ export type MatriculaResumen = Pick<
   | "id"
   | "alumno_id"
   | "numero_contrato"
+  | "prefijo_contrato"
+  | "consecutivo_contrato"
   | "categorias"
   | "valor_total"
   | "fecha_inscripcion"
@@ -105,8 +108,10 @@ export const emptyForm = {
   nombre: "",
   apellidos: "",
   dni: "",
+  tipo_documento: "CC" as TipoDocumentoAlumno,
   email: "",
   telefono: "",
+  lugar_expedicion_documento: "",
   fecha_nacimiento: "",
   direccion: "",
   ciudad: "",
@@ -132,7 +137,6 @@ export const emptyForm = {
 };
 
 export const emptyMatriculaForm = {
-  numero_contrato: "",
   fecha_inscripcion: new Date().toISOString().split("T")[0],
   categorias: [] as string[],
   valor_total: "",

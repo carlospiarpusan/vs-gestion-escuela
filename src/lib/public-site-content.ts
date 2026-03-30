@@ -38,12 +38,16 @@ export const HOME_KEYWORDS = [
   "plataforma para escuelas de conducción",
   "sistema para autoescuelas",
   "software para centros de enseñanza automovilística",
+  "cumplimiento interno autoescuelas",
+  "protección de datos autoescuelas colombia",
+  "ARCO habeas data autoescuelas",
 ];
 
 export const heroHighlights = [
   "Condusoft centraliza alumnos, matrículas, clases y horas operativas en una sola vista.",
   "Separa ingresos, cartera, caja diaria y gastos para entender la realidad financiera de tu escuela.",
   "Controla vehículos, mantenimientos, sedes y automatización sin depender de hojas sueltas o chats.",
+  "Documenta consentimiento, ARCO, retención, backups, incidentes y evidencia interna desde el mismo sistema.",
 ];
 
 export const availableFeatures: PublicFeatureArea[] = [
@@ -83,6 +87,16 @@ export const availableFeatures: PublicFeatureArea[] = [
     outcome:
       "Tu equipo dejará de ser esclavo de las labores mecánicas y se centrará en hacer crecer tu escuela.",
     modules: ["Correo de facturas", "Importaciones", "Exportaciones", "Automatización"],
+  },
+  {
+    id: "cumplimiento",
+    eyebrow: "Cumplimiento Interno",
+    title: "Centraliza protección de datos, evidencia documental y gobierno operativo",
+    description:
+      "Lleva responsable del tratamiento, política vigente, solicitudes ARCO, backups, incidentes, retención y evidencia por escuela sin sacar la trazabilidad a hojas aparte.",
+    outcome:
+      "Más orden para auditorías internas y más confianza para operar con trazabilidad documental real.",
+    modules: ["Cumplimiento", "Consentimiento", "ARCO", "Backups", "Incidentes", "Retención"],
   },
 ];
 
@@ -132,6 +146,13 @@ export const trustPoints: PublicTrustPoint[] = [
       "Protege tus datos financieros y operativos. Administradores, instructores y alumnos ven únicamente lo que necesitan, garantizando el orden y la privacidad.",
     highlight: "Control de Accesos",
   },
+  {
+    id: "compliance",
+    title: "Cumplimiento interno con evidencia visible",
+    description:
+      "Condusoft ya incorpora consentimiento, solicitudes ARCO, bitácora de incidentes, backups, retención y paquete de evidencia documental por escuela.",
+    highlight: "Protección de Datos",
+  },
 ];
 
 export const faqItems: PublicFaqItem[] = [
@@ -154,6 +175,16 @@ export const faqItems: PublicFaqItem[] = [
     question: "¿Sirve para operar en Colombia?",
     answer:
       "Sí. El foco del producto, su lenguaje comercial y los flujos visibles de la plataforma están orientados a autoescuelas y escuelas de conducción en Colombia.",
+  },
+  {
+    question: "¿Qué cubre Condusoft en protección de datos y cumplimiento interno?",
+    answer:
+      "Condusoft ya permite organizar consentimiento de datos, solicitudes ARCO, responsables, backups, incidentes, políticas de retención y evidencia documental por escuela dentro del sistema.",
+  },
+  {
+    question: "¿Condusoft reemplaza SICOV, RUNT o la facturación electrónica?",
+    answer:
+      "No. Condusoft ayuda a ordenar la operación y el cumplimiento interno de la escuela, pero no sustituye trámites, reportes o integraciones oficiales externas como SICOV, RUNT o DIAN.",
   },
 ];
 

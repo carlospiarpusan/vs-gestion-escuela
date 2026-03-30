@@ -1,6 +1,11 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
-import { ImapFlow, type SearchObject } from "imapflow";
-import { simpleParser } from "mailparser";
+import {
+  ImapFlow,
+  type FetchMessageObject,
+  type MessageStructureObject,
+  type SearchObject,
+} from "imapflow";
+import { simpleParser, type SimpleParserOptions } from "mailparser";
 import { buildSupabaseAdminClient } from "@/lib/api-auth";
 import { buildElectronicInvoiceNote, parseElectronicInvoiceBinary } from "@/lib/electronic-invoice";
 import { normalizeExpenseCategory } from "@/lib/expense-category";
@@ -64,6 +69,13 @@ export type EmailInvoiceSyncOptions = {
 const DEFAULT_MAILBOX = "INBOX";
 const ATTACHMENT_NAME_FALLBACK = "factura-adjunta";
 const MANUAL_IMAP_PROVIDER = "imap";
+const IMAP_METADATA_BATCH_SIZE = 25;
+const SIMPLE_PARSER_OPTIONS: SimpleParserOptions = {
+  skipHtmlToText: true,
+  skipImageLinks: true,
+  skipTextLinks: true,
+  skipTextToHtml: true,
+};
 
 type ImapConnectionConfig = {
   host: string;
@@ -255,7 +267,10 @@ function decryptSecretDetailed(value: string): DecryptedSecretResult {
     }
   }
 
-  if (parsed.fingerprint && !configuredSeeds.some((seed) => seed.fingerprint === parsed.fingerprint)) {
+  if (
+    parsed.fingerprint &&
+    !configuredSeeds.some((seed) => seed.fingerprint === parsed.fingerprint)
+  ) {
     throw new Error(
       "No se encontro la llave que protege la credencial de correo. Define EMAIL_INVOICE_LEGACY_ENCRYPTION_KEY o vuelve a guardar la app password."
     );
@@ -307,6 +322,11 @@ export const __emailInvoiceCrypto = {
   decryptSecretDetailed,
   encryptSecret,
   fingerprintEncryptionSeed,
+};
+
+export const __emailInvoiceSyncInternals = {
+  chunkArray,
+  getInvoiceAttachmentHints,
 };
 
 function sanitizeIntegration(row: IntegrationRow | null): EmailInvoiceIntegrationView | null {
@@ -669,34 +689,122 @@ function buildSearchObject(
   return query;
 }
 
-async function hasImportRecord(
+type InvoiceAttachmentHint = {
+  fileName: string | null;
+  mimeType: string | null;
+  part: string | null;
+};
+
+function chunkArray<T>(items: T[], size: number) {
+  if (size <= 0 || items.length === 0) return [items];
+
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function uniqueNonEmptyStrings(items: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      items.map((item) => optionalText(item)).filter((value): value is string => Boolean(value))
+    )
+  );
+}
+
+function isInvoiceAttachmentName(value: string | null) {
+  return Boolean(value && /\.(xml|zip)$/i.test(value));
+}
+
+function isInvoiceAttachmentMimeType(value: string | null) {
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  return normalized.includes("xml") || normalized.includes("zip");
+}
+
+function extractInvoiceAttachmentHints(
+  node: MessageStructureObject | undefined | null,
+  items: InvoiceAttachmentHint[] = []
+) {
+  if (!node) return items;
+
+  const fileName = optionalText(
+    node.dispositionParameters?.filename || node.parameters?.name || node.description || node.id
+  );
+  const mimeType = optionalText(node.type);
+  const isLeaf = !node.childNodes || node.childNodes.length === 0;
+
+  if (isLeaf && (isInvoiceAttachmentName(fileName) || isInvoiceAttachmentMimeType(mimeType))) {
+    items.push({
+      fileName,
+      mimeType,
+      part: optionalText(node.part),
+    });
+  }
+
+  for (const child of node.childNodes || []) {
+    extractInvoiceAttachmentHints(child, items);
+  }
+
+  return items;
+}
+
+function getInvoiceAttachmentHints(message: Pick<FetchMessageObject, "bodyStructure">) {
+  const hints = extractInvoiceAttachmentHints(message.bodyStructure);
+  const seen = new Set<string>();
+
+  return hints.filter((hint) => {
+    const key = `${hint.part || ""}:${hint.fileName || ""}:${hint.mimeType || ""}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildAttachmentIdentity(
+  messageId: string | null,
+  imapUid: number,
+  attachmentName: string
+) {
+  return `${messageId || `uid:${imapUid}`}:${attachmentName}`.toLowerCase();
+}
+
+async function listImportedAttachmentNames(
   integrationId: string,
   messageId: string | null,
   imapUid: number | null,
-  attachmentName: string
+  attachmentNames: string[]
 ) {
+  const uniqueNames = uniqueNonEmptyStrings(attachmentNames);
+  if (uniqueNames.length === 0) return new Set<string>();
+
   const supabaseAdmin = buildSupabaseAdminClient();
   let query = supabaseAdmin
     .from("facturas_correo_importaciones")
-    .select("id")
+    .select("attachment_name")
     .eq("integracion_id", integrationId)
-    .eq("attachment_name", attachmentName)
-    .limit(1);
+    .in("attachment_name", uniqueNames);
 
   if (messageId) {
     query = query.eq("message_id", messageId);
   } else if (imapUid !== null) {
     query = query.eq("imap_uid", imapUid);
   } else {
-    return false;
+    return new Set<string>();
   }
 
-  const { data, error } = await query.maybeSingle();
+  const { data, error } = await query;
   if (error) {
     throw new Error(`No se pudo revisar duplicados de correo: ${error.message}`);
   }
 
-  return Boolean(data);
+  return new Set(
+    ((data as Array<{ attachment_name: string | null }> | null) || [])
+      .map((row) => optionalText(row.attachment_name))
+      .filter((value): value is string => Boolean(value))
+      .map((value) => value.toLowerCase())
+  );
 }
 
 async function createImportLog(input: {
@@ -875,6 +983,8 @@ async function syncSingleIntegration(
   const supabaseAdmin = buildSupabaseAdminClient();
   let client: ImapFlow | null = null;
   let releaseLock: (() => void) | null = null;
+  const processedAttachmentKeys = new Set<string>();
+  const duplicateExpenseCache = new Map<string, { id: string } | null>();
 
   try {
     if (integration.provider !== MANUAL_IMAP_PROVIDER) {
@@ -944,86 +1054,200 @@ async function syncSingleIntegration(
       summary.matchedMessages = orderedUids.length;
       summary.truncated = selectedUids.length < orderedUids.length;
 
-      const messages = await client.fetchAll(
-        selectedUids,
-        {
-          uid: true,
-          envelope: true,
-          source: true,
-          internalDate: true,
-        },
-        { uid: true }
-      );
+      for (const uidBatch of chunkArray(selectedUids, IMAP_METADATA_BATCH_SIZE)) {
+        for await (const message of client.fetch(
+          uidBatch,
+          {
+            uid: true,
+            envelope: true,
+            internalDate: true,
+            bodyStructure: true,
+          },
+          { uid: true }
+        )) {
+          const uid = Number(message.uid || 0);
+          if (uid > maxUid) maxUid = uid;
+          summary.processedMessages += 1;
 
-      for (const message of messages) {
-        const uid = Number(message.uid || 0);
-        if (uid > maxUid) maxUid = uid;
-        summary.processedMessages += 1;
+          const envelopeMessageId = optionalText(message.envelope?.messageId);
+          const hintedAttachments = getInvoiceAttachmentHints(message);
 
-        if (!message.source) {
-          summary.errors += 1;
-          await createImportLog({
-            integrationId: integration.id,
-            escuelaId: integration.escuela_id,
-            sedeId: integration.sede_id,
-            imapUid: uid,
-            messageId: optionalText(message.envelope?.messageId),
-            messageDate: toIsoDateTime(message.internalDate),
-            remitente: optionalText(message.envelope?.from?.[0]?.address),
-            asunto: optionalText(message.envelope?.subject),
-            attachmentName: `${ATTACHMENT_NAME_FALLBACK}-${uid}.eml`,
-            status: "error",
-            detail: "El correo no trajo el contenido completo para leer adjuntos.",
-          });
-          continue;
-        }
-
-        const parsed = await simpleParser(message.source);
-        const messageId =
-          optionalText(parsed.messageId) || optionalText(message.envelope?.messageId);
-        const remitente =
-          extractSenderAddress(parsed.from) || optionalText(message.envelope?.from?.[0]?.address);
-        const asunto = optionalText(parsed.subject) || optionalText(message.envelope?.subject);
-        const messageDate = toIsoDateTime(parsed.date || message.internalDate);
-
-        const attachments = parsed.attachments.filter((attachment) => {
-          const lowerName = attachmentFileName(attachment.filename, uid).toLowerCase();
-          return lowerName.endsWith(".xml") || lowerName.endsWith(".zip");
-        });
-
-        if (attachments.length === 0) {
-          summary.skipped += 1;
-          continue;
-        }
-
-        for (const attachment of attachments) {
-          const attachmentName = attachmentFileName(attachment.filename, uid);
-          summary.processedAttachments += 1;
-
-          if (await hasImportRecord(integration.id, messageId, uid, attachmentName)) {
+          if (hintedAttachments.length === 0) {
             summary.skipped += 1;
             continue;
           }
 
-          try {
-            const preview = await parseElectronicInvoiceBinary({
-              fileName: attachmentName,
-              content: attachment.content,
+          const hintedAttachmentNames = uniqueNonEmptyStrings(
+            hintedAttachments.map((hint) => hint.fileName)
+          );
+          const importedHintNames = await listImportedAttachmentNames(
+            integration.id,
+            envelopeMessageId,
+            uid,
+            hintedAttachmentNames
+          );
+          const needsMessageSource = hintedAttachments.some((hint) => {
+            if (!hint.fileName) return true;
+            return !importedHintNames.has(hint.fileName.toLowerCase());
+          });
+
+          if (!needsMessageSource) {
+            summary.skipped += hintedAttachmentNames.length;
+            for (const attachmentName of hintedAttachmentNames) {
+              processedAttachmentKeys.add(
+                buildAttachmentIdentity(envelopeMessageId, uid, attachmentName)
+              );
+            }
+            continue;
+          }
+
+          const fullMessage = await client.fetchOne(
+            uid,
+            {
+              uid: true,
+              envelope: true,
+              source: true,
+              internalDate: true,
+            },
+            { uid: true }
+          );
+
+          if (!fullMessage || !fullMessage.source) {
+            summary.errors += 1;
+            await createImportLog({
+              integrationId: integration.id,
+              escuelaId: integration.escuela_id,
+              sedeId: integration.sede_id,
+              imapUid: uid,
+              messageId: envelopeMessageId,
+              messageDate: toIsoDateTime(message.internalDate),
+              remitente: optionalText(message.envelope?.from?.[0]?.address),
+              asunto: optionalText(message.envelope?.subject),
+              attachmentName: `${ATTACHMENT_NAME_FALLBACK}-${uid}.eml`,
+              status: "error",
+              detail: "El correo no trajo el contenido completo para leer adjuntos.",
             });
+            continue;
+          }
 
-            const duplicate = await findDuplicateExpense(
-              integration.escuela_id,
-              preview.invoiceNumber,
-              preview.supplierName
-            );
+          const parsed = await simpleParser(fullMessage.source, SIMPLE_PARSER_OPTIONS);
+          const messageId = optionalText(parsed.messageId) || envelopeMessageId;
+          const remitente =
+            extractSenderAddress(parsed.from) || optionalText(message.envelope?.from?.[0]?.address);
+          const asunto = optionalText(parsed.subject) || optionalText(message.envelope?.subject);
+          const messageDate = toIsoDateTime(parsed.date || message.internalDate);
 
-            if (duplicate) {
-              summary.duplicated += 1;
+          const attachments = parsed.attachments.filter((attachment) => {
+            const lowerName = attachmentFileName(attachment.filename, uid).toLowerCase();
+            return lowerName.endsWith(".xml") || lowerName.endsWith(".zip");
+          });
+
+          if (attachments.length === 0) {
+            summary.skipped += 1;
+            continue;
+          }
+
+          const attachmentNames = uniqueNonEmptyStrings(
+            attachments.map((attachment) => attachmentFileName(attachment.filename, uid))
+          );
+          const importedAttachmentNames =
+            messageId === envelopeMessageId
+              ? importedHintNames
+              : await listImportedAttachmentNames(integration.id, messageId, uid, attachmentNames);
+          const seenMessageAttachmentNames = new Set<string>();
+
+          for (const attachment of attachments) {
+            const attachmentName = attachmentFileName(attachment.filename, uid);
+            const normalizedAttachmentName = attachmentName.toLowerCase();
+            const attachmentIdentity = buildAttachmentIdentity(messageId, uid, attachmentName);
+
+            if (seenMessageAttachmentNames.has(normalizedAttachmentName)) {
+              summary.skipped += 1;
+              continue;
+            }
+            seenMessageAttachmentNames.add(normalizedAttachmentName);
+
+            if (
+              processedAttachmentKeys.has(attachmentIdentity) ||
+              importedAttachmentNames.has(normalizedAttachmentName)
+            ) {
+              processedAttachmentKeys.add(attachmentIdentity);
+              summary.skipped += 1;
+              continue;
+            }
+
+            summary.processedAttachments += 1;
+
+            try {
+              const preview = await parseElectronicInvoiceBinary({
+                fileName: attachmentName,
+                content: attachment.content,
+              });
+              const duplicateCacheKey = `${preview.invoiceNumber}:${preview.supplierName}`
+                .trim()
+                .toLowerCase();
+              let duplicate = duplicateExpenseCache.get(duplicateCacheKey);
+              if (duplicate === undefined) {
+                duplicate = await findDuplicateExpense(
+                  integration.escuela_id,
+                  preview.invoiceNumber,
+                  preview.supplierName
+                );
+                duplicateExpenseCache.set(duplicateCacheKey, duplicate);
+              }
+
+              if (duplicate) {
+                processedAttachmentKeys.add(attachmentIdentity);
+                summary.duplicated += 1;
+                await createImportLog({
+                  integrationId: integration.id,
+                  escuelaId: integration.escuela_id,
+                  sedeId: integration.sede_id,
+                  gastoId: duplicate.id,
+                  imapUid: uid,
+                  messageId,
+                  messageDate,
+                  remitente,
+                  asunto,
+                  attachmentName,
+                  invoiceNumber: preview.invoiceNumber,
+                  supplierName: preview.supplierName,
+                  total: preview.payableAmount,
+                  currency: preview.currency,
+                  status: "duplicada",
+                  detail: `La factura ${preview.invoiceNumber} ya existia en gastos para ${preview.supplierName}.`,
+                });
+                continue;
+              }
+
+              const notes = [
+                buildElectronicInvoiceNote(preview),
+                `Correo origen: ${remitente || integration.correo}`,
+                asunto ? `Asunto: ${asunto}` : "",
+                messageId ? `Message-ID: ${messageId}` : "",
+              ]
+                .filter(Boolean)
+                .join("\n");
+
+              const gastoId = await insertExpenseFromPreview({
+                integration,
+                invoiceNumber: preview.invoiceNumber,
+                issueDate: preview.issueDate,
+                supplierName: preview.supplierName,
+                categorySuggestion: preview.categorySuggestion,
+                conceptSuggestion: preview.conceptSuggestion,
+                payableAmount: preview.payableAmount,
+                paymentMethodSuggestion: preview.paymentMethodSuggestion,
+                notes,
+              });
+
+              processedAttachmentKeys.add(attachmentIdentity);
+              summary.imported += 1;
               await createImportLog({
                 integrationId: integration.id,
                 escuelaId: integration.escuela_id,
                 sedeId: integration.sede_id,
-                gastoId: duplicate.id,
+                gastoId,
                 imapUid: uid,
                 messageId,
                 messageDate,
@@ -1034,72 +1258,31 @@ async function syncSingleIntegration(
                 supplierName: preview.supplierName,
                 total: preview.payableAmount,
                 currency: preview.currency,
-                status: "duplicada",
-                detail: `La factura ${preview.invoiceNumber} ya existia en gastos para ${preview.supplierName}.`,
+                status: "importada",
+                detail: `Factura ${preview.invoiceNumber} importada automaticamente desde correo.`,
               });
-              continue;
+            } catch (error) {
+              processedAttachmentKeys.add(attachmentIdentity);
+              const failure = classifyInvoiceAttachmentError(error);
+              if (failure.status === "omitida") {
+                summary.skipped += 1;
+              } else {
+                summary.errors += 1;
+              }
+              await createImportLog({
+                integrationId: integration.id,
+                escuelaId: integration.escuela_id,
+                sedeId: integration.sede_id,
+                imapUid: uid,
+                messageId,
+                messageDate,
+                remitente,
+                asunto,
+                attachmentName,
+                status: failure.status,
+                detail: failure.detail,
+              });
             }
-
-            const notes = [
-              buildElectronicInvoiceNote(preview),
-              `Correo origen: ${remitente || integration.correo}`,
-              asunto ? `Asunto: ${asunto}` : "",
-              messageId ? `Message-ID: ${messageId}` : "",
-            ]
-              .filter(Boolean)
-              .join("\n");
-
-            const gastoId = await insertExpenseFromPreview({
-              integration,
-              invoiceNumber: preview.invoiceNumber,
-              issueDate: preview.issueDate,
-              supplierName: preview.supplierName,
-              categorySuggestion: preview.categorySuggestion,
-              conceptSuggestion: preview.conceptSuggestion,
-              payableAmount: preview.payableAmount,
-              paymentMethodSuggestion: preview.paymentMethodSuggestion,
-              notes,
-            });
-
-            summary.imported += 1;
-            await createImportLog({
-              integrationId: integration.id,
-              escuelaId: integration.escuela_id,
-              sedeId: integration.sede_id,
-              gastoId,
-              imapUid: uid,
-              messageId,
-              messageDate,
-              remitente,
-              asunto,
-              attachmentName,
-              invoiceNumber: preview.invoiceNumber,
-              supplierName: preview.supplierName,
-              total: preview.payableAmount,
-              currency: preview.currency,
-              status: "importada",
-              detail: `Factura ${preview.invoiceNumber} importada automaticamente desde correo.`,
-            });
-          } catch (error) {
-            const failure = classifyInvoiceAttachmentError(error);
-            if (failure.status === "omitida") {
-              summary.skipped += 1;
-            } else {
-              summary.errors += 1;
-            }
-            await createImportLog({
-              integrationId: integration.id,
-              escuelaId: integration.escuela_id,
-              sedeId: integration.sede_id,
-              imapUid: uid,
-              messageId,
-              messageDate,
-              remitente,
-              asunto,
-              attachmentName,
-              status: failure.status,
-              detail: failure.detail,
-            });
           }
         }
       }

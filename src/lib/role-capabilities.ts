@@ -34,6 +34,8 @@ export type RoleCapabilityModuleId =
   | "schools"
   | "subscriptions"
   | "payroll"
+  | "contracts"
+  | "compliance"
   | "permissions"
   | "account";
 
@@ -178,9 +180,21 @@ export const ROLE_CAPABILITY_MODULES: RoleCapabilityModuleDescriptor[] = [
     visibleInAudit: true,
   },
   {
+    id: "contracts",
+    label: "Contratos",
+    description: "Datos legales y plantillas de contratos por escuela.",
+    visibleInAudit: true,
+  },
+  {
     id: "payroll",
     label: "Nóminas",
     description: "Pagos mensuales, seguridad social y liquidación de personal.",
+    visibleInAudit: true,
+  },
+  {
+    id: "compliance",
+    label: "Cumplimiento",
+    description: "Gobierno interno, evidencia documental, respaldos e incidentes por escuela.",
     visibleInAudit: true,
   },
   {
@@ -214,6 +228,7 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
     can: [
       "Administra escuelas, planes y los controles base en toda la plataforma.",
       "Supervisa el estado y capacidad de las escuelas afiliadas.",
+      "Acompaña el estado de cumplimiento interno y la evidencia documental de cada escuela.",
       "Crea, edita y elimina preguntas del banco maestro de evaluaciones CALE.",
     ],
     cannot: [
@@ -231,6 +246,7 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
     can: [
       "Gestiona sedes y administrativos de su escuela.",
       "Opera alumnos, clases, flota, ingresos, gastos y automatización dentro de su escuela.",
+      "Mantiene evidencia de cumplimiento interno, RNBD, respaldos, incidentes y retención.",
       "Puede ajustar valor hora y generar cierres mensuales desde Horas.",
     ],
     cannot: [
@@ -304,6 +320,18 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
     logbook: NONE_CAPABILITY,
     hours: NONE_CAPABILITY,
     payroll: NONE_CAPABILITY,
+    contracts: {
+      state: "full",
+      scope: "school",
+      actions: ["view", "edit", "configure"],
+      note: "Puede revisar y ajustar plantillas y datos legales por escuela seleccionada.",
+    },
+    compliance: {
+      state: "readonly",
+      scope: "platform",
+      actions: ["view"],
+      note: "Acompaña el estado de cumplimiento interno y la evidencia documental de las escuelas.",
+    },
     exams: {
       state: "full",
       scope: "platform",
@@ -377,6 +405,18 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
       scope: "school",
       actions: ["view", "create", "edit", "delete"],
       note: "Gestiona nóminas de instructores y administrativos de toda su escuela.",
+    },
+    contracts: {
+      state: "full",
+      scope: "school",
+      actions: ["view", "edit", "configure"],
+      note: "Administra datos legales y plantillas congeladas de contratos de su escuela.",
+    },
+    compliance: {
+      state: "full",
+      scope: "school",
+      actions: ["view", "edit", "export"],
+      note: "Actualiza RNBD, respaldos, incidentes y matriz de retención de su escuela.",
     },
     exams: {
       state: "readonly",
@@ -478,6 +518,8 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
       actions: ["view", "create", "edit", "delete"],
       note: "Gestiona nóminas de su sede.",
     },
+    contracts: NONE_CAPABILITY,
+    compliance: NONE_CAPABILITY,
     exams: {
       state: "readonly",
       scope: "branch",
@@ -568,6 +610,8 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
       actions: ["view", "create", "edit"],
       note: "Registra nóminas en su sede pero no puede eliminarlas.",
     },
+    contracts: NONE_CAPABILITY,
+    compliance: NONE_CAPABILITY,
     exams: {
       state: "readonly",
       scope: "branch",

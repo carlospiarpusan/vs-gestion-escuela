@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { buildPayrollSummary, getPendingInstructorPayrollClosures } from "@/lib/payroll";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import {
   Users,
@@ -226,14 +227,20 @@ export default function NominasPage() {
 
   // ── Empleados filtrados por tab ───────────────────────────────────
   const empleados = tab === "instructor" ? instructores : administrativos;
-  const empleadosSinNomina = empleados.filter((e) => !nominas.some((n) => n.empleado_id === e.id));
+  const pendingInstructorClosures = useMemo(
+    () => getPendingInstructorPayrollClosures({ payrollRows: nominas, closures: cierres }),
+    [nominas, cierres]
+  );
+  const empleadosSinNomina = empleados.filter(
+    (e) => !nominas.some((n) => n.empleado_tipo === tab && n.empleado_id === e.id)
+  );
 
   // ── Cierres de horas para instructores sin nómina ────────────────
   const cierreMap = useMemo(() => {
     const map = new Map<string, CierreHoras>();
-    for (const c of cierres) map.set(c.instructor_id, c);
+    for (const c of pendingInstructorClosures) map.set(c.instructor_id, c as CierreHoras);
     return map;
-  }, [cierres]);
+  }, [pendingInstructorClosures]);
 
   const instructoresSinNominaConCierre = useMemo(
     () => empleadosSinNomina.filter((e) => cierreMap.has(e.id)),
@@ -295,17 +302,15 @@ export default function NominasPage() {
   ]);
 
   // ── Totales del periodo ───────────────────────────────────────────
-  const resumen = useMemo(() => {
-    const filtered = nominas.filter((n) => n.empleado_tipo === tab);
-    return {
-      total: filtered.length,
-      devengado: filtered.reduce((s, n) => s + Number(n.total_devengado), 0),
-      deducciones: filtered.reduce((s, n) => s + Number(n.total_deducciones), 0),
-      neto: filtered.reduce((s, n) => s + Number(n.neto_pagar), 0),
-      pagadas: filtered.filter((n) => n.estado === "pagada").length,
-      pendientes: filtered.filter((n) => n.estado !== "pagada" && n.estado !== "anulada").length,
-    };
-  }, [nominas, tab]);
+  const resumen = useMemo(
+    () =>
+      buildPayrollSummary({
+        payrollRows: nominas,
+        empleadoTipo: tab,
+        pendingInstructorClosures: tab === "instructor" ? pendingInstructorClosures : [],
+      }),
+    [nominas, pendingInstructorClosures, tab]
+  );
 
   // ── Abrir formulario ──────────────────────────────────────────────
   const openNewForm = useCallback(() => {
@@ -534,7 +539,7 @@ export default function NominasPage() {
 
   if (!escuelaId) {
     return (
-      <div className="p-6 text-center text-[#86868b]">
+      <div className="p-6 text-center text-[#86868b] dark:text-gray-400">
         Selecciona una escuela para gestionar nóminas.
       </div>
     );
@@ -546,7 +551,7 @@ export default function NominasPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-white">Nóminas</h2>
-          <p className="text-sm text-[#86868b]">
+          <p className="text-sm text-[#86868b] dark:text-gray-400">
             Gestión de pagos mensuales a instructores y administrativos.
           </p>
         </div>
@@ -569,7 +574,7 @@ export default function NominasPage() {
           className={`flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all ${
             tab === "instructor"
               ? "bg-white text-[#1d1d1f] shadow-sm dark:bg-gray-700 dark:text-white"
-              : "text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white"
+              : "text-[#86868b] hover:text-[#1d1d1f] dark:text-gray-400 dark:hover:text-white"
           }`}
         >
           <UserCheck size={16} />
@@ -580,7 +585,7 @@ export default function NominasPage() {
           className={`flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all ${
             tab === "administrativo"
               ? "bg-white text-[#1d1d1f] shadow-sm dark:bg-gray-700 dark:text-white"
-              : "text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white"
+              : "text-[#86868b] hover:text-[#1d1d1f] dark:text-gray-400 dark:hover:text-white"
           }`}
         >
           <Users size={16} />
@@ -640,28 +645,30 @@ export default function NominasPage() {
       {/* Resumen KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/40">
-          <p className="text-xs text-[#86868b]">Total devengado</p>
+          <p className="text-xs text-[#86868b] dark:text-gray-400">Total devengado</p>
           <p className="mt-1 text-lg font-bold text-[#1d1d1f] dark:text-white">
             {formatMoney(resumen.devengado)}
           </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/40">
-          <p className="text-xs text-[#86868b]">Deducciones</p>
+          <p className="text-xs text-[#86868b] dark:text-gray-400">Deducciones</p>
           <p className="mt-1 text-lg font-bold text-red-600 dark:text-red-400">
             {formatMoney(resumen.deducciones)}
           </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/40">
-          <p className="text-xs text-[#86868b]">Neto a pagar</p>
+          <p className="text-xs text-[#86868b] dark:text-gray-400">Neto a pagar</p>
           <p className="mt-1 text-lg font-bold text-emerald-600 dark:text-emerald-400">
             {formatMoney(resumen.neto)}
           </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/40">
-          <p className="text-xs text-[#86868b]">Nóminas</p>
+          <p className="text-xs text-[#86868b] dark:text-gray-400">Nóminas</p>
           <p className="mt-1 text-lg font-bold text-[#1d1d1f] dark:text-white">
             {resumen.pagadas}/{resumen.total}
-            <span className="ml-1 text-xs font-normal text-[#86868b]">pagadas</span>
+            <span className="ml-1 text-xs font-normal text-[#86868b] dark:text-gray-400">
+              pagadas
+            </span>
           </p>
         </div>
       </div>
@@ -687,8 +694,10 @@ export default function NominasPage() {
       {/* Loading */}
       {loading && (
         <div className="flex items-center justify-center py-12">
-          <RefreshCw size={20} className="animate-spin text-[#86868b]" />
-          <span className="ml-2 text-sm text-[#86868b]">Cargando nóminas...</span>
+          <RefreshCw size={20} className="animate-spin text-[#86868b] dark:text-gray-400" />
+          <span className="ml-2 text-sm text-[#86868b] dark:text-gray-400">
+            Cargando nóminas...
+          </span>
         </div>
       )}
 
@@ -702,7 +711,7 @@ export default function NominasPage() {
             </h3>
             <button
               onClick={() => setShowForm(false)}
-              className="text-[#86868b] hover:text-[#1d1d1f]"
+              className="text-[#86868b] hover:text-[#1d1d1f] dark:text-gray-400"
             >
               <X size={18} />
             </button>
@@ -712,7 +721,7 @@ export default function NominasPage() {
             {/* Empleado */}
             {!editingId && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-[#86868b]">
+                <label className="mb-1 block text-xs font-medium text-[#86868b] dark:text-gray-400">
                   {tab === "instructor" ? "Instructor" : "Empleado"}
                 </label>
                 <select
@@ -763,7 +772,9 @@ export default function NominasPage() {
             {/* Sede */}
             {!editingId && sedes.length > 1 && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-[#86868b]">Sede</label>
+                <label className="mb-1 block text-xs font-medium text-[#86868b] dark:text-gray-400">
+                  Sede
+                </label>
                 <select
                   value={formSedeId}
                   onChange={(e) => setFormSedeId(e.target.value)}
@@ -780,7 +791,7 @@ export default function NominasPage() {
 
             {/* Salario/Honorarios base */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-[#86868b]">
+              <label className="mb-1 block text-xs font-medium text-[#86868b] dark:text-gray-400">
                 {tab === "instructor" ? "Honorarios (pago base)" : "Salario base"}
               </label>
               <input
@@ -795,7 +806,9 @@ export default function NominasPage() {
 
             {/* Notas */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-[#86868b]">Notas</label>
+              <label className="mb-1 block text-xs font-medium text-[#86868b] dark:text-gray-400">
+                Notas
+              </label>
               <input
                 type="text"
                 value={formNotas}
@@ -851,7 +864,7 @@ export default function NominasPage() {
                   />
                   <button
                     onClick={() => removeConcepto(idx)}
-                    className="shrink-0 text-[#86868b] hover:text-red-500"
+                    className="shrink-0 text-[#86868b] hover:text-red-500 dark:text-gray-400"
                   >
                     <X size={14} />
                   </button>
@@ -863,19 +876,25 @@ export default function NominasPage() {
           {/* Preview totales */}
           <div className="mt-4 grid grid-cols-3 gap-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/60">
             <div className="text-center">
-              <p className="text-[10px] tracking-wide text-[#86868b] uppercase">Devengado</p>
+              <p className="text-[10px] tracking-wide text-[#86868b] uppercase dark:text-gray-400">
+                Devengado
+              </p>
               <p className="text-sm font-bold text-[#1d1d1f] dark:text-white">
                 {formatMoney(formDevengado)}
               </p>
             </div>
             <div className="text-center">
-              <p className="text-[10px] tracking-wide text-[#86868b] uppercase">Deducciones</p>
+              <p className="text-[10px] tracking-wide text-[#86868b] uppercase dark:text-gray-400">
+                Deducciones
+              </p>
               <p className="text-sm font-bold text-red-600 dark:text-red-400">
                 {formatMoney(formDeducciones)}
               </p>
             </div>
             <div className="text-center">
-              <p className="text-[10px] tracking-wide text-[#86868b] uppercase">Neto a pagar</p>
+              <p className="text-[10px] tracking-wide text-[#86868b] uppercase dark:text-gray-400">
+                Neto a pagar
+              </p>
               <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
                 {formatMoney(formNeto)}
               </p>
@@ -886,7 +905,7 @@ export default function NominasPage() {
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={() => setShowForm(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#86868b] hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#86868b] hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-700"
             >
               Cancelar
             </button>
@@ -905,11 +924,11 @@ export default function NominasPage() {
       {/* Tabla de nóminas */}
       {!loading && nominasFiltradas.length === 0 && !showForm && (
         <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 py-12 text-center dark:border-gray-700 dark:bg-gray-800/20">
-          <Briefcase size={32} className="mx-auto text-[#86868b]" />
+          <Briefcase size={32} className="mx-auto text-[#86868b] dark:text-gray-400" />
           <p className="mt-3 text-sm font-medium text-[#1d1d1f] dark:text-white">
             No hay nóminas para {MESES[mes - 1]} {anio}
           </p>
-          <p className="mt-1 text-xs text-[#86868b]">
+          <p className="mt-1 text-xs text-[#86868b] dark:text-gray-400">
             Haz clic en &quot;Nueva nómina&quot; para registrar el primer pago.
           </p>
         </div>
@@ -942,7 +961,7 @@ export default function NominasPage() {
                       <p className="text-sm font-semibold text-[#1d1d1f] dark:text-white">
                         {n.empleado_nombre}
                       </p>
-                      <p className="text-xs text-[#86868b]">
+                      <p className="text-xs text-[#86868b] dark:text-gray-400">
                         {tab === "instructor" ? "Prestación de servicios" : "Contrato laboral"}
                       </p>
                     </div>
@@ -985,7 +1004,7 @@ export default function NominasPage() {
                       <Shield size={10} /> Deducciones
                     </p>
                     {deducciones.length === 0 && (
-                      <p className="text-xs text-[#86868b]">Sin deducciones</p>
+                      <p className="text-xs text-[#86868b] dark:text-gray-400">Sin deducciones</p>
                     )}
                     {deducciones.map((c) => (
                       <div key={c.id} className="flex justify-between text-xs">
@@ -1011,12 +1030,16 @@ export default function NominasPage() {
                 {/* Neto y acciones */}
                 <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 dark:border-gray-700">
                   <div>
-                    <span className="text-xs text-[#86868b]">Neto a pagar: </span>
+                    <span className="text-xs text-[#86868b] dark:text-gray-400">
+                      Neto a pagar:{" "}
+                    </span>
                     <span className="text-base font-bold text-[#1d1d1f] dark:text-white">
                       {formatMoney(Number(n.neto_pagar))}
                     </span>
                     {n.fecha_pago && (
-                      <span className="ml-2 text-xs text-[#86868b]">Pagado el {n.fecha_pago}</span>
+                      <span className="ml-2 text-xs text-[#86868b] dark:text-gray-400">
+                        Pagado el {n.fecha_pago}
+                      </span>
                     )}
                   </div>
 
@@ -1069,7 +1092,7 @@ export default function NominasPage() {
                         <button
                           onClick={() => changeEstado(n.id, "borrador")}
                           disabled={saving}
-                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[#86868b] hover:bg-gray-50 dark:hover:bg-gray-700"
+                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[#86868b] hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700"
                         >
                           Devolver a borrador
                         </button>
@@ -1087,7 +1110,9 @@ export default function NominasPage() {
                   </div>
                 </div>
 
-                {n.notas && <p className="mt-2 text-xs text-[#86868b] italic">{n.notas}</p>}
+                {n.notas && (
+                  <p className="mt-2 text-xs text-[#86868b] italic dark:text-gray-400">{n.notas}</p>
+                )}
               </div>
             );
           })}

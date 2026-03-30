@@ -5,9 +5,9 @@ export default function Footer() {
   return (
     <footer
       id="contacto"
-      className="bg-background border-t border-[var(--surface-border)] text-[12px]"
+      className="bg-background scroll-mt-28 border-t border-[var(--surface-border)] text-[12px] sm:scroll-mt-32"
     >
-      <div className="mx-auto max-w-[1180px] px-6 py-12">
+      <div className="mx-auto max-w-[1180px] px-4 py-12 sm:px-6">
         <div className="mb-12 grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
           <div className="apple-panel p-6 sm:p-8">
             <span className="text-foreground block text-lg font-semibold">
@@ -37,13 +37,13 @@ export default function Footer() {
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/registro"
-                className="apple-button-primary min-h-[46px] justify-center text-sm font-semibold"
+                className="apple-button-primary min-h-[46px] w-full justify-center text-sm font-semibold sm:w-auto"
               >
                 Crear cuenta
               </Link>
               <Link
                 href="/login"
-                className="apple-button-secondary min-h-[46px] justify-center text-sm font-semibold"
+                className="apple-button-secondary min-h-[46px] w-full justify-center text-sm font-semibold sm:w-auto"
               >
                 Iniciar sesión
               </Link>

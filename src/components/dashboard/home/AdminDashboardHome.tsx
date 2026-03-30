@@ -19,11 +19,11 @@ import {
   type AdminDashboardSummaryResponse,
 } from "@/lib/dashboard-admin-summary";
 import { getDashboardSummaryCached, readDashboardSummaryCache } from "@/lib/dashboard-client-cache";
-import HomePriorityActions from "@/components/dashboard/HomePriorityActions";
 import PageScaffold from "@/components/dashboard/PageScaffold";
 import SummaryRow from "@/components/dashboard/SummaryRow";
 import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
 import { useAuth } from "@/hooks/useAuth";
+import { fetchJsonWithRetry } from "@/lib/retry";
 import {
   DashboardLoadingState,
   fmt,
@@ -55,6 +55,7 @@ export default function AdminDashboardHome() {
   });
   const [dailyIngresos, setDailyIngresos] = useState<AdminDashboardDailyIngresoPoint[]>([]);
   const [loadingStats, setLoadingStats] = useState(true);
+  const [summaryWarning, setSummaryWarning] = useState<string | null>(null);
 
   useEffect(() => {
     if (!perfil) return;
@@ -75,6 +76,7 @@ export default function AdminDashboardHome() {
       setComparisonStats((current) => ({ ...current, ...cachedSnapshot.comparisonStats }));
       setDailyIngresos(cachedSnapshot.dailyIngresos);
       setLoadingStats(false);
+      setSummaryWarning(null);
     }
 
     const fetchStats = async () => {
@@ -83,17 +85,11 @@ export default function AdminDashboardHome() {
           kind: "admin",
           scope: cacheScope,
           loader: async () => {
-            const response = await fetch("/api/dashboard/admin-summary", {
-              cache: "default",
-            });
-            const payload = await response.json();
-            if (!response.ok) {
-              throw new Error(
-                payload?.error || `No se pudo cargar el resumen del dashboard (${response.status}).`
-              );
-            }
-
-            return payload as AdminDashboardSummaryResponse;
+            return fetchJsonWithRetry<AdminDashboardSummaryResponse>(
+              "/api/dashboard/admin-summary",
+              { cache: "default" },
+              { attempts: 3, baseDelayMs: 400 }
+            );
           },
         });
         if (!isActive) return;
@@ -101,8 +97,15 @@ export default function AdminDashboardHome() {
         setDailyIngresos(snapshot.dailyIngresos);
         setStats((current) => ({ ...current, ...snapshot.stats }));
         setComparisonStats((current) => ({ ...current, ...snapshot.comparisonStats }));
+        setSummaryWarning(null);
       } catch (error) {
         console.error("Error al obtener estadísticas:", error);
+        if (!isActive) return;
+        setSummaryWarning(
+          cachedSnapshot
+            ? "Mostrando el último resumen disponible mientras actualizamos el dashboard."
+            : "No se pudo cargar el resumen del dashboard."
+        );
       } finally {
         if (isActive) {
           setLoadingStats(false);
@@ -122,9 +125,14 @@ export default function AdminDashboardHome() {
 
   const statCards = [
     {
-      label: "Alumnos del mes",
-      value: stats.cursosNuevosMes.toString(),
+      label: "Alumnos activos",
+      value: stats.alumnos.toString(),
       icon: <Users size={20} />,
+    },
+    {
+      label: "Cursos nuevos del mes",
+      value: stats.cursosNuevosMes.toString(),
+      icon: <BookOpen size={20} />,
     },
     {
       label: "Clases Hoy",
@@ -206,7 +214,7 @@ export default function AdminDashboardHome() {
       <PageScaffold
         eyebrow="Centro operativo"
         title={`Hola, ${nombre}`}
-        description="Resumen de la escuela con foco en alumnos del mes, agenda del día, exámenes pendientes y recaudo del mes."
+        description="Resumen de la escuela con foco en alumnos activos, cursos nuevos del mes, agenda del día y recaudo."
         aside={
           <div className="rounded-[22px] border border-[rgba(15,23,42,0.08)] bg-white/72 px-4 py-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
             <p className="text-[11px] font-semibold tracking-[0.16em] text-[#66707a] uppercase">
@@ -224,20 +232,27 @@ export default function AdminDashboardHome() {
           </div>
         }
       >
+        {summaryWarning ? (
+          <div className="mb-4 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+            {summaryWarning}
+          </div>
+        ) : null}
         <SummaryRow
-          columns={4}
+          columns={5}
           items={statCards.map((stat) => ({
             id: stat.label,
             label: stat.label,
             value: stat.value,
             detail:
-              stat.label === "Alumnos del mes"
-                ? "Regulares inscritos durante el mes actual."
-                : stat.label === "Clases Hoy"
-                  ? "Agenda práctica y teórica del día."
-                  : stat.label === "Exámenes Pendientes"
-                    ? "Seguimientos que necesitan acción."
-                    : "Cobrado acumulado del mes vigente.",
+              stat.label === "Alumnos activos"
+                ? "Regulares activos y pre-registrados en tu escuela."
+                : stat.label === "Cursos nuevos del mes"
+                  ? "Matrículas regulares creadas en el mes actual."
+                  : stat.label === "Clases Hoy"
+                    ? "Agenda práctica y teórica del día."
+                    : stat.label === "Exámenes Pendientes"
+                      ? "Seguimientos que necesitan acción."
+                      : "Cobrado acumulado del mes vigente.",
             icon: stat.icon,
             tone:
               stat.label === "Clases Hoy"
@@ -250,14 +265,6 @@ export default function AdminDashboardHome() {
           }))}
         />
       </PageScaffold>
-
-      <div className="mt-6">
-        <HomePriorityActions
-          rol={perfil?.rol}
-          title="Lo más importante primero"
-          description="Accesos directos a los módulos donde normalmente se concentra la operación."
-        />
-      </div>
 
       <div className="animate-fade-in mb-10 grid grid-cols-1 gap-6 delay-150 xl:grid-cols-[1.05fr_0.95fr]">
         <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">

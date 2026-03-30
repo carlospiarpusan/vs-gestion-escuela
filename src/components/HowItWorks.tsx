@@ -26,9 +26,9 @@ export default function HowItWorks() {
   return (
     <section
       id="how-it-works"
-      className="bg-background relative overflow-hidden py-16 sm:py-24 md:py-32"
+      className="bg-background relative scroll-mt-28 overflow-hidden py-16 sm:scroll-mt-32 sm:py-24 md:py-32"
     >
-      <div className="mx-auto max-w-[980px] px-6">
+      <div className="mx-auto max-w-[980px] px-4 sm:px-6">
         <SectionIntro
           badge="Implementación simple"
           title="Una puesta en marcha pensada para autoescuelas que necesitan operar rápido"
@@ -54,16 +54,16 @@ export default function HowItWorks() {
           ))}
         </div>
 
-        <div className="mt-14 flex flex-col gap-3 sm:flex-row">
+        <div className="mt-12 flex flex-col gap-3 sm:mt-14 sm:flex-row">
           <Link
             href="/registro"
-            className="apple-button-primary min-h-[48px] justify-center px-6 text-sm font-semibold"
+            className="apple-button-primary min-h-[48px] w-full justify-center px-6 text-sm font-semibold sm:w-auto"
           >
             Crear cuenta
           </Link>
           <a
             href="#pricing"
-            className="apple-button-secondary min-h-[48px] justify-center px-6 text-sm font-semibold"
+            className="apple-button-secondary min-h-[48px] w-full justify-center px-6 text-sm font-semibold sm:w-auto"
           >
             Ver planes y acompañamiento
           </a>

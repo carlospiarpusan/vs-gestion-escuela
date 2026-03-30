@@ -4,7 +4,7 @@ export const SITE_NAME = "Condusoft";
 export const DEFAULT_SITE_URL = "https://condusoft.co";
 export const SITE_SHARE_IMAGE_PATH = "/opengraph-image";
 export const SITE_DESCRIPTION =
-  "Condusoft es el software líder para autoescuelas y centros de enseñanza automovilística (CEA) en Colombia. Gestiona alumnos, matrículas, clases, ingresos, cartera, gastos, flota y sedes desde una sola plataforma profesional.";
+  "Condusoft es software para autoescuelas y centros de enseñanza automovilística (CEA) en Colombia. Gestiona alumnos, matrículas, clases, finanzas, flota, consentimiento de datos, solicitudes ARCO y cumplimiento interno desde una sola plataforma profesional.";
 export const DEFAULT_GOOGLE_SITE_VERIFICATION =
   "google-site-verification=U3R7Q9uL_tC3jpUJV65oksAggtp0CEB9yACnUoAMSrg";
 
@@ -19,6 +19,10 @@ export const SITE_KEYWORDS = [
   "control de alumnos autoescuela",
   "software administrativo CEA",
   "gestión financiera autoescuelas",
+  "cumplimiento interno autoescuelas",
+  "protección de datos autoescuelas colombia",
+  "solicitudes ARCO autoescuelas",
+  "consentimiento de datos CEA",
 ];
 
 function normalizeUrl(value: string | undefined | null) {

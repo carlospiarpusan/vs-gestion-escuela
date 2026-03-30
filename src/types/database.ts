@@ -15,6 +15,10 @@ export type EstadoSede = "activa" | "inactiva";
 export type EstadoAlumno = "activo" | "inactivo" | "graduado" | "pre_registrado";
 export type TipoRegistroAlumno = "regular" | "aptitud_conductor" | "practica_adicional";
 export type EstadoMatricula = "activo" | "cerrado" | "cancelado";
+export type TipoPlantillaContratoEscuela = "moto" | "vehiculo" | "combo";
+export type TipoDocumentoAlumno = "CC" | "CE" | "TI" | "PAS";
+export type TipoDocumentoLegalContrato = "CC" | "CE" | "TI" | "NIT" | "PAS";
+export type PrefijoSecuenciaContrato = "MOT" | "CAR" | "COM";
 export type EstadoInstructor = "activo" | "inactivo";
 export type TipoPermiso = "AM" | "A1" | "A2" | "A" | "B" | "C" | "D";
 export type TipoPermisoExamen = TipoPermiso | "comun";
@@ -126,8 +130,10 @@ export interface Alumno {
   nombre: string;
   apellidos: string;
   dni: string;
+  tipo_documento: TipoDocumentoAlumno | null;
   email: string | null;
   telefono: string;
+  lugar_expedicion_documento: string | null;
   fecha_nacimiento: string | null;
   direccion: string | null;
   tipo_permiso: TipoPermiso;
@@ -158,6 +164,8 @@ export interface MatriculaAlumno {
   alumno_id: string;
   created_by: string | null;
   numero_contrato: string | null;
+  prefijo_contrato: PrefijoSecuenciaContrato | null;
+  consecutivo_contrato: number | null;
   categorias: string[];
   valor_total: number | null;
   fecha_inscripcion: string | null;
@@ -167,6 +175,8 @@ export interface MatriculaAlumno {
   tramitador_nombre: string | null;
   tramitador_valor: number | null;
   created_at: string;
+  updated_by: string | null;
+  updated_at: string;
 }
 
 export interface Instructor {
@@ -534,4 +544,147 @@ export interface SolicitudArco {
   responded_at: string | null;
   responded_by: string | null;
   created_at: string;
+}
+
+// ── Contratos por escuela ───────────────────────────────────────────
+export interface ConfiguracionContratosEscuela {
+  escuela_id: string;
+  nombre_legal_escuela: string;
+  nit_escuela: string | null;
+  representante_legal_nombre: string | null;
+  representante_legal_tipo_documento: TipoDocumentoLegalContrato | null;
+  representante_legal_numero_documento: string | null;
+  representante_legal_lugar_expedicion: string | null;
+  direccion_legal_escuela: string | null;
+  telefono_legal_escuela: string | null;
+  ciudad_firma: string | null;
+  pie_direccion: string | null;
+  pie_telefonos: string | null;
+  pie_correo: string | null;
+  cargo_firmante: string;
+  siguiente_consecutivo_contrato: number;
+  siguiente_consecutivo_mot: number;
+  siguiente_consecutivo_car: number;
+  siguiente_consecutivo_com: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlantillaContratoEscuela {
+  id: string;
+  escuela_id: string;
+  tipo_plantilla: TipoPlantillaContratoEscuela;
+  titulo: string;
+  html_plantilla: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContratoEmitidoAlumno {
+  id: string;
+  matricula_id: string;
+  escuela_id: string;
+  tipo_plantilla: TipoPlantillaContratoEscuela;
+  numero_contrato: string;
+  prefijo_contrato: PrefijoSecuenciaContrato | null;
+  consecutivo_contrato: number | null;
+  html_renderizado: string;
+  snapshot_datos: Record<string, unknown>;
+  emitido_por: string | null;
+  emitido_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Cumplimiento interno ───────────────────────────────────────────
+export type EstadoRevisionRnBd = "aplica" | "no_aplica" | "pendiente";
+export type TipoRespaldoCumplimiento = "base_datos" | "archivos" | "documental" | "seguridad";
+export type ResultadoRespaldoCumplimiento = "exitoso" | "parcial" | "fallido";
+export type ClasificacionIncidenteCumplimiento =
+  | "seguridad"
+  | "privacidad"
+  | "continuidad"
+  | "acceso"
+  | "otro";
+export type ImpactoIncidenteCumplimiento = "bajo" | "medio" | "alto" | "critico";
+export type EstadoIncidenteCumplimiento = "abierto" | "en_investigacion" | "contenido" | "cerrado";
+export type TipoDatoRetencionCumplimiento =
+  | "alumnos"
+  | "instructores"
+  | "administrativos"
+  | "contratos"
+  | "examenes"
+  | "finanzas"
+  | "solicitudes_arco";
+export type EstadoRevisionRetencionCumplimiento = "vigente" | "pendiente" | "en_revision";
+
+export interface CumplimientoEscuela {
+  id: string;
+  escuela_id: string;
+  politica_privacidad_vigente: boolean;
+  politica_version: string | null;
+  politica_revisada_at: string | null;
+  responsable_nombre: string | null;
+  responsable_cargo: string | null;
+  responsable_email: string | null;
+  responsable_telefono: string | null;
+  canal_contacto: string | null;
+  consentimientos_revisados_at: string | null;
+  rnbd_estado: EstadoRevisionRnBd;
+  rnbd_revisado_at: string | null;
+  rnbd_evidencia_ref: string | null;
+  notas: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CumplimientoRespaldo {
+  id: string;
+  escuela_id: string;
+  fecha_respaldo: string;
+  tipo: TipoRespaldoCumplimiento;
+  resultado: ResultadoRespaldoCumplimiento;
+  responsable: string;
+  evidencia_ref: string | null;
+  detalle: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CumplimientoIncidente {
+  id: string;
+  escuela_id: string;
+  clasificacion: ClasificacionIncidenteCumplimiento;
+  impacto: ImpactoIncidenteCumplimiento;
+  estado: EstadoIncidenteCumplimiento;
+  titulo: string;
+  descripcion: string;
+  acciones_tomadas: string | null;
+  responsable: string | null;
+  fecha_deteccion: string;
+  fecha_cierre: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CumplimientoRetencion {
+  id: string;
+  escuela_id: string;
+  tipo_dato: TipoDatoRetencionCumplimiento;
+  meses_retencion: number;
+  criterio_legal: string | null;
+  estado_revision: EstadoRevisionRetencionCumplimiento;
+  revisado_at: string | null;
+  evidencia_ref: string | null;
+  notas: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
 }

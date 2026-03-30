@@ -9,14 +9,7 @@ import {
 } from "@/components/dashboard/accounting/AccountingWorkspace";
 import { formatCompactDate } from "@/lib/accounting-dashboard";
 import type { DailyCashRow, DailyCashStats } from "@/lib/finance/types";
-import {
-  AlumnoOption,
-  categorias,
-  estadosIngreso,
-  inputCls,
-  labelCls,
-  metodos,
-} from "./constants";
+import { AlumnoOption, categorias, estadosIngreso, inputCls, labelCls, metodos } from "./constants";
 
 type CajaDiariaFiltersSectionProps = {
   filtroAlumno: string;
@@ -41,6 +34,8 @@ type CajaDiariaFiltersSectionProps = {
 type CajaDiariaOverviewSectionProps = {
   loading: boolean;
   stats: DailyCashStats;
+  todayRow: DailyCashRow | null;
+  showTodaySummary: boolean;
   formatMoney: (value: number) => string;
   periodLabel: string;
 };
@@ -78,7 +73,11 @@ export function CajaDiariaFiltersSection({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <div>
           <label className={labelCls}>Alumno</label>
-          <select value={filtroAlumno} onChange={(e) => onAlumnoChange(e.target.value)} className={inputCls}>
+          <select
+            value={filtroAlumno}
+            onChange={(e) => onAlumnoChange(e.target.value)}
+            className={inputCls}
+          >
             <option value="">Todos</option>
             {alumnos.map((alumno) => (
               <option key={alumno.id} value={alumno.id}>
@@ -89,7 +88,11 @@ export function CajaDiariaFiltersSection({
         </div>
         <div>
           <label className={labelCls}>Método de pago</label>
-          <select value={filtroMetodo} onChange={(e) => onMetodoChange(e.target.value)} className={inputCls}>
+          <select
+            value={filtroMetodo}
+            onChange={(e) => onMetodoChange(e.target.value)}
+            className={inputCls}
+          >
             <option value="">Todos</option>
             {metodos.map((metodo) => (
               <option key={metodo.value} value={metodo.value}>
@@ -115,7 +118,11 @@ export function CajaDiariaFiltersSection({
         </div>
         <div>
           <label className={labelCls}>Estado</label>
-          <select value={filtroEstado} onChange={(e) => onEstadoChange(e.target.value)} className={inputCls}>
+          <select
+            value={filtroEstado}
+            onChange={(e) => onEstadoChange(e.target.value)}
+            className={inputCls}
+          >
             <option value="">Todos</option>
             {estadosIngreso.map((estado) => (
               <option key={estado} value={estado}>
@@ -126,7 +133,11 @@ export function CajaDiariaFiltersSection({
         </div>
         <div>
           <label className={labelCls}>Año</label>
-          <select value={filtroYear} onChange={(e) => onYearChange(e.target.value)} className={inputCls}>
+          <select
+            value={filtroYear}
+            onChange={(e) => onYearChange(e.target.value)}
+            className={inputCls}
+          >
             {years.map((year) => (
               <option key={year} value={year}>
                 {year}
@@ -136,7 +147,11 @@ export function CajaDiariaFiltersSection({
         </div>
         <div>
           <label className={labelCls}>Mes</label>
-          <select value={filtroMes} onChange={(e) => onMesChange(e.target.value)} className={inputCls}>
+          <select
+            value={filtroMes}
+            onChange={(e) => onMesChange(e.target.value)}
+            className={inputCls}
+          >
             {mesesDelAno.map((mes) => (
               <option key={mes.value} value={mes.value}>
                 {mes.label}
@@ -164,9 +179,61 @@ export function CajaDiariaFiltersSection({
 export function CajaDiariaOverviewSection({
   loading,
   stats,
+  todayRow,
+  showTodaySummary,
   formatMoney,
   periodLabel,
 }: CajaDiariaOverviewSectionProps) {
+  if (showTodaySummary) {
+    const todayTotal = todayRow?.total_registrado || 0;
+    const todayMovements = todayRow?.movimientos || 0;
+
+    return (
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <AccountingStatCard
+          eyebrow="Hoy"
+          label="Total de hoy"
+          value={loading ? "..." : formatMoney(todayTotal)}
+          detail={
+            todayRow
+              ? `Efectivo: ${formatMoney(todayRow.total_efectivo)} · Nequi: ${formatMoney(todayRow.total_nequi)}`
+              : "Sin ingresos cobrados hoy."
+          }
+          tone="success"
+          icon={<Banknote size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Hoy"
+          label="Movimientos de hoy"
+          value={loading ? "..." : String(todayMovements)}
+          detail={
+            todayRow
+              ? `Datáfono: ${formatMoney(todayRow.total_datafono)} · Sistecrédito: ${formatMoney(todayRow.total_sistecredito)}`
+              : "Todavía no hay movimientos cobrados en el día."
+          }
+          tone="primary"
+          icon={<Calendar size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow={periodLabel}
+          label="Acumulado del período"
+          value={loading ? "..." : formatMoney(stats.totalRegistrado)}
+          detail={`${stats.diasConMovimientos} día${stats.diasConMovimientos === 1 ? "" : "s"} con movimiento.`}
+          tone="default"
+          icon={<TrendingUp size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow={periodLabel}
+          label="Mejor día"
+          value={loading ? "..." : stats.mejorDiaFecha ? formatMoney(stats.mejorDiaMonto) : "—"}
+          detail={stats.mejorDiaFecha ? formatCompactDate(stats.mejorDiaFecha) : "Sin movimientos"}
+          tone="default"
+          icon={<Star size={18} />}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <AccountingStatCard

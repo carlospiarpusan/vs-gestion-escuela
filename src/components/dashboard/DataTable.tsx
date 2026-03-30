@@ -179,7 +179,7 @@ export default function DataTable<T extends { id: string | number }>({
     }
 
     return (
-      <div className="apple-panel-muted rounded-[24px] p-4">
+      <div className="apple-panel-muted overflow-hidden rounded-[24px] p-4">
         <div className="space-y-3">
           {columns.map((col) => {
             const value = col.render
@@ -189,14 +189,14 @@ export default function DataTable<T extends { id: string | number }>({
             return (
               <div key={String(col.key)} className="flex flex-col gap-1">
                 <span className="apple-kicker">{col.label}</span>
-                <div className="text-sm text-foreground">{value}</div>
+                <div className="text-foreground text-sm break-words">{value}</div>
               </div>
             );
           })}
         </div>
 
         {(extraActions || onEdit || onDelete) && (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2 [&>*]:w-full [&>*]:justify-center sm:[&>*]:w-auto">
             {extraActions?.(row)}
             {onEdit && (
               <button
@@ -278,7 +278,10 @@ export default function DataTable<T extends { id: string | number }>({
       <div className="mb-5">
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
-            <Search size={16} className="absolute top-1/2 left-4 -translate-y-1/2 text-[var(--gray-500)]" />
+            <Search
+              size={16}
+              className="absolute top-1/2 left-4 -translate-y-1/2 text-[var(--gray-500)]"
+            />
             <input
               type="text"
               placeholder={searchPlaceholder}
@@ -314,7 +317,7 @@ export default function DataTable<T extends { id: string | number }>({
           <button
             type="button"
             onClick={() => applySearch()}
-            className="apple-button-secondary min-h-[46px] px-5 text-sm font-medium"
+            className="apple-button-secondary min-h-[46px] w-full px-5 text-sm font-medium sm:w-auto"
           >
             Buscar
           </button>
@@ -379,10 +382,7 @@ export default function DataTable<T extends { id: string | number }>({
                     className="border-b border-gray-200/30 transition-colors hover:bg-black/[0.02] dark:border-gray-800/30 dark:hover:bg-white/[0.03]"
                   >
                     {columns.map((col) => (
-                      <td
-                        key={String(col.key)}
-                        className="px-5 py-4 align-top text-foreground"
-                      >
+                      <td key={String(col.key)} className="text-foreground px-5 py-4 align-top">
                         {col.render
                           ? col.render(row)
                           : String((row as Record<string, unknown>)[String(col.key)] ?? "")}
@@ -429,7 +429,7 @@ export default function DataTable<T extends { id: string | number }>({
           <span className="text-xs font-medium text-[var(--gray-500)]">
             {totalItems} registro{totalItems !== 1 ? "s" : ""}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 sm:justify-start">
             <button
               onClick={() => goToPage(Math.max(0, safePage - 1))}
               disabled={safePage === 0}

@@ -23,6 +23,7 @@ type IngresoModalProps = {
   form: IngresoFormData;
   alumnos: AlumnoOption[];
   matriculasDisponibles: MatriculaOption[];
+  catalogsLoading?: boolean;
   saving: boolean;
   setForm: Dispatch<SetStateAction<IngresoFormData>>;
   onAlumnoChange: (alumnoId: string) => void;
@@ -37,6 +38,7 @@ export default function IngresoModal({
   form,
   alumnos,
   matriculasDisponibles,
+  catalogsLoading = false,
   saving,
   setForm,
   onAlumnoChange,
@@ -52,6 +54,12 @@ export default function IngresoModal({
       mobilePresentation="fullscreen"
     >
       <div className="space-y-4">
+        {catalogsLoading && (
+          <p className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[#66707a] dark:text-[#aeb6bf]">
+            Cargando alumnos y matrículas disponibles...
+          </p>
+        )}
+
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500 dark:bg-red-900/20">
             {error}

@@ -220,8 +220,10 @@ create table public.alumnos (
   nombre text not null,
   apellidos text not null,
   dni text not null,
+  tipo_documento text check (tipo_documento in ('CC', 'CE', 'TI', 'PAS')),
   email text,
   telefono text not null,
+  lugar_expedicion_documento text,
   fecha_nacimiento date,
   direccion text,
   tipo_permiso text not null default 'B' check (tipo_permiso in ('AM', 'A1', 'A2', 'A', 'B', 'C', 'D')),
@@ -251,6 +253,8 @@ create table public.matriculas_alumno (
   alumno_id uuid references public.alumnos(id) on delete cascade not null,
   created_by uuid references public.perfiles(id) on delete set null,
   numero_contrato text,
+  prefijo_contrato text,
+  consecutivo_contrato bigint,
   categorias text[] not null default '{}',
   valor_total numeric,
   fecha_inscripcion date default current_date,
@@ -259,8 +263,74 @@ create table public.matriculas_alumno (
   tiene_tramitador boolean default false,
   tramitador_nombre text,
   tramitador_valor numeric,
+  updated_by uuid references public.perfiles(id) on delete set null,
   created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone not null default now(),
   constraint matriculas_alumno_contrato_unique unique (escuela_id, numero_contrato)
+);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'tipo_plantilla_contrato_escuela'
+      and typnamespace = 'public'::regnamespace
+  ) then
+    create type public.tipo_plantilla_contrato_escuela as enum ('moto', 'vehiculo', 'combo');
+  end if;
+end
+$$;
+
+create table public.configuracion_contratos_escuela (
+  escuela_id uuid primary key references public.escuelas(id) on delete cascade,
+  nombre_legal_escuela text not null,
+  nit_escuela text,
+  representante_legal_nombre text,
+  representante_legal_tipo_documento text,
+  representante_legal_numero_documento text,
+  representante_legal_lugar_expedicion text,
+  direccion_legal_escuela text,
+  telefono_legal_escuela text,
+  ciudad_firma text,
+  pie_direccion text,
+  pie_telefonos text,
+  pie_correo text,
+  cargo_firmante text not null default 'Representante legal',
+  siguiente_consecutivo_contrato bigint not null default 1,
+  siguiente_consecutivo_mot bigint not null default 1,
+  siguiente_consecutivo_car bigint not null default 1,
+  siguiente_consecutivo_com bigint not null default 1,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now()
+);
+
+create table public.plantillas_contrato_escuela (
+  id uuid default gen_random_uuid() primary key,
+  escuela_id uuid references public.escuelas(id) on delete cascade not null,
+  tipo_plantilla public.tipo_plantilla_contrato_escuela not null,
+  titulo text not null,
+  html_plantilla text not null,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  constraint plantillas_contrato_escuela_unique unique (escuela_id, tipo_plantilla)
+);
+
+create table public.contratos_emitidos_alumno (
+  id uuid default gen_random_uuid() primary key,
+  matricula_id uuid references public.matriculas_alumno(id) on delete cascade not null,
+  escuela_id uuid references public.escuelas(id) on delete cascade not null,
+  tipo_plantilla public.tipo_plantilla_contrato_escuela not null,
+  numero_contrato text not null,
+  prefijo_contrato text,
+  consecutivo_contrato bigint,
+  html_renderizado text not null,
+  snapshot_datos jsonb not null,
+  emitido_por uuid references public.perfiles(id) on delete set null,
+  emitido_at timestamp with time zone not null default now(),
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  constraint contratos_emitidos_alumno_matricula_unique unique (matricula_id)
 );
 
 -- 6. INSTRUCTORES
@@ -623,6 +693,25 @@ create index if not exists alumnos_empresa_convenio_trgm_idx
   on public.alumnos using gin ((coalesce(empresa_convenio, '')) gin_trgm_ops);
 create index if not exists alumnos_categorias_gin_idx on public.alumnos using gin (categorias);
 create index if not exists matriculas_alumno_categorias_gin_idx on public.matriculas_alumno using gin (categorias);
+create unique index if not exists matriculas_alumno_escuela_prefijo_consecutivo_unique_idx
+  on public.matriculas_alumno (escuela_id, prefijo_contrato, consecutivo_contrato)
+  where prefijo_contrato is not null
+    and consecutivo_contrato is not null;
+create index if not exists plantillas_contrato_escuela_escuela_idx
+  on public.plantillas_contrato_escuela (escuela_id, tipo_plantilla);
+create index if not exists contratos_emitidos_alumno_escuela_emitido_idx
+  on public.contratos_emitidos_alumno (escuela_id, emitido_at desc);
+create index if not exists contratos_emitidos_alumno_consecutivo_idx
+  on public.contratos_emitidos_alumno (escuela_id, consecutivo_contrato)
+  where consecutivo_contrato is not null;
+create unique index if not exists contratos_emitidos_alumno_escuela_prefijo_consecutivo_unique_idx
+  on public.contratos_emitidos_alumno (escuela_id, prefijo_contrato, consecutivo_contrato)
+  where prefijo_contrato is not null
+    and consecutivo_contrato is not null;
+create index if not exists contratos_emitidos_alumno_prefijo_consecutivo_idx
+  on public.contratos_emitidos_alumno (escuela_id, prefijo_contrato, consecutivo_contrato)
+  where prefijo_contrato is not null
+    and consecutivo_contrato is not null;
 create index if not exists perfiles_escuela_rol_created_idx on public.perfiles (escuela_id, rol, created_at desc);
 create index if not exists perfiles_escuela_sede_rol_created_idx on public.perfiles (escuela_id, sede_id, rol, created_at desc);
 create index if not exists perfiles_nombre_trgm_idx on public.perfiles using gin (nombre gin_trgm_ops);

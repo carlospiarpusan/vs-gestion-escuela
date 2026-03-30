@@ -116,11 +116,50 @@ export function createDefaultFilters(): FilterState {
   };
 }
 
-export function buildParams(filters: FilterState, section: ReportSection) {
+const SUMMARY_SCREEN_INCLUDES = [
+  "options",
+  "summary",
+  "breakdown_income_lines",
+  "breakdown_expense_categories",
+  "breakdown_income_concepts",
+  "breakdown_expense_concepts",
+  "series_monthly",
+  "payables_summary",
+  "payables_top_proveedores",
+  "payables_top_tramitadores",
+  "contracts_summary",
+  "contracts_oldest_pending",
+].join(",");
+
+const SUMMARY_EXPORT_INCLUDES = [
+  "options",
+  "summary",
+  "breakdown_income_lines",
+  "breakdown_expense_categories",
+  "breakdown_income_concepts",
+  "breakdown_expense_concepts",
+  "series_daily",
+  "series_monthly",
+  "payables_summary",
+  "payables_top_proveedores",
+  "payables_top_tramitadores",
+  "contracts_summary",
+  "contracts_oldest_pending",
+].join(",");
+
+const STUDENTS_INCLUDES = "options,students";
+
+export function buildParams(
+  filters: FilterState,
+  section: ReportSection,
+  purpose: "screen" | "export" = "screen"
+) {
   const include =
     section === "estudiantes"
-      ? "options,students"
-      : "options,summary,breakdown,series,payables,contracts";
+      ? STUDENTS_INCLUDES
+      : purpose === "export"
+        ? SUMMARY_EXPORT_INCLUDES
+        : SUMMARY_SCREEN_INCLUDES;
 
   const params = new URLSearchParams();
   const range = getMonthDateRange(

@@ -50,7 +50,7 @@ export default function Sidebar({
         aria-current={active ? "page" : undefined}
         title={compact ? module.label : undefined}
         className={`group flex items-center gap-3 rounded-2xl transition-all ${
-          compact ? "justify-center px-2 py-3" : "px-4 py-3"
+          compact ? "justify-center px-2 py-3" : "px-4 py-3.5 sm:py-3"
         } ${
           active
             ? "bg-[linear-gradient(135deg,var(--brand-600),var(--brand-500))] text-white shadow-[0_18px_34px_rgba(37,99,235,0.22)]"
@@ -100,13 +100,13 @@ export default function Sidebar({
         } ${
           collapsedDesktop
             ? "lg:static lg:z-auto lg:h-screen lg:w-[6rem] lg:translate-x-0 lg:px-3 lg:py-4"
-            : "w-[min(19rem,calc(100vw-0.75rem))] px-3 py-[max(0.75rem,env(safe-area-inset-top))] lg:static lg:z-auto lg:h-screen lg:w-[21rem] lg:translate-x-0 lg:px-4 lg:py-4"
+            : "w-[min(21rem,calc(100vw-0.5rem))] px-2 py-[max(0.6rem,env(safe-area-inset-top))] pb-[max(0.6rem,env(safe-area-inset-bottom))] lg:static lg:z-auto lg:h-screen lg:w-[21rem] lg:translate-x-0 lg:px-4 lg:py-4"
         }`}
         aria-label="Menú de navegación"
       >
-        <div className="apple-panel flex h-full flex-col overflow-hidden">
+        <div className="apple-panel flex h-full flex-col overflow-hidden rounded-[28px] lg:rounded-[22px]">
           <div
-            className={`flex items-center justify-between ${collapsedDesktop ? "px-3 py-4" : "px-5 py-4"}`}
+            className={`flex items-center justify-between ${collapsedDesktop ? "px-3 py-4" : "px-4 py-4 sm:px-5"}`}
           >
             {collapsedDesktop ? (
               <span className="apple-brand-mark mx-auto flex h-10 w-10 items-center justify-center text-sm font-semibold">
@@ -138,7 +138,7 @@ export default function Sidebar({
           {scopeControlContent ? <div>{scopeControlContent}</div> : null}
 
           <nav
-            className={`flex-1 overflow-y-auto ${collapsedDesktop ? "space-y-4 px-2 py-2" : "space-y-4 px-3 pb-4"}`}
+            className={`flex-1 overflow-y-auto overscroll-contain ${collapsedDesktop ? "space-y-4 px-2 py-2" : "space-y-5 px-3 pb-5"}`}
           >
             {navigation.map((area) => (
               <section key={area.id}>

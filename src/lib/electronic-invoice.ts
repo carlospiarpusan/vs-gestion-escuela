@@ -27,6 +27,11 @@ export interface ElectronicInvoicePreview {
   lineItems: string[];
 }
 
+const MAX_ELECTRONIC_XML_BYTES = 5 * 1024 * 1024;
+const MAX_ELECTRONIC_ZIP_BYTES = 12 * 1024 * 1024;
+const INVOICE_XML_SIGNATURE =
+  /<(?:[a-z0-9_]+:)?(Invoice|CreditNote|AttachedDocument|ApplicationResponse)\b/i;
+
 function normalizeText(value: string | null | undefined) {
   return (value || "").replace(/\s+/g, " ").trim();
 }
@@ -42,7 +47,10 @@ function getElementChildren(parent: Element) {
 
 function findDirectChild(parent: Element, step: PathStep) {
   const names = normalizeLocalNames(step);
-  return getElementChildren(parent).find((child) => names.includes(child.localName.toLowerCase())) || null;
+  return (
+    getElementChildren(parent).find((child) => names.includes(child.localName.toLowerCase())) ||
+    null
+  );
 }
 
 function findTextByPaths(root: Element, paths: PathDefinition[]) {
@@ -85,6 +93,65 @@ function findDescendantText(root: Element, localNames: string[]) {
   }
 
   return null;
+}
+
+type DescendantTextIndex = Map<string, string>;
+
+function buildDescendantTextIndex(root: Element) {
+  const index: DescendantTextIndex = new Map();
+
+  const visit = (node: Element) => {
+    const localName = normalizeText(node.localName).toLowerCase();
+    if (localName && !index.has(localName)) {
+      const value = normalizeText(node.textContent);
+      if (value) {
+        index.set(localName, value);
+      }
+    }
+
+    for (const child of getElementChildren(node)) {
+      visit(child);
+    }
+  };
+
+  visit(root);
+  return index;
+}
+
+function findDescendantTextFromIndex(index: DescendantTextIndex, localNames: string[]) {
+  for (const localName of localNames) {
+    const value = index.get(localName.toLowerCase());
+    if (value) return value;
+  }
+
+  return null;
+}
+
+function getTextByteLength(value: string) {
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(value).length;
+  }
+
+  return Buffer.byteLength(value, "utf8");
+}
+
+function assertBinaryWithinLimit(
+  fileName: string,
+  byteLength: number,
+  maxBytes: number,
+  label: string
+) {
+  if (byteLength > maxBytes) {
+    throw new Error(
+      `${label} ${fileName} supera el tamaño máximo permitido para importación automática.`
+    );
+  }
+}
+
+function assertXmlLooksLikeInvoice(xmlContent: string) {
+  if (!INVOICE_XML_SIGNATURE.test(xmlContent)) {
+    throw new Error("El XML no corresponde a una factura electronica compatible.");
+  }
 }
 
 function parseXmlDocument(xmlContent: string) {
@@ -158,12 +225,13 @@ function extractLineItems(root: Element) {
   ];
 
   const items = invoiceLines
-    .map((line) =>
-      findTextByPaths(line, [
-        [["Item"], ["Description"]],
-        [["Item"], ["Name"]],
-        [["Price"], ["AllowanceChargeReason"]],
-      ]) || findDescendantText(line, ["Description", "Name"])
+    .map(
+      (line) =>
+        findTextByPaths(line, [
+          [["Item"], ["Description"]],
+          [["Item"], ["Name"]],
+          [["Price"], ["AllowanceChargeReason"]],
+        ]) || findDescendantText(line, ["Description", "Name"])
     )
     .filter((value): value is string => Boolean(value));
 
@@ -174,21 +242,51 @@ function suggestExpenseCategory(text: string): CategoriaGasto {
   const haystack = normalizeText(text).toLowerCase();
 
   if (isTramitadorExpenseText(haystack)) return "tramitador";
-  if (/(gasolina|combustible|acpm|diesel|diesel|tanqueo|estacion de servicio)/.test(haystack)) return "combustible";
+  if (/(gasolina|combustible|acpm|diesel|diesel|tanqueo|estacion de servicio)/.test(haystack))
+    return "combustible";
   if (/(soat|poliza|seguro|aseguradora)/.test(haystack)) return "seguros";
   if (/(arriendo|alquiler|canon|arrendamiento)/.test(haystack)) return "alquiler";
-  if (/(internet|energia|agua|acueducto|alcantarillado|vigilancia|celular|telefono|servicio publico|servicios)/.test(haystack)) return "servicios";
-  if (/(llanta|bateria|filtro|aceite|mantenimiento|tecnomecanica|alineacion|balanceo|taller|repuesto|vehiculo|automotriz)/.test(haystack)) {
+  if (
+    /(internet|energia|agua|acueducto|alcantarillado|vigilancia|celular|telefono|servicio publico|servicios)/.test(
+      haystack
+    )
+  )
+    return "servicios";
+  if (
+    /(llanta|bateria|filtro|aceite|mantenimiento|tecnomecanica|alineacion|balanceo|taller|repuesto|vehiculo|automotriz)/.test(
+      haystack
+    )
+  ) {
     return /(mano de obra|reparacion|latoneria|pintura|embrague|caja|motor)/.test(haystack)
       ? "reparaciones"
       : "mantenimiento_vehiculo";
   }
-  if (/(reparacion|mano de obra|latoneria|pintura|soldadura|embrague|freno|caja|motor)/.test(haystack)) return "reparaciones";
-  if (/(publicidad|radio|facebook|instagram|meta ads|volante|banner|impresion publicitaria|marketing)/.test(haystack)) return "marketing";
-  if (/(impuesto|retefuente|retencion|ica|industria y comercio|matricula mercantil|camara de comercio|dian)/.test(haystack)) return "impuestos";
-  if (/(cartilla|manual|material didactico|modulo pedagogico|guia de estudio)/.test(haystack)) return "material_didactico";
-  if (/(papel|lapicero|marcador|aseo|limpieza|cafeteria|botellon|suministro|oficina|folder|tinta|toner|pegante)/.test(haystack)) return "suministros";
-  if (/(nomina|salario|honorario|honorarios|pago instructor|servicio profesional)/.test(haystack)) return "nominas";
+  if (
+    /(reparacion|mano de obra|latoneria|pintura|soldadura|embrague|freno|caja|motor)/.test(haystack)
+  )
+    return "reparaciones";
+  if (
+    /(publicidad|radio|facebook|instagram|meta ads|volante|banner|impresion publicitaria|marketing)/.test(
+      haystack
+    )
+  )
+    return "marketing";
+  if (
+    /(impuesto|retefuente|retencion|ica|industria y comercio|matricula mercantil|camara de comercio|dian)/.test(
+      haystack
+    )
+  )
+    return "impuestos";
+  if (/(cartilla|manual|material didactico|modulo pedagogico|guia de estudio)/.test(haystack))
+    return "material_didactico";
+  if (
+    /(papel|lapicero|marcador|aseo|limpieza|cafeteria|botellon|suministro|oficina|folder|tinta|toner|pegante)/.test(
+      haystack
+    )
+  )
+    return "suministros";
+  if (/(nomina|salario|honorario|honorarios|pago instructor|servicio profesional)/.test(haystack))
+    return "nominas";
   return "otros";
 }
 
@@ -203,7 +301,8 @@ function suggestPaymentMethod(text: string): MetodoPagoGasto {
 function buildConcept(invoiceNumber: string, lineItems: string[]) {
   const items = lineItems.slice(0, 2);
   const suffix = lineItems.length > 2 ? ` + ${lineItems.length - 2} item(s)` : "";
-  const summary = items.length > 0 ? `${items.join(" / ")}${suffix}` : "Importacion de factura electronica";
+  const summary =
+    items.length > 0 ? `${items.join(" / ")}${suffix}` : "Importacion de factura electronica";
   return `Factura ${invoiceNumber} - ${summary}`.slice(0, 180);
 }
 
@@ -228,21 +327,28 @@ function scoreXmlEntry(name: string) {
   const normalized = normalizeText(name).toLowerCase();
   let score = 0;
   if (/(invoice|factura|fe|fv)/.test(normalized)) score += 10;
-  if (/(applicationresponse|respuesta|signature|firma|attacheddocument)/.test(normalized)) score -= 8;
+  if (/(applicationresponse|respuesta|signature|firma|attacheddocument)/.test(normalized))
+    score -= 8;
   score += Math.min(normalized.length / 100, 2);
   return score;
 }
 
 function pickZipEntry(zip: JSZip, extension: string, scorer?: (name: string) => number) {
-  const entries = Object.values(zip.files).filter((entry) => {
-    if (entry.dir) return false;
-    return entry.name.toLowerCase().endsWith(extension);
-  });
+  let bestEntry: JSZip.JSZipObject | null = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
 
-  if (entries.length === 0) return null;
-  if (!scorer) return entries[0];
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !entry.name.toLowerCase().endsWith(extension)) continue;
+    if (!scorer) return entry;
 
-  return [...entries].sort((left, right) => scorer(right.name) - scorer(left.name))[0];
+    const score = scorer(entry.name);
+    if (!bestEntry || score > bestScore) {
+      bestEntry = entry;
+      bestScore = score;
+    }
+  }
+
+  return bestEntry;
 }
 
 function parseElectronicInvoiceXmlContent(
@@ -254,12 +360,21 @@ function parseElectronicInvoiceXmlContent(
     pdfEntryName?: string | null;
   } = {}
 ): ElectronicInvoicePreview {
+  assertBinaryWithinLimit(
+    metadata.fileName || metadata.xmlEntryName || "factura.xml",
+    getTextByteLength(xmlContent),
+    MAX_ELECTRONIC_XML_BYTES,
+    "El XML"
+  );
+  assertXmlLooksLikeInvoice(xmlContent);
+
   const document = parseXmlDocument(xmlContent);
   const root = document.documentElement;
   const effectiveRoot = /^(AttachedDocument|ApplicationResponse)$/i.test(root.localName)
     ? extractEmbeddedInvoiceXml(root) || root
     : root;
   const effectiveRootName = normalizeText(effectiveRoot.localName).toLowerCase();
+  const descendantTextIndex = buildDescendantTextIndex(effectiveRoot);
 
   if (!["invoice", "creditnote"].includes(effectiveRootName)) {
     throw new Error("El XML no corresponde a una factura electronica compatible.");
@@ -267,34 +382,32 @@ function parseElectronicInvoiceXmlContent(
 
   const invoiceNumber =
     findTextByPaths(effectiveRoot, [[["ID"]]]) ||
-    findDescendantText(effectiveRoot, ["ID"]);
+    findDescendantTextFromIndex(descendantTextIndex, ["ID"]);
   const issueDate =
     findTextByPaths(effectiveRoot, [[["IssueDate"]]]) ||
-    findDescendantText(effectiveRoot, ["IssueDate"]);
+    findDescendantTextFromIndex(descendantTextIndex, ["IssueDate"]);
   const dueDate =
     findTextByPaths(effectiveRoot, [[["DueDate"]]]) ||
-    findDescendantText(effectiveRoot, ["DueDate"]);
+    findDescendantTextFromIndex(descendantTextIndex, ["DueDate"]);
   const supplierName =
     findTextByPaths(effectiveRoot, [
       [["AccountingSupplierParty"], ["Party"], ["PartyLegalEntity"], ["RegistrationName"]],
       [["AccountingSupplierParty"], ["Party"], ["PartyName"], ["Name"]],
       [["AccountingSupplierParty"], ["Party"], ["PartyTaxScheme"], ["RegistrationName"]],
     ]) ||
-    findDescendantText(effectiveRoot, ["RegistrationName", "Name"]) ||
+    findDescendantTextFromIndex(descendantTextIndex, ["RegistrationName", "Name"]) ||
     "Proveedor sin nombre";
   const supplierTaxId =
     findTextByPaths(effectiveRoot, [
       [["AccountingSupplierParty"], ["Party"], ["PartyTaxScheme"], ["CompanyID"]],
       [["AccountingSupplierParty"], ["Party"], ["PartyLegalEntity"], ["CompanyID"]],
       [["AccountingSupplierParty"], ["Party"], ["PartyIdentification"], ["ID"]],
-    ]) ||
-    findDescendantText(effectiveRoot, ["CompanyID"]);
+    ]) || findDescendantTextFromIndex(descendantTextIndex, ["CompanyID"]);
   const customerName =
     findTextByPaths(effectiveRoot, [
       [["AccountingCustomerParty"], ["Party"], ["PartyLegalEntity"], ["RegistrationName"]],
       [["AccountingCustomerParty"], ["Party"], ["PartyName"], ["Name"]],
-    ]) ||
-    findDescendantText(effectiveRoot, ["AccountingCustomerParty"]);
+    ]) || findDescendantTextFromIndex(descendantTextIndex, ["AccountingCustomerParty"]);
   const payableAmount =
     parseAmount(
       findTextByPaths(effectiveRoot, [
@@ -304,7 +417,9 @@ function parseElectronicInvoiceXmlContent(
         [["MonetaryTotal"], ["PayableAmount"]],
       ])
     ) ??
-    parseAmount(findDescendantText(effectiveRoot, ["PayableAmount", "TaxInclusiveAmount"])) ??
+    parseAmount(
+      findDescendantTextFromIndex(descendantTextIndex, ["PayableAmount", "TaxInclusiveAmount"])
+    ) ??
     null;
   const subtotalAmount =
     parseAmount(
@@ -315,20 +430,20 @@ function parseElectronicInvoiceXmlContent(
       ])
     ) ?? null;
   const taxAmount =
-    parseAmount(
-      findTextByPaths(effectiveRoot, [
-        [["TaxTotal"], ["TaxAmount"]],
-      ])
-    ) ??
-    parseAmount(findDescendantText(effectiveRoot, ["TaxAmount"])) ??
+    parseAmount(findTextByPaths(effectiveRoot, [[["TaxTotal"], ["TaxAmount"]]])) ??
+    parseAmount(findDescendantTextFromIndex(descendantTextIndex, ["TaxAmount"])) ??
     null;
   const currency =
     findTextByPaths(effectiveRoot, [[["DocumentCurrencyCode"]]]) ||
-    findAttributeByPaths(effectiveRoot, [
-      [["LegalMonetaryTotal"], ["PayableAmount"]],
-      [["RequestedMonetaryTotal"], ["PayableAmount"]],
-      [["LegalMonetaryTotal"], ["TaxInclusiveAmount"]],
-    ], "currencyID") ||
+    findAttributeByPaths(
+      effectiveRoot,
+      [
+        [["LegalMonetaryTotal"], ["PayableAmount"]],
+        [["RequestedMonetaryTotal"], ["PayableAmount"]],
+        [["LegalMonetaryTotal"], ["TaxInclusiveAmount"]],
+      ],
+      "currencyID"
+    ) ||
     "COP";
   const paymentMethodText = [
     findTextByPaths(effectiveRoot, [[["PaymentMeans"], ["PaymentMeansCode"]]]),
@@ -374,7 +489,10 @@ function parseElectronicInvoiceXmlContent(
   };
 }
 
-export function parseElectronicInvoiceXml(xmlContent: string, fileName = "factura.xml"): ElectronicInvoicePreview {
+export function parseElectronicInvoiceXml(
+  xmlContent: string,
+  fileName = "factura.xml"
+): ElectronicInvoicePreview {
   return parseElectronicInvoiceXmlContent(xmlContent, {
     fileName,
     sourceFormat: "xml",
@@ -393,9 +511,17 @@ export async function parseElectronicInvoiceBinary(input: {
   content: ArrayBuffer | Uint8Array;
 }): Promise<ElectronicInvoicePreview> {
   const lowerName = input.fileName.toLowerCase();
+  const contentBytes =
+    input.content instanceof Uint8Array ? input.content : new Uint8Array(input.content);
 
   if (lowerName.endsWith(".zip")) {
-    const zip = await JSZip.loadAsync(input.content instanceof Uint8Array ? input.content : new Uint8Array(input.content));
+    assertBinaryWithinLimit(
+      input.fileName,
+      contentBytes.byteLength,
+      MAX_ELECTRONIC_ZIP_BYTES,
+      "El ZIP"
+    );
+    const zip = await JSZip.loadAsync(contentBytes);
     const xmlEntry = pickZipEntry(zip, ".xml", scoreXmlEntry);
 
     if (!xmlEntry) {
@@ -414,10 +540,18 @@ export async function parseElectronicInvoiceBinary(input: {
   }
 
   if (lowerName.endsWith(".xml")) {
-    return parseElectronicInvoiceXml(decodeTextContent(input.content), input.fileName);
+    assertBinaryWithinLimit(
+      input.fileName,
+      contentBytes.byteLength,
+      MAX_ELECTRONIC_XML_BYTES,
+      "El XML"
+    );
+    return parseElectronicInvoiceXml(decodeTextContent(contentBytes), input.fileName);
   }
 
-  throw new Error("La importacion de factura electronica requiere un archivo XML o un ZIP con XML y PDF.");
+  throw new Error(
+    "La importacion de factura electronica requiere un archivo XML o un ZIP con XML y PDF."
+  );
 }
 
 export async function parseElectronicInvoiceFile(file: File): Promise<ElectronicInvoicePreview> {
