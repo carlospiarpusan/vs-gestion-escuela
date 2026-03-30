@@ -1,60 +1,74 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import PageScaffold from "@/components/dashboard/PageScaffold";
-import { Save, FileText, Building2, FileSignature, Info } from "lucide-react";
+import {
+  Save,
+  FileText,
+  Building2,
+  FileSignature,
+  Variable,
+  Eye,
+  Pencil,
+  RotateCcw,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 
 const inputCls = "apple-input";
 const labelCls = "apple-label";
 
 const VARIABLES_DISPONIBLES = [
-  { var: "{{NOMBRE_CEA}}", desc: "Nombre legal de la escuela" },
-  { var: "{{NIT_CEA}}", desc: "NIT de la escuela" },
-  { var: "{{DIRECCION_CEA}}", desc: "Dirección legal de la escuela" },
-  { var: "{{TELEFONO_CEA}}", desc: "Teléfono de la escuela" },
-  { var: "{{ALUMNO_NOMBRE}}", desc: "Nombre completo del alumno" },
-  { var: "{{ALUMNO_DNI}}", desc: "Documento del alumno" },
-  { var: "{{ALUMNO_DIRECCION}}", desc: "Dirección del alumno" },
-  { var: "{{ALUMNO_TELEFONO}}", desc: "Teléfono del alumno" },
-  { var: "{{CATEGORIAS}}", desc: "Categorías inscritas" },
-  { var: "{{FECHA_CONTRATO}}", desc: "Fecha de emisión" },
-  { var: "{{CIUDAD_FIRMA}}", desc: "Ciudad de firma" },
-  { var: "{{SEDE_DIRECCION}}", desc: "Dirección de la sede" },
+  { var: "{{NOMBRE_CEA}}", desc: "Nombre legal de la escuela", example: "CEA Condusoft" },
+  { var: "{{NIT_CEA}}", desc: "NIT de la escuela", example: "900.123.456-7" },
+  { var: "{{DIRECCION_CEA}}", desc: "Direccion legal de la escuela", example: "Cra 10 #20-30" },
+  { var: "{{TELEFONO_CEA}}", desc: "Telefono de la escuela", example: "300 123 4567" },
+  { var: "{{ALUMNO_NOMBRE}}", desc: "Nombre completo del alumno", example: "Juan Perez Lopez" },
+  { var: "{{ALUMNO_DNI}}", desc: "Documento del alumno", example: "1.023.456.789" },
+  { var: "{{ALUMNO_DIRECCION}}", desc: "Direccion del alumno", example: "Calle 45 #12-34" },
+  { var: "{{ALUMNO_TELEFONO}}", desc: "Telefono del alumno", example: "310 987 6543" },
+  { var: "{{CATEGORIAS}}", desc: "Categorias inscritas", example: "B1, A2" },
+  { var: "{{FECHA_CONTRATO}}", desc: "Fecha de emision", example: "30 de marzo de 2026" },
+  { var: "{{CIUDAD_FIRMA}}", desc: "Ciudad de firma", example: "Bogota" },
+  { var: "{{SEDE_DIRECCION}}", desc: "Direccion de la sede", example: "Av. Principal #5-10" },
 ];
 
-const DEFAULT_PAGE1 = `El CEA {{NOMBRE_CEA}} cumpliendo los requisitos legales establecidos por el Decreto 1079 de 2015, la Resolución 3245 de 2009 y demás normas complementarias expedidas por el Ministerio de Transporte, Ministerio de Educación, quien en adelante se llamará el CEA, y el(la) señor(a) {{ALUMNO_NOMBRE}} con CC número {{ALUMNO_DNI}} con dirección o lugar de residencia: {{ALUMNO_DIRECCION}}, Celular: {{ALUMNO_TELEFONO}}, quien en adelante se llamará EL ESTUDIANTE, celebran el presente contrato de formación en conducción para la categoría {{CATEGORIAS}} que se regirá por las siguientes cláusulas:
+const DEFAULT_PAGE1 = `El CEA {{NOMBRE_CEA}} cumpliendo los requisitos legales establecidos por el Decreto 1079 de 2015, la Resolucion 3245 de 2009 y demas normas complementarias expedidas por el Ministerio de Transporte, Ministerio de Educacion, quien en adelante se llamara el CEA, y el(la) senor(a) {{ALUMNO_NOMBRE}} con CC numero {{ALUMNO_DNI}} con direccion o lugar de residencia: {{ALUMNO_DIRECCION}}, Celular: {{ALUMNO_TELEFONO}}, quien en adelante se llamara EL ESTUDIANTE, celebran el presente contrato de formacion en conduccion para la categoria {{CATEGORIAS}} que se regira por las siguientes clausulas:
 
-PRIMERA. Objeto: El CEA ofrecerá al Estudiante el servicio de formación en conducción acorde al PEI, comprometiéndose en dictar la capacitación teórico – práctica conforme a la normatividad existente y a la categoría solicitada.
+PRIMERA. Objeto: El CEA ofrecera al Estudiante el servicio de formacion en conduccion acorde al PEI, comprometiendose en dictar la capacitacion teorico - practica conforme a la normatividad existente y a la categoria solicitada.
 
-SEGUNDA. Requisitos: A) Saber leer y escribir. B) Tener 16 años cumplidos para el servicio diferente al público. C) Tener 18 años para vehículos de servicio público. D) Tener aprobado examen psicométrico con certificado vigente de aptitud física, mental y de coordinación motriz para la categoría solicitada antes de iniciar la capacitación práctica.
+SEGUNDA. Requisitos: A) Saber leer y escribir. B) Tener 16 anos cumplidos para el servicio diferente al publico. C) Tener 18 anos para vehiculos de servicio publico. D) Tener aprobado examen psicometrico con certificado vigente de aptitud fisica, mental y de coordinacion motriz para la categoria solicitada antes de iniciar la capacitacion practica.
 
-TERCERA. Duración: Para garantizar la efectividad en el proceso de formación y teniendo en cuenta que se trata de un aprendizaje de acciones secuenciales, es necesario que el curso sea continuo en el tiempo. En ningún caso la intensidad horaria prevista podrá abarcarse en un lapso mayor a tres (3) meses, si pasado este plazo el Estudiante no ha terminado el curso de conducción, el CEA no se responsabiliza que el estudiante salga de plataforma y no pueda generar la certificación por incumplimiento a sus obligaciones.
+TERCERA. Duracion: Para garantizar la efectividad en el proceso de formacion y teniendo en cuenta que se trata de un aprendizaje de acciones secuenciales, es necesario que el curso sea continuo en el tiempo. En ningun caso la intensidad horaria prevista podra abarcarse en un lapso mayor a tres (3) meses, si pasado este plazo el Estudiante no ha terminado el curso de conduccion, el CEA no se responsabiliza que el estudiante salga de plataforma y no pueda generar la certificacion por incumplimiento a sus obligaciones.
 
-CUARTA. Forma de pago: El valor del curso será cancelado directamente por el Estudiante en las instalaciones del CEA en el momento del registro de la matrícula. Para el inicio de clases prácticas el Estudiante debe haber cancelado el 70% del valor de la matrícula.
+CUARTA. Forma de pago: El valor del curso sera cancelado directamente por el Estudiante en las instalaciones del CEA en el momento del registro de la matricula. Para el inicio de clases practicas el Estudiante debe haber cancelado el 70% del valor de la matricula.
 
-QUINTA. Derechos de los Estudiantes: Todo Estudiante aspirante a realizar el proceso de formación para obtener el certificado de aptitud en conducción tiene los siguientes derechos: A) Ser admitido, obtener la formación y conocer el resultado del proceso, acorde a la normatividad vigente. B) Obtener protección y seguridad sobre toda la información que suministre al CEA durante el proceso salvo cuando la ley requiera que dicha información se dé a conocer. C) Realizar su capacitación con intérprete propio, en caso de existir limitaciones idiomáticas. D) Recibir la formación con instructores idóneos que cuenten con el perfil adecuado para desempeñar estas funciones. E) Recibir la formación en instalaciones que estén acorde a la normatividad, empleando material didáctico adecuado. F) Recibir la formación práctica en vehículos que cumplan con todas las adaptaciones reglamentarias exigidas por la normatividad. G) Los aspirantes con limitación física podrán proveer el vehículo para acceder a la capacitación práctica, el cual debe contar con los mecanismos y medios auxiliares que se requieran para el ejercicio de la conducción. H) Recibir la intensidad horaria ofrecida por el CEA, acorde a la normatividad. I) Gozar de imparcialidad, objetividad, respeto y buen trato por parte de todo el personal del CEA. J) Solicitar con anticipación no menor a veinticuatro (24) horas el aplazamiento de una clase práctica, la cual será reprogramada por el CEA, con el fin de no entorpecer las labores administrativas. K) Presentar los exámenes en ambientes adecuados. L) Obtener el certificado de aptitud en conducción en la categoría solicitada una vez haya completado todos los requerimientos exigidos por el CEA, para lo cual se enviará la información correspondiente para que quede registrada en la Plataforma RUNT y a los parámetros definidos por la normatividad. M) Presentar formalmente una queja en caso de inconformidad en la prestación del servicio para que el CEA realice su estudio y proceda a resolverla en caso de ser pertinente. N) Presentar ante el CEA petición, queja o reclamo, en caso de obtener un resultado adverso en el proceso de evaluación, de manera que sea reconsiderada o sea repetida acorde a la decisión del CEA. O) Recibir información oportuna en caso de la modificación de cualquiera de las condiciones del proceso de formación por parte del CEA. P) Gozar de los demás derechos consagrados en el PEI y en el manual de convivencia.
+QUINTA. Derechos de los Estudiantes: Todo Estudiante aspirante a realizar el proceso de formacion para obtener el certificado de aptitud en conduccion tiene los siguientes derechos: A) Ser admitido, obtener la formacion y conocer el resultado del proceso, acorde a la normatividad vigente. B) Obtener proteccion y seguridad sobre toda la informacion que suministre al CEA durante el proceso salvo cuando la ley requiera que dicha informacion se de a conocer. C) Realizar su capacitacion con interprete propio, en caso de existir limitaciones idiomaticas. D) Recibir la formacion con instructores idoneos que cuenten con el perfil adecuado para desempenar estas funciones. E) Recibir la formacion en instalaciones que esten acorde a la normatividad, empleando material didactico adecuado. F) Recibir la formacion practica en vehiculos que cumplan con todas las adaptaciones reglamentarias exigidas por la normatividad. G) Los aspirantes con limitacion fisica podran proveer el vehiculo para acceder a la capacitacion practica, el cual debe contar con los mecanismos y medios auxiliares que se requieran para el ejercicio de la conduccion. H) Recibir la intensidad horaria ofrecida por el CEA, acorde a la normatividad. I) Gozar de imparcialidad, objetividad, respeto y buen trato por parte de todo el personal del CEA. J) Solicitar con anticipacion no menor a veinticuatro (24) horas el aplazamiento de una clase practica, la cual sera reprogramada por el CEA, con el fin de no entorpecer las labores administrativas. K) Presentar los examenes en ambientes adecuados. L) Obtener el certificado de aptitud en conduccion en la categoria solicitada una vez haya completado todos los requerimientos exigidos por el CEA, para lo cual se enviara la informacion correspondiente para que quede registrada en la Plataforma RUNT y a los parametros definidos por la normatividad. M) Presentar formalmente una queja en caso de inconformidad en la prestacion del servicio para que el CEA realice su estudio y proceda a resolverla en caso de ser pertinente. N) Presentar ante el CEA peticion, queja o reclamo, en caso de obtener un resultado adverso en el proceso de evaluacion, de manera que sea reconsiderada o sea repetida acorde a la decision del CEA. O) Recibir informacion oportuna en caso de la modificacion de cualquiera de las condiciones del proceso de formacion por parte del CEA. P) Gozar de los demas derechos consagrados en el PEI y en el manual de convivencia.
 
-SEXTA. Obligaciones de los Estudiantes: A) Declarar al CEA que toda la información suministrada es verdadera y actualizada. B) Asistir al proceso acompañado por traductor acorde a la cláusula Quinta, literal C. C) Cuidar, proteger y responder por el material didáctico suministrado durante la formación, incluyendo el vehículo facilitado por el CEA para las clases prácticas, cumpliendo con lo específico para ello en el manual de convivencia. D) Cuidar y proteger los equipos e instalaciones del CEA, así como velar por el aseo y el uso racional del agua y la energía. E) Cumplir con el manual de convivencia y brindar permanente respeto y buen trato al personal del CEA, a los demás compañeros y demás usuarios de la vía. F) Informar oportunamente a la dirección de cualquier anomalía o inconveniente a través del diligenciamiento y entrega del formato correspondiente. G) Cumplir con la programación convenida y presentarse a las clases con una anticipación de mínimo 15 minutos. El primer 25% de las horas de práctica serán realizadas en el área dispuesta para tal fin. La falla a clases que no hayan sido reportadas con la anticipación deberá ser reemplazadas en otro horario y el estudiante deberá cancelar el valor correspondiente. H) En ningún caso podrá el estudiante llevar acompañante para las clases prácticas, salvo en el caso del numeral sexto, literal B o cuando la capacitación se imparta en vehículos de las categorías B2, C2, B3 y C3. I) Asistir a la formación sin estar bajo la influencia de sustancias psicoactivas o medicamento que afecten la capacidad de atención y/o reacción. J) Firmar las planillas de asistencia y demás evidencias del proceso de formación realizado. K) Guardar absoluta reserva respecto a la metodología y los procedimientos utilizados durante el proceso de formación, evaluación y certificación. L) Informar cualquier cambio en las capacidades del Estudiante que comprometan la aptitud para conducir. M) Cancelar los valores adicionales que sean generados por el incumplimiento a las clases prácticas.
+SEXTA. Obligaciones de los Estudiantes: A) Declarar al CEA que toda la informacion suministrada es verdadera y actualizada. B) Asistir al proceso acompanado por traductor acorde a la clausula Quinta, literal C. C) Cuidar, proteger y responder por el material didactico suministrado durante la formacion, incluyendo el vehiculo facilitado por el CEA para las clases practicas, cumpliendo con lo especifico para ello en el manual de convivencia. D) Cuidar y proteger los equipos e instalaciones del CEA, asi como velar por el aseo y el uso racional del agua y la energia. E) Cumplir con el manual de convivencia y brindar permanente respeto y buen trato al personal del CEA, a los demas companeros y demas usuarios de la via. F) Informar oportunamente a la direccion de cualquier anomalia o inconveniente a traves del diligenciamiento y entrega del formato correspondiente. G) Cumplir con la programacion convenida y presentarse a las clases con una anticipacion de minimo 15 minutos. El primer 25% de las horas de practica seran realizadas en el area dispuesta para tal fin. La falla a clases que no hayan sido reportadas con la anticipacion debera ser reemplazadas en otro horario y el estudiante debera cancelar el valor correspondiente. H) En ningun caso podra el estudiante llevar acompanante para las clases practicas, salvo en el caso del numeral sexto, literal B o cuando la capacitacion se imparta en vehiculos de las categorias B2, C2, B3 y C3. I) Asistir a la formacion sin estar bajo la influencia de sustancias psicoactivas o medicamento que afecten la capacidad de atencion y/o reaccion. J) Firmar las planillas de asistencia y demas evidencias del proceso de formacion realizado. K) Guardar absoluta reserva respecto a la metodologia y los procedimientos utilizados durante el proceso de formacion, evaluacion y certificacion. L) Informar cualquier cambio en las capacidades del Estudiante que comprometan la aptitud para conducir. M) Cancelar los valores adicionales que sean generados por el incumplimiento a las clases practicas.
 
-SÉPTIMA. Derechos del CEA: A) Verificar que la información suministrada por el Estudiante sea verdadera. B) Realizar mejoras en el proceso de formación, cambios de instructor, de vehículo o de aulas, acorde a las necesidades.`;
+SEPTIMA. Derechos del CEA: A) Verificar que la informacion suministrada por el Estudiante sea verdadera. B) Realizar mejoras en el proceso de formacion, cambios de instructor, de vehiculo o de aulas, acorde a las necesidades.`;
 
-const DEFAULT_PAGE2 = `C) Informar al Estudiante de la suspensión y reprogramación de clases con mínimo doce (12) horas de anticipación. D) Realizar el proceso de certificación del Estudiante de manera imparcial. E) Suspender y retirar temporalmente del proceso de formación al Estudiante que incumpla cualquiera de las normas contenidas en el presente contrato o en el manual de convivencia. F) Dar por terminado el presente contrato en caso de que el Estudiante incurra en agresión física o verbal a personas en el CEA, por brindar información falsa al CEA, por realizar suplantación de personalidad o realizar fraude en la evaluación teórica o cualquier otra considerada en el manual de convivencia. G) Aprobar, reprobar o aplazar al Estudiante acorde al resultado del proceso de certificación y teniendo en cuenta los parámetros exigidos por la normatividad existente.
+const DEFAULT_PAGE2 = `C) Informar al Estudiante de la suspension y reprogramacion de clases con minimo doce (12) horas de anticipacion. D) Realizar el proceso de certificacion del Estudiante de manera imparcial. E) Suspender y retirar temporalmente del proceso de formacion al Estudiante que incumpla cualquiera de las normas contenidas en el presente contrato o en el manual de convivencia. F) Dar por terminado el presente contrato en caso de que el Estudiante incurra en agresion fisica o verbal a personas en el CEA, por brindar informacion falsa al CEA, por realizar suplantacion de personalidad o realizar fraude en la evaluacion teorica o cualquier otra considerada en el manual de convivencia. G) Aprobar, reprobar o aplazar al Estudiante acorde al resultado del proceso de certificacion y teniendo en cuenta los parametros exigidos por la normatividad existente.
 
-OCTAVA. Obligaciones del CEA: A) Convenir con el Estudiante los horarios para que tome la formación y vigilar su cumplimiento. B) Garantizar instructores idóneos, vehículos adecuados y material pedagógico pertinente durante todo el proceso de formación. C) Brindar la intensidad y contenido temático acorde a la normatividad. D) Garantizar que las instalaciones cumplan con las condiciones para la formación. E) Enviar oportuna y completamente a la Plataforma del RUNT, la información del Estudiante que haya aprobado la formación impartida por el CEA para su debida certificación. F) Atender cualquier reclamación presentada por el Estudiante y tomar con celeridad una decisión sobre si aceptar o negar, acorde a la información suministrada.
+OCTAVA. Obligaciones del CEA: A) Convenir con el Estudiante los horarios para que tome la formacion y vigilar su cumplimiento. B) Garantizar instructores idoneos, vehiculos adecuados y material pedagogico pertinente durante todo el proceso de formacion. C) Brindar la intensidad y contenido tematico acorde a la normatividad. D) Garantizar que las instalaciones cumplan con las condiciones para la formacion. E) Enviar oportuna y completamente a la Plataforma del RUNT, la informacion del Estudiante que haya aprobado la formacion impartida por el CEA para su debida certificacion. F) Atender cualquier reclamacion presentada por el Estudiante y tomar con celeridad una decision sobre si aceptar o negar, acorde a la informacion suministrada.
 
-NOVENA. Exclusión de Responsabilidad: El CEA no asumirá responsabilidad alguna por inconvenientes ajenos a los servicios ofrecidos, tales como: A) Multas o comparendos que posea el estudiante y que le impidan obtener la certificación. B) No utilizar el certificado expedido por el CEA, dentro de los seis (6) meses siguientes, plazo al término del cual, el RUNT procede a anularlo. C) Vencimiento del certificado de aptitud física, mental y de coordinación motriz, el cual tiene una vigencia de ciento ochenta (180) días. D) Peajes. E) Cualquier otra que no esté contemplada dentro del presente contrato.
+NOVENA. Exclusion de Responsabilidad: El CEA no asumira responsabilidad alguna por inconvenientes ajenos a los servicios ofrecidos, tales como: A) Multas o comparendos que posea el estudiante y que le impidan obtener la certificacion. B) No utilizar el certificado expedido por el CEA, dentro de los seis (6) meses siguientes, plazo al termino del cual, el RUNT procede a anularlo. C) Vencimiento del certificado de aptitud fisica, mental y de coordinacion motriz, el cual tiene una vigencia de ciento ochenta (180) dias. D) Peajes. E) Cualquier otra que no este contemplada dentro del presente contrato.
 
-DÉCIMA. Multas. De acuerdo a los artículos: quinto numeral j y sexto en su numeral g, el estudiante se obliga a informar con anticipación de 24 horas el cambio de horario o su inasistencia a clase para la correspondiente modificación en el horario, el incumplir con lo estipulado ocasionará el cobro de DIEZ MIL PESOS m/cte. ($10.000) por hora de clase programada, valor que se podrá cobrar al finalizar el curso o sumar al saldo pendiente por pagar; además, sin el pago de las multas ocasionadas el CEA no podrá realizar la certificación respectiva (El incumplimiento causado por situaciones de fuerza mayor o caso fortuito no serán objeto de multa por el CEA).
+DECIMA. Multas. De acuerdo a los articulos: quinto numeral j y sexto en su numeral g, el estudiante se obliga a informar con anticipacion de 24 horas el cambio de horario o su inasistencia a clase para la correspondiente modificacion en el horario, el incumplir con lo estipulado ocasionara el cobro de DIEZ MIL PESOS m/cte. ($10.000) por hora de clase programada, valor que se podra cobrar al finalizar el curso o sumar al saldo pendiente por pagar; ademas, sin el pago de las multas ocasionadas el CEA no podra realizar la certificacion respectiva (El incumplimiento causado por situaciones de fuerza mayor o caso fortuito no seran objeto de multa por el CEA).
 
-DÉCIMA PRIMERA. Terminación: El contrato podrá darse por terminado de manera unilateral por parte del CEA en cualquiera de los siguientes casos: A) Por incumplimiento de las obligaciones del Estudiante. B) Por cumplirse el plazo máximo para realizar el proceso de formación (3 meses). PARÁGRAFO: El plazo máximo que la plataforma de inscripción de estudiantes Aulapp permite a cada estudiante es de tres (03) meses.
+DECIMA PRIMERA. Terminacion: El contrato podra darse por terminado de manera unilateral por parte del CEA en cualquiera de los siguientes casos: A) Por incumplimiento de las obligaciones del Estudiante. B) Por cumplirse el plazo maximo para realizar el proceso de formacion (3 meses). PARAGRAFO: El plazo maximo que la plataforma de inscripcion de estudiantes Aulapp permite a cada estudiante es de tres (03) meses.
 
-DÉCIMA SEGUNDA. Devolución de Dinero. El CEA no realizará devolución de dinero: a) Por incumplimiento de las obligaciones del Estudiante. b) Una vez se realice matricula y/o registro del estudiante en el sistema no habrá devolución del pago de PIN. c) Cuando el estudiante realice aportes en dinero, haya comenzado con clases teóricas y/o prácticas y no termine el curso no habrá devolución del dinero. d) No habrá devolución de aportes entregados una vez cumplido el plazo máximo para realizar el proceso de formación (3 meses), tiempo dentro del cual el Estudiante debe terminar su formación.
+DECIMA SEGUNDA. Devolucion de Dinero. El CEA no realizara devolucion de dinero: a) Por incumplimiento de las obligaciones del Estudiante. b) Una vez se realice matricula y/o registro del estudiante en el sistema no habra devolucion del pago de PIN. c) Cuando el estudiante realice aportes en dinero, haya comenzado con clases teoricas y/o practicas y no termine el curso no habra devolucion del dinero. d) No habra devolucion de aportes entregados una vez cumplido el plazo maximo para realizar el proceso de formacion (3 meses), tiempo dentro del cual el Estudiante debe terminar su formacion.
 
-DÉCIMA TERCERA. Declaración de veracidad: En constancia el Estudiante declara conocer y aceptar sus derechos y obligaciones, el manual de convivencia y los deberes de las personas certificadas, estipulados en el presente contrato y de asumir completamente las consecuencias que ocasione infringirlos. Las partes conocen, comprenden y aceptan todas y cada una de las estipulaciones contenidas en el presente documento y para constancia firman en {{SEDE_DIRECCION}} a {{FECHA_CONTRATO}}.`;
+DECIMA TERCERA. Declaracion de veracidad: En constancia el Estudiante declara conocer y aceptar sus derechos y obligaciones, el manual de convivencia y los deberes de las personas certificadas, estipulados en el presente contrato y de asumir completamente las consecuencias que ocasione infringirlos. Las partes conocen, comprenden y aceptan todas y cada una de las estipulaciones contenidas en el presente documento y para constancia firman en {{SEDE_DIRECCION}} a {{FECHA_CONTRATO}}.`;
 
 type TabId = "encabezado" | "texto" | "pie";
+type EditorMode = "editar" | "preview";
 
 interface ConfigForm {
   nombre_legal_escuela: string;
@@ -88,6 +102,233 @@ const emptyConfig: ConfigForm = {
   pie_correo: "",
 };
 
+/* ─── Variable insertion helper ─── */
+function insertAtCursor(
+  ref: React.RefObject<HTMLTextAreaElement | null>,
+  text: string,
+  setter: (fn: (prev: string) => string) => void
+) {
+  const el = ref.current;
+  if (!el) return;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  setter((prev) => prev.slice(0, start) + text + prev.slice(end));
+  // Restore cursor after the inserted text
+  requestAnimationFrame(() => {
+    el.focus();
+    el.selectionStart = el.selectionEnd = start + text.length;
+  });
+}
+
+/* ─── Preview renderer ─── */
+function replaceWithExamples(text: string): string {
+  let result = text;
+  for (const v of VARIABLES_DISPONIBLES) {
+    result = result.replaceAll(v.var, v.example);
+  }
+  return result;
+}
+
+function ContractPreview({ text }: { text: string }) {
+  const rendered = replaceWithExamples(text);
+  const paragraphs = rendered.split(/\n\n+/);
+
+  return (
+    <div className="prose prose-sm dark:prose-invert max-w-none rounded-xl border border-[var(--surface-border)] bg-white p-6 shadow-sm dark:bg-[#1a1a1c]">
+      {paragraphs.map((p, i) => {
+        const trimmed = p.trim();
+        if (!trimmed) return null;
+        // Detect clause headings (PRIMERA., SEGUNDA., etc.)
+        const isClause =
+          /^(PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA|SEPTIMA|OCTAVA|NOVENA|DECIMA|PARAGRAFO)/i.test(
+            trimmed
+          );
+        return (
+          <p
+            key={i}
+            className={`text-[13px] leading-[1.7] text-[#1d1d1f] dark:text-[#e5e5e7] ${
+              i > 0 ? "mt-3" : ""
+            } ${isClause ? "font-semibold" : ""}`}
+          >
+            {trimmed}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Variables panel ─── */
+function VariablesPanel({
+  activeRef,
+  activeSetter,
+  compact = false,
+}: {
+  activeRef: React.RefObject<HTMLTextAreaElement | null>;
+  activeSetter: (fn: (prev: string) => string) => void;
+  compact?: boolean;
+}) {
+  const [copiedVar, setCopiedVar] = useState<string | null>(null);
+
+  const handleInsert = (varName: string) => {
+    insertAtCursor(activeRef, varName, activeSetter);
+  };
+
+  const handleCopy = (varName: string) => {
+    void navigator.clipboard.writeText(varName);
+    setCopiedVar(varName);
+    setTimeout(() => setCopiedVar(null), 1500);
+  };
+
+  if (compact) {
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {VARIABLES_DISPONIBLES.map((v) => (
+          <button
+            key={v.var}
+            type="button"
+            onClick={() => handleInsert(v.var)}
+            title={`${v.desc} — Clic para insertar`}
+            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 font-mono text-[11px] text-blue-700 transition-all hover:border-blue-400 hover:bg-blue-100 active:scale-95 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 dark:hover:border-blue-600 dark:hover:bg-blue-900"
+          >
+            <Variable size={10} />
+            {v.var.replace(/\{\{|\}\}/g, "")}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {VARIABLES_DISPONIBLES.map((v) => (
+        <div
+          key={v.var}
+          className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--surface-muted)]"
+        >
+          <button
+            type="button"
+            onClick={() => handleInsert(v.var)}
+            className="min-w-0 flex-1 text-left"
+            title="Clic para insertar en el editor"
+          >
+            <code className="block truncate font-mono text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+              {v.var}
+            </code>
+            <span className="block truncate text-[10px] text-[var(--gray-500)]">{v.desc}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCopy(v.var)}
+            className="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+            title="Copiar variable"
+          >
+            {copiedVar === v.var ? (
+              <Check size={12} className="text-green-500" />
+            ) : (
+              <Copy size={12} className="text-[var(--gray-500)]" />
+            )}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Contract text editor section ─── */
+function ContractEditorSection({
+  pageLabel,
+  pageNumber,
+  text,
+  setText,
+  defaultText,
+  textareaRef,
+  editorMode,
+}: {
+  pageLabel: string;
+  pageNumber: number;
+  text: string;
+  setText: (val: string) => void;
+  defaultText: string;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  editorMode: EditorMode;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+  const charCount = text.length;
+  const clauseCount = (text.match(/^[A-ZÁÉÍÓÚ]+\./gm) || []).length;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-[var(--surface-border)]">
+      {/* Section header */}
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        className="flex w-full items-center justify-between bg-[var(--surface-muted)] px-4 py-3 transition-colors hover:bg-[var(--surface-muted-hover,var(--surface-muted))]"
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-xs font-bold text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+            {pageNumber}
+          </span>
+          <div className="text-left">
+            <span className="text-foreground text-sm font-semibold">{pageLabel}</span>
+            <span className="ml-3 text-[11px] text-[var(--gray-500)]">
+              {wordCount} palabras · {charCount} caracteres
+              {clauseCount > 0 && ` · ${clauseCount} clausulas`}
+            </span>
+          </div>
+        </div>
+        {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+      </button>
+
+      {!collapsed && (
+        <div className="p-4">
+          {editorMode === "editar" ? (
+            <textarea
+              ref={textareaRef}
+              className={`${inputCls} min-h-[420px] resize-y font-mono text-[12px] leading-[1.8] tracking-wide`}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              spellCheck
+            />
+          ) : (
+            <ContractPreview text={text} />
+          )}
+
+          {/* Actions */}
+          {editorMode === "editar" && (
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-[11px] text-[var(--gray-500)]">
+                Separa las clausulas con una linea en blanco. Las variables se reemplazan al
+                imprimir.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Se restaurara el texto por defecto de esta pagina. Los cambios no guardados se perderan."
+                    )
+                  ) {
+                    setText(defaultText);
+                  }
+                }}
+                className="hover:text-foreground inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-[var(--gray-500)] transition-colors hover:bg-[var(--surface-muted)]"
+              >
+                <RotateCcw size={12} />
+                Restaurar por defecto
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  MAIN PAGE                                                         */
+/* ================================================================== */
 export default function ContratosPage() {
   const { perfil } = useAuth();
 
@@ -98,6 +339,15 @@ export default function ContratosPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+  const [editorMode, setEditorMode] = useState<EditorMode>("editar");
+  const [activePage, setActivePage] = useState<1 | 2>(1);
+  const [showVarsPanel, setShowVarsPanel] = useState(true);
+
+  const textarea1Ref = useRef<HTMLTextAreaElement | null>(null);
+  const textarea2Ref = useRef<HTMLTextAreaElement | null>(null);
+
+  const activeRef = activePage === 1 ? textarea1Ref : textarea2Ref;
+  const activeSetter = activePage === 1 ? setTextoPagina1 : setTextoPagina2;
 
   const showToast = useCallback((msg: string, type: "ok" | "err" = "ok") => {
     setToast({ msg, type });
@@ -147,7 +397,7 @@ export default function ContratosPage() {
           }
         }
       } catch {
-        showToast("Error al cargar configuración", "err");
+        showToast("Error al cargar configuracion", "err");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -166,7 +416,7 @@ export default function ContratosPage() {
         plantillas: [
           {
             tipo_plantilla: "vehiculo",
-            titulo: "Contrato estándar",
+            titulo: "Contrato estandar",
             html_plantilla: textoPagina1 + "\n---PAGE_BREAK---\n" + textoPagina2,
           },
         ],
@@ -178,7 +428,7 @@ export default function ContratosPage() {
         body: JSON.stringify(body),
       });
 
-      showToast("Configuración guardada correctamente");
+      showToast("Configuracion guardada correctamente");
     } catch {
       showToast("Error al guardar", "err");
     } finally {
@@ -201,14 +451,14 @@ export default function ContratosPage() {
   const tabs: { id: TabId; label: string; icon: typeof Building2 }[] = [
     { id: "encabezado", label: "Encabezado", icon: Building2 },
     { id: "texto", label: "Texto del contrato", icon: FileText },
-    { id: "pie", label: "Pie de página", icon: FileSignature },
+    { id: "pie", label: "Pie de pagina", icon: FileSignature },
   ];
 
   return (
     <PageScaffold
-      eyebrow="Configuración"
+      eyebrow="Configuracion"
       title="Contrato"
-      description="Configura los datos legales, el texto y el pie de página del contrato de formación que se imprime para cada alumno."
+      description="Configura los datos legales, el texto y el pie de pagina del contrato de formacion que se imprime para cada alumno."
       actions={
         <button
           onClick={handleSave}
@@ -271,7 +521,7 @@ export default function ContratosPage() {
                     className={inputCls}
                     value={config.nombre_legal_escuela}
                     onChange={(e) => updateConfig("nombre_legal_escuela", e.target.value)}
-                    placeholder="CEA Escuela de Conducción"
+                    placeholder="CEA Escuela de Conduccion"
                   />
                 </div>
                 <div>
@@ -284,7 +534,7 @@ export default function ContratosPage() {
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Dirección legal</label>
+                  <label className={labelCls}>Direccion legal</label>
                   <input
                     className={inputCls}
                     value={config.direccion_legal_escuela}
@@ -293,7 +543,7 @@ export default function ContratosPage() {
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Teléfono</label>
+                  <label className={labelCls}>Telefono</label>
                   <input
                     className={inputCls}
                     value={config.telefono_legal_escuela}
@@ -307,7 +557,7 @@ export default function ContratosPage() {
                     className={inputCls}
                     value={config.ciudad_firma}
                     onChange={(e) => updateConfig("ciudad_firma", e.target.value)}
-                    placeholder="Bogotá"
+                    placeholder="Bogota"
                   />
                 </div>
                 <div>
@@ -349,13 +599,13 @@ export default function ContratosPage() {
                       updateConfig("representante_legal_tipo_documento", e.target.value)
                     }
                   >
-                    <option value="CC">CC - Cédula de ciudadanía</option>
-                    <option value="CE">CE - Cédula de extranjería</option>
+                    <option value="CC">CC - Cedula de ciudadania</option>
+                    <option value="CE">CE - Cedula de extranjeria</option>
                     <option value="PAS">PAS - Pasaporte</option>
                   </select>
                 </div>
                 <div>
-                  <label className={labelCls}>Número de documento</label>
+                  <label className={labelCls}>Numero de documento</label>
                   <input
                     className={inputCls}
                     value={config.representante_legal_numero_documento}
@@ -366,14 +616,14 @@ export default function ContratosPage() {
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Lugar de expedición</label>
+                  <label className={labelCls}>Lugar de expedicion</label>
                   <input
                     className={inputCls}
                     value={config.representante_legal_lugar_expedicion}
                     onChange={(e) =>
                       updateConfig("representante_legal_lugar_expedicion", e.target.value)
                     }
-                    placeholder="Bogotá"
+                    placeholder="Bogota"
                   />
                 </div>
               </div>
@@ -382,70 +632,119 @@ export default function ContratosPage() {
 
           {/* ─── TAB: TEXTO DEL CONTRATO ─── */}
           {tab === "texto" && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-base font-semibold">Texto del contrato</h3>
-                <p className="text-muted-foreground mt-1 text-sm">
-                  Edita el contenido de las dos páginas del contrato. Separa los párrafos con una
-                  línea en blanco. Usa las variables entre llaves dobles para datos dinámicos.
-                </p>
-              </div>
+            <div className="space-y-5">
+              {/* Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold">Texto del contrato</h3>
+                  <p className="text-muted-foreground mt-0.5 text-sm">
+                    Edita el contenido de cada pagina. Haz clic en una variable para insertarla en
+                    la posicion del cursor.
+                  </p>
+                </div>
 
-              {/* Variables reference */}
-              <details className="border-border/50 bg-muted/30 rounded-lg border">
-                <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium">
-                  <Info size={16} className="text-blue-500" />
-                  Variables disponibles (clic para expandir)
-                </summary>
-                <div className="border-border/50 border-t px-4 py-3">
-                  <div className="grid gap-1 text-xs sm:grid-cols-2">
-                    {VARIABLES_DISPONIBLES.map((v) => (
-                      <div key={v.var} className="flex gap-2">
-                        <code className="bg-muted rounded px-1.5 py-0.5 font-mono text-blue-600 dark:text-blue-400">
-                          {v.var}
-                        </code>
-                        <span className="text-muted-foreground">{v.desc}</span>
-                      </div>
-                    ))}
+                {/* Editor/Preview toggle */}
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex overflow-hidden rounded-lg border border-[var(--surface-border)]">
+                    <button
+                      type="button"
+                      onClick={() => setEditorMode("editar")}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                        editorMode === "editar"
+                          ? "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                          : "hover:text-foreground text-[var(--gray-500)]"
+                      }`}
+                    >
+                      <Pencil size={13} />
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorMode("preview")}
+                      className={`inline-flex items-center gap-1.5 border-l border-[var(--surface-border)] px-3 py-1.5 text-xs font-medium transition-colors ${
+                        editorMode === "preview"
+                          ? "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                          : "hover:text-foreground text-[var(--gray-500)]"
+                      }`}
+                    >
+                      <Eye size={13} />
+                      Vista previa
+                    </button>
                   </div>
                 </div>
-              </details>
-
-              <div>
-                <label className={labelCls}>Página 1</label>
-                <textarea
-                  className={`${inputCls} min-h-[400px] font-mono text-xs leading-relaxed`}
-                  value={textoPagina1}
-                  onChange={(e) => setTextoPagina1(e.target.value)}
-                />
               </div>
 
-              <div className="apple-divider" />
+              {/* Variables toolbar (compact, always visible in edit mode) */}
+              {editorMode === "editar" && (
+                <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-muted)] p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Variable size={14} className="text-blue-500" />
+                      <span className="text-[11px] font-semibold tracking-wider text-[var(--gray-500)] uppercase">
+                        Variables — Clic para insertar
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-[var(--gray-500)]">
+                        Insertando en: Pagina {activePage}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowVarsPanel(!showVarsPanel)}
+                        className="hover:text-foreground rounded p-1 text-[var(--gray-500)] transition-colors"
+                      >
+                        {showVarsPanel ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                  {showVarsPanel && (
+                    <VariablesPanel activeRef={activeRef} activeSetter={activeSetter} compact />
+                  )}
+                </div>
+              )}
 
-              <div>
-                <label className={labelCls}>Página 2</label>
-                <textarea
-                  className={`${inputCls} min-h-[400px] font-mono text-xs leading-relaxed`}
-                  value={textoPagina2}
-                  onChange={(e) => setTextoPagina2(e.target.value)}
-                />
+              {/* Page editors */}
+              <div className="space-y-4">
+                <div onFocus={() => setActivePage(1)}>
+                  <ContractEditorSection
+                    pageLabel="Pagina 1 — Clausulas PRIMERA a SEPTIMA"
+                    pageNumber={1}
+                    text={textoPagina1}
+                    setText={setTextoPagina1}
+                    defaultText={DEFAULT_PAGE1}
+                    textareaRef={textarea1Ref}
+                    editorMode={editorMode}
+                  />
+                </div>
+
+                <div onFocus={() => setActivePage(2)}>
+                  <ContractEditorSection
+                    pageLabel="Pagina 2 — Clausulas OCTAVA a DECIMA TERCERA"
+                    pageNumber={2}
+                    text={textoPagina2}
+                    setText={setTextoPagina2}
+                    defaultText={DEFAULT_PAGE2}
+                    textareaRef={textarea2Ref}
+                    editorMode={editorMode}
+                  />
+                </div>
               </div>
             </div>
           )}
 
-          {/* ─── TAB: PIE DE PÁGINA ─── */}
+          {/* ─── TAB: PIE DE PAGINA ─── */}
           {tab === "pie" && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-base font-semibold">Pie de página</h3>
+                <h3 className="text-base font-semibold">Pie de pagina</h3>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  Información que aparece al final de cada página del contrato.
+                  Informacion que aparece al final de cada pagina del contrato.
                 </p>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <label className={labelCls}>Dirección</label>
+                  <label className={labelCls}>Direccion</label>
                   <input
                     className={inputCls}
                     value={config.pie_direccion}
@@ -454,16 +753,16 @@ export default function ContratosPage() {
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Teléfonos</label>
+                  <label className={labelCls}>Telefonos</label>
                   <input
                     className={inputCls}
                     value={config.pie_telefonos}
                     onChange={(e) => updateConfig("pie_telefonos", e.target.value)}
-                    placeholder="300 123 4567 · 601 234 5678"
+                    placeholder="300 123 4567 - 601 234 5678"
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Correo electrónico</label>
+                  <label className={labelCls}>Correo electronico</label>
                   <input
                     className={inputCls}
                     value={config.pie_correo}
