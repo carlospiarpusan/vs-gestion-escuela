@@ -307,7 +307,9 @@ export default function AlumnosPage() {
       nombre: alumno.nombre,
       apellidos: alumno.apellidos,
       dni: alumno.dni,
+      tipo_documento: alumno.tipo_documento || "CC",
       email: alumno.email || "",
+      lugar_expedicion_documento: alumno.lugar_expedicion_documento || "",
       telefono: alumno.telefono,
       fecha_nacimiento: alumno.fecha_nacimiento || "",
       direccion: alumno.direccion || "",
@@ -557,7 +559,6 @@ export default function AlumnosPage() {
         body: JSON.stringify({
           alumno_id: matriculaAlumno.id,
           sede_id: sedeId,
-          numero_contrato: matriculaForm.numero_contrato.trim() || null,
           fecha_inscripcion: matriculaForm.fecha_inscripcion,
           categorias: matriculaForm.categorias,
           valor_total: valorTotalNum || null,

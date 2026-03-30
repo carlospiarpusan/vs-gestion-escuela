@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { buildPayrollSummary, getPendingInstructorPayrollClosures } from "@/lib/payroll";
+import {
+  buildPayrollSummary,
+  getPendingInstructorPayrollClosures,
+  type InstructorPayrollClosure,
+} from "@/lib/payroll";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import {
   Users,
@@ -66,14 +70,7 @@ type NominaRow = {
   }>;
 };
 
-type CierreHoras = {
-  id: string;
-  instructor_id: string;
-  total_horas: number;
-  valor_hora: number;
-  monto_total: number;
-  fecha_cierre: string;
-};
+type CierreHoras = InstructorPayrollClosure;
 
 type EmpleadoOption = { id: string; nombre: string; sede_id: string };
 type SedeOption = { id: string; nombre: string; es_principal: boolean | null };
