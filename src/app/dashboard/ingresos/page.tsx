@@ -39,7 +39,6 @@ import {
   years,
 } from "./constants";
 import {
-  IncomeBreakdownSection,
   IncomeFiltersSection,
   IncomeLedgerSection,
   IncomeOverviewSection,
@@ -276,7 +275,6 @@ export default function IngresosPage() {
 
   const summary = report?.summary;
   const ledger = report?.ledger;
-  const breakdown = report?.breakdown;
   const totalCount = ledger?.totalCount || 0;
 
   // ─── CRUD state ───────────────────────────────────────────────────
@@ -679,8 +677,6 @@ export default function IngresosPage() {
           {fetchError}
         </div>
       )}
-
-      <IncomeBreakdownSection loading={loading} breakdown={breakdown} />
 
       <IncomeLedgerSection
         loading={loading}
