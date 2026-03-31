@@ -461,6 +461,8 @@ export default function AlumnosPage() {
           nombre: form.nombre.trim(),
           apellidos: form.apellidos.trim(),
           dni: form.dni.trim(),
+          tipo_documento: form.tipo_documento,
+          lugar_expedicion_documento: form.lugar_expedicion_documento.trim(),
           email: form.email.trim() || null,
           telefono: form.telefono.trim(),
           fecha_nacimiento: form.fecha_nacimiento || null,
