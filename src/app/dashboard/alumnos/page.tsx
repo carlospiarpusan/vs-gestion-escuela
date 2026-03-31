@@ -74,6 +74,7 @@ export default function AlumnosPage() {
   const [filtrosTipo, setFiltrosTipo] = useState<TipoRegistroAlumno[]>([]);
   const [filtrosCat, setFiltrosCat] = useState<string[]>([]);
   const [filtroMes, setFiltroMes] = useState<string>("");
+  const [filtroFactura, setFiltroFactura] = useState<"" | "sin_factura" | "facturado">("");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -125,7 +126,8 @@ export default function AlumnosPage() {
       catFilters: string[] = [],
       typeFilters: TipoRegistroAlumno[] = [],
       mesFilter: string = "",
-      forceFresh = false
+      forceFresh = false,
+      facturaFilter: "" | "sin_factura" | "facturado" = ""
     ) => {
       if (!perfil?.escuela_id) return;
 
@@ -140,6 +142,7 @@ export default function AlumnosPage() {
       if (catFilters.length > 0) params.set("categorias", catFilters.join(","));
       if (typeFilters.length > 0) params.set("tipos", typeFilters.join(","));
       if (mesFilter) params.set("mes", mesFilter);
+      if (facturaFilter) params.set("factura", facturaFilter);
 
       // En la primera carga incluimos catálogos para ahorrar 1 HTTP request
       const needCatalogs = !catalogsLoadedRef.current;
@@ -191,8 +194,17 @@ export default function AlumnosPage() {
 
   useEffect(() => {
     if (!perfil) return;
-    fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes);
-  }, [fetchAlumnos, perfil, currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes]);
+    fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, false, filtroFactura);
+  }, [
+    fetchAlumnos,
+    perfil,
+    currentPage,
+    searchTerm,
+    filtrosCat,
+    filtrosTipo,
+    filtroMes,
+    filtroFactura,
+  ]);
 
   // ─── Callbacks ───────────────────────────────────────────────────────
 
@@ -342,6 +354,8 @@ export default function AlumnosPage() {
       tramitador_nombre: matricula?.tramitador_nombre || "",
       tramitador_valor: matricula?.tramitador_valor ? String(matricula.tramitador_valor) : "",
       consentimiento_datos: alumno.consentimiento_datos ?? true,
+      facturado: alumno.facturado ?? false,
+      numero_factura_electronica: alumno.numero_factura_electronica || "",
     });
     setModalOpen(true);
   };
@@ -486,6 +500,8 @@ export default function AlumnosPage() {
           tramitador_nombre: form.tramitador_nombre.trim() || null,
           tramitador_valor: form.tiene_tramitador ? tramitadorValorNum || null : null,
           consentimiento_datos: form.consentimiento_datos,
+          facturado: form.facturado,
+          numero_factura_electronica: form.numero_factura_electronica.trim() || null,
         }),
       });
 
@@ -500,7 +516,15 @@ export default function AlumnosPage() {
         })
       );
       invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
-      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, true);
+      fetchAlumnos(
+        currentPage,
+        searchTerm,
+        filtrosCat,
+        filtrosTipo,
+        filtroMes,
+        true,
+        filtroFactura
+      );
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -585,7 +609,15 @@ export default function AlumnosPage() {
         })
       );
       invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
-      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, true);
+      fetchAlumnos(
+        currentPage,
+        searchTerm,
+        filtrosCat,
+        filtrosTipo,
+        filtroMes,
+        true,
+        filtroFactura
+      );
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -655,7 +687,15 @@ export default function AlumnosPage() {
         })
       );
       invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
-      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, true);
+      fetchAlumnos(
+        currentPage,
+        searchTerm,
+        filtrosCat,
+        filtrosTipo,
+        filtroMes,
+        true,
+        filtroFactura
+      );
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -688,7 +728,15 @@ export default function AlumnosPage() {
         })
       );
       invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
-      fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, true);
+      fetchAlumnos(
+        currentPage,
+        searchTerm,
+        filtrosCat,
+        filtrosTipo,
+        filtroMes,
+        true,
+        filtroFactura
+      );
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar");
     } finally {
@@ -813,6 +861,31 @@ export default function AlumnosPage() {
       },
     },
     {
+      key: "facturado" as keyof AlumnoRow,
+      label: "Factura",
+      render: (row: AlumnoRow) => {
+        if (row.facturado) {
+          return (
+            <div>
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Facturado
+              </span>
+              {row.numero_factura_electronica && (
+                <p className="mt-0.5 text-[10px] text-[#86868b]">
+                  {row.numero_factura_electronica}
+                </p>
+              )}
+            </div>
+          );
+        }
+        return (
+          <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600 dark:bg-red-900/30 dark:text-red-400">
+            Sin factura
+          </span>
+        );
+      },
+    },
+    {
       key: "nota_examen_teorico" as keyof AlumnoRow,
       label: "Resultados",
       render: (row: AlumnoRow) =>
@@ -910,11 +983,14 @@ export default function AlumnosPage() {
       {/* ========== Filters ========== */}
       {(() => {
         const hayFiltrosActivos =
-          filtrosTipo.length > 0 || filtrosCat.length > 0 || filtroMes !== "";
+          filtrosTipo.length > 0 ||
+          filtrosCat.length > 0 ||
+          filtroMes !== "" ||
+          filtroFactura !== "";
         return (
           <FilterPanel
             title="Filtros de alumnos"
-            description="Combina periodo, tipo de registro y categorías para separar cursos, aptitudes y prácticas adicionales."
+            description="Combina periodo, tipo de registro, categorias y estado de factura para encontrar rapido lo que necesitas."
             actions={
               hayFiltrosActivos ? (
                 <button
@@ -922,6 +998,7 @@ export default function AlumnosPage() {
                     setFiltrosTipo([]);
                     setFiltrosCat([]);
                     setFiltroMes("");
+                    setFiltroFactura("");
                     setCurrentPage(0);
                   }}
                   className="apple-button-ghost text-xs"
@@ -999,8 +1076,42 @@ export default function AlumnosPage() {
               </div>
             </div>
 
+            <div className="md:col-span-2 xl:col-span-2">
+              <span className="mb-2 block text-xs font-medium text-[#86868b]">
+                Factura electronica
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {(
+                  [
+                    { value: "sin_factura" as const, label: "Sin facturar" },
+                    { value: "facturado" as const, label: "Facturado" },
+                  ] as const
+                ).map((opt) => {
+                  const activo = filtroFactura === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        setFiltroFactura(activo ? "" : opt.value);
+                        setCurrentPage(0);
+                      }}
+                      className={`rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
+                        activo
+                          ? opt.value === "sin_factura"
+                            ? "bg-red-500 text-white"
+                            : "bg-green-600 text-white"
+                          : "border border-[var(--surface-border)] bg-[var(--surface-strong)] text-[#66707a] hover:text-[#111214] dark:text-[#aeb6bf] dark:hover:text-[#f5f5f7]"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="md:col-span-2 xl:col-span-4">
-              <span className="mb-2 block text-xs font-medium text-[#86868b]">Categorías</span>
+              <span className="mb-2 block text-xs font-medium text-[#86868b]">Categorias</span>
               {categoriasFiltroDisponibles.length > 0 ? (
                 <div className="flex flex-wrap items-center gap-2">
                   {categoriasFiltroDisponibles.map((cat) => {

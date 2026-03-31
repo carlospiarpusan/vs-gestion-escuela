@@ -5,6 +5,7 @@ import {
   BookOpen,
   CalendarDays,
   DollarSign,
+  FileCheck2,
   FileText,
   GraduationCap,
   MapPin,
@@ -836,6 +837,50 @@ export default function AlumnoModal({
             )}
 
             <Section
+              title="Factura electronica"
+              description={
+                form.facturado
+                  ? "El alumno tiene factura electronica registrada."
+                  : "Marca como facturado cuando se emita la factura electronica."
+              }
+              icon={<FileCheck2 size={18} />}
+            >
+              <div className="space-y-4">
+                <label className="flex cursor-pointer items-center gap-3 select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.facturado}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        facturado: e.target.checked,
+                        ...(e.target.checked ? {} : { numero_factura_electronica: "" }),
+                      })
+                    }
+                    className="h-5 w-5 rounded border-gray-300 text-[#0071e3] accent-[#0071e3]"
+                  />
+                  <span className="text-foreground text-sm font-medium">
+                    Factura electronica emitida
+                  </span>
+                </label>
+
+                {form.facturado && (
+                  <div>
+                    <label className={labelClass}>Numero de factura (opcional)</label>
+                    <input
+                      className={inputClass}
+                      value={form.numero_factura_electronica}
+                      onChange={(e) =>
+                        setForm({ ...form, numero_factura_electronica: e.target.value })
+                      }
+                      placeholder="FE-001234"
+                    />
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            <Section
               title={
                 editing
                   ? "Observaciones"
@@ -979,6 +1024,18 @@ export default function AlumnoModal({
                         </span>
                       </div>
                     ) : null}
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[#66707a] dark:text-[#aeb6bf]">Factura</span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          form.facturado
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+                        }`}
+                      >
+                        {form.facturado ? "Facturado" : "Sin factura"}
+                      </span>
+                    </div>
                   </div>
                 </div>
 

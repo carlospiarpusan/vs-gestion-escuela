@@ -81,6 +81,8 @@ const manageAlumnoSchema = z
     tiene_tramitador: z.boolean().default(false),
     tramitador_nombre: z.string().trim().max(200).optional().nullable(),
     tramitador_valor: z.number().min(0).optional().nullable(),
+    facturado: z.boolean().default(false),
+    numero_factura_electronica: z.string().trim().max(200).optional().nullable(),
   })
   .superRefine((value, ctx) => {
     if (value.tiene_tramitador && value.tipo_registro !== "regular") {
@@ -514,7 +516,10 @@ async function handleMutation(request: Request, mode: "create" | "update") {
               fecha_examen_practico = $27,
               tiene_tramitador = false,
               tramitador_nombre = null,
-              tramitador_valor = null
+              tramitador_valor = null,
+              facturado = $28,
+              numero_factura_electronica = $29,
+              fecha_factura = CASE WHEN $28::boolean AND fecha_factura IS NULL THEN now() WHEN NOT $28::boolean THEN null ELSE fecha_factura END
             where id = $1
             returning id
           `,
@@ -550,6 +555,8 @@ async function handleMutation(request: Request, mode: "create" | "update") {
             isAptitud ? (payload.fecha_examen_teorico ?? null) : null,
             isAptitud ? (payload.nota_examen_practico ?? null) : null,
             isAptitud ? (payload.fecha_examen_practico ?? null) : null,
+            payload.facturado,
+            payload.numero_factura_electronica?.trim() || null,
           ]
         );
         alumnoId = updateRes.rows[0]?.id ?? null;

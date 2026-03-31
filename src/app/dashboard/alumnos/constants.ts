@@ -134,6 +134,8 @@ export const emptyForm = {
   tramitador_nombre: "",
   tramitador_valor: "",
   consentimiento_datos: false,
+  facturado: false,
+  numero_factura_electronica: "",
 };
 
 export const emptyMatriculaForm = {

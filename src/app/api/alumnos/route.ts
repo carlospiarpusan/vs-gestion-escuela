@@ -43,6 +43,11 @@ type AlumnoApiRow = {
   fecha_examen_teorico: string | null;
   nota_examen_practico: number | null;
   fecha_examen_practico: string | null;
+  consentimiento_datos: boolean;
+  consentimiento_fecha: string | null;
+  facturado: boolean;
+  numero_factura_electronica: string | null;
+  fecha_factura: string | null;
   matriculas: unknown;
   categorias_resumen: string[] | null;
   valor_total_resumen: number | string | null;
@@ -91,7 +96,12 @@ function buildAlumnosListQuery({
         a.nota_examen_teorico,
         a.fecha_examen_teorico,
         a.nota_examen_practico,
-        a.fecha_examen_practico
+        a.fecha_examen_practico,
+        a.consentimiento_datos,
+        a.consentimiento_fecha,
+        a.facturado,
+        a.numero_factura_electronica,
+        a.fecha_factura
       FROM public.alumnos a
       WHERE ${whereSql}
     ),
@@ -190,6 +200,7 @@ export async function GET(request: Request) {
   );
   const categorias = parseStringArray(url.searchParams.get("categorias"));
   const mes = (url.searchParams.get("mes") ?? "").trim();
+  const facturaFilter = (url.searchParams.get("factura") ?? "").trim();
 
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
   const sedeId = perfil.rol === "admin_sede" ? perfil.sede_id : null;
@@ -271,13 +282,19 @@ export async function GET(request: Request) {
     )`);
   }
 
+  if (facturaFilter === "sin_factura") {
+    where.push(`a.facturado = false`);
+  } else if (facturaFilter === "facturado") {
+    where.push(`a.facturado = true`);
+  }
+
   const whereSql = where.join(" AND ");
   const pool = getServerDbPool();
   const offset = page * pageSize;
   const limitRef = `$${values.length + 1}`;
   const offsetRef = `$${values.length + 2}`;
 
-  const cacheKey = `alumnos-list:${escuelaId}:${sedeId || "all"}:${tipos.join(",")}:${categorias.join(",")}:${mes}:${search}:${page}:${pageSize}`;
+  const cacheKey = `alumnos-list:${escuelaId}:${sedeId || "all"}:${tipos.join(",")}:${categorias.join(",")}:${mes}:${facturaFilter}:${search}:${page}:${pageSize}`;
 
   const result = await getServerReadCached<{
     totalCount: number;

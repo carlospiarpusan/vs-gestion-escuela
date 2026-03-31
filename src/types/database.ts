@@ -154,6 +154,9 @@ export interface Alumno {
   tramitador_valor: number | null;
   consentimiento_datos: boolean;
   consentimiento_fecha: string | null;
+  facturado: boolean;
+  numero_factura_electronica: string | null;
+  fecha_factura: string | null;
   created_at: string;
 }
 
