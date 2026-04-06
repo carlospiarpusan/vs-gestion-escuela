@@ -3,6 +3,8 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import { derivePrefixFromCategories, type ContractSequencePrefix } from "@/lib/contracts";
 
+const CAR_SEQUENCE_FLOOR = 2932;
+
 /**
  * GET /api/contratos/preview?categorias=B,C
  *
@@ -40,17 +42,18 @@ export async function GET(request: NextRequest) {
     COM: "siguiente_consecutivo_com",
   };
   const col = columnMap[prefix];
+  const floor = prefix === "CAR" ? CAR_SEQUENCE_FLOOR : 1;
 
   try {
     const pool = getServerDbPool();
     const res = await pool.query<Record<string, string>>(
-      `SELECT coalesce(${col}, 1)::text AS next_val
+      `SELECT GREATEST(coalesce(${col}, 1), $2)::text AS next_val
        FROM configuracion_contratos_escuela
        WHERE escuela_id = $1`,
-      [escuelaId]
+      [escuelaId, floor]
     );
 
-    const nextSequence = parseInt(res.rows[0]?.next_val ?? "1", 10);
+    const nextSequence = parseInt(res.rows[0]?.next_val ?? String(floor), 10);
     const paddedSeq = String(nextSequence).padStart(4, "0");
     const nextNumber = `${prefix}-${paddedSeq}`;
 

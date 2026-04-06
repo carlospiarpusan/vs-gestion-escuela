@@ -7,6 +7,7 @@ import type { Pool, PoolClient } from "pg";
 import { derivePrefixFromCategories, type ContractSequencePrefix } from "./contracts";
 
 type DbClient = Pool | PoolClient;
+const CAR_SEQUENCE_FLOOR = 2932;
 
 export type ContractSchemaCapabilities = {
   /** Whether the matriculas_alumno table has a `prefijo_contrato` column. */
@@ -67,6 +68,7 @@ export async function reserveNextContractNumber(
     COM: "siguiente_consecutivo_com",
   };
   const col = columnMap[prefix];
+  const floor = prefix === "CAR" ? CAR_SEQUENCE_FLOOR : 1;
 
   // Ensure config row exists
   await db.query(
@@ -76,13 +78,14 @@ export async function reserveNextContractNumber(
     [opts.escuelaId]
   );
 
-  // Lock and fetch + increment atomically
+  // Lock and fetch + increment atomically.
+  // CAR contracts must ignore legacy history and continue from 2932 onward.
   const res = await db.query<{ next_val: string }>(
     `UPDATE public.configuracion_contratos_escuela
-     SET ${col} = ${col} + 1, updated_at = now()
+     SET ${col} = GREATEST(${col}, $2) + 1, updated_at = now()
      WHERE escuela_id = $1
-     RETURNING (${col} - 1)::text AS next_val`,
-    [opts.escuelaId]
+     RETURNING (GREATEST(${col} - 1, $2))::text AS next_val`,
+    [opts.escuelaId, floor]
   );
 
   const nextSequence = parseInt(res.rows[0]?.next_val ?? "1", 10);
