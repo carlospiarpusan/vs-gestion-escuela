@@ -8,6 +8,7 @@ import { derivePrefixFromCategories, type ContractSequencePrefix } from "./contr
 
 type DbClient = Pool | PoolClient;
 const CAR_SEQUENCE_FLOOR = 2932;
+const CAR_SEQUENCE_FLOOR_SCHOOL_ID = "a5320c4a-3bf6-4da5-b365-da17d7001d4f";
 
 export type ContractSchemaCapabilities = {
   /** Whether the matriculas_alumno table has a `prefijo_contrato` column. */
@@ -68,7 +69,8 @@ export async function reserveNextContractNumber(
     COM: "siguiente_consecutivo_com",
   };
   const col = columnMap[prefix];
-  const floor = prefix === "CAR" ? CAR_SEQUENCE_FLOOR : 1;
+  const floor =
+    prefix === "CAR" && opts.escuelaId === CAR_SEQUENCE_FLOOR_SCHOOL_ID ? CAR_SEQUENCE_FLOOR : 1;
 
   // Ensure config row exists
   await db.query(
@@ -79,7 +81,7 @@ export async function reserveNextContractNumber(
   );
 
   // Lock and fetch + increment atomically.
-  // CAR contracts must ignore legacy history and continue from 2932 onward.
+  // CAR contracts ignore legacy history only for the configured legacy school.
   const res = await db.query<{ next_val: string }>(
     `UPDATE public.configuracion_contratos_escuela
      SET ${col} = GREATEST(${col}, $2) + 1, updated_at = now()

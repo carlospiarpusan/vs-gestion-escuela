@@ -4,6 +4,7 @@ import { getServerDbPool } from "@/lib/server-db";
 import { derivePrefixFromCategories, type ContractSequencePrefix } from "@/lib/contracts";
 
 const CAR_SEQUENCE_FLOOR = 2932;
+const CAR_SEQUENCE_FLOOR_SCHOOL_ID = "a5320c4a-3bf6-4da5-b365-da17d7001d4f";
 
 /**
  * GET /api/contratos/preview?categorias=B,C
@@ -42,7 +43,8 @@ export async function GET(request: NextRequest) {
     COM: "siguiente_consecutivo_com",
   };
   const col = columnMap[prefix];
-  const floor = prefix === "CAR" ? CAR_SEQUENCE_FLOOR : 1;
+  const floor =
+    prefix === "CAR" && escuelaId === CAR_SEQUENCE_FLOOR_SCHOOL_ID ? CAR_SEQUENCE_FLOOR : 1;
 
   try {
     const pool = getServerDbPool();
