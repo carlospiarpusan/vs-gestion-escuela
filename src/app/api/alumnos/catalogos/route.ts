@@ -1,13 +1,27 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
-import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import {
+  authorizeApiRequest,
+  getStaffReadSedeScope,
+  resolveEscuelaIdForRequest,
+} from "@/lib/api-auth";
+import {
+  buildDashboardListServerCacheKey,
+  isFreshDashboardDataRequested,
+} from "@/lib/dashboard-server-cache";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
+import { normalizeStoredCourseCategories } from "@/lib/course-categories";
 import type { Rol } from "@/types/database";
 
-const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
-const CACHE_TTL_MS = 60 * 1000;
+const ALLOWED_ROLES: Rol[] = [
+  "super_admin",
+  "admin_escuela",
+  "admin_sede",
+  "administrativo",
+  "recepcion",
+];
+const CACHE_TTL_MS = 300 * 1000;
 
 type EscuelaCategoriesRow = {
   categorias: string[] | null;
@@ -28,6 +42,8 @@ export async function GET(request: Request) {
   const { perfil } = auth;
   const url = new URL(request.url);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
+  const { sedeId, error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
 
   if (!escuelaId) {
     return NextResponse.json({
@@ -39,12 +55,12 @@ export async function GET(request: Request) {
 
   const scope = {
     escuelaId,
-    sedeId: perfil.sede_id,
+    sedeId,
   };
   const pool = getServerDbPool();
 
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("alumnos-catalogos", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey("alumnos-catalogos", perfil.rol, scope, url.searchParams),
     ttlMs: CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("alumnos-catalogos", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),
@@ -76,19 +92,18 @@ export async function GET(request: Request) {
             select distinct nullif(trim(proveedor), '') as nombre
             from public.gastos
             where escuela_id = $1
+              ${sedeId ? "and sede_id = $2" : ""}
               and categoria = 'tramitador'
               and nullif(trim(proveedor), '') is not null
             order by nombre asc
           `,
-          [escuelaId]
+          sedeId ? [escuelaId, sedeId] : [escuelaId]
         ),
       ]);
 
       return {
-        categoriasEscuela: escuelaRes.rows[0]?.categorias || [],
-        tramitadorOptions: tramitadoresRes.rows
-          .map((row) => row.nombre || "")
-          .filter(Boolean),
+        categoriasEscuela: normalizeStoredCourseCategories(escuelaRes.rows[0]?.categorias || []),
+        tramitadorOptions: tramitadoresRes.rows.map((row) => row.nombre || "").filter(Boolean),
         defaultSedeId: sedeRes.rows[0]?.id ?? null,
       };
     },

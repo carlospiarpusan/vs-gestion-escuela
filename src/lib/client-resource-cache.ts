@@ -14,7 +14,7 @@ const MAX_MEMORY_ENTRIES = 80;
 const MAX_STORAGE_ENTRIES = 24;
 const MAX_STORAGE_ENTRY_BYTES = 24 * 1024;
 const memoryCache = new Map<string, CachedClientEntry<unknown>>();
-const pendingCache = new Map<string, Promise<unknown>>();
+const pendingCache = new Map<string, { promise: Promise<unknown>; forceFresh: boolean }>();
 const scheduledStorageWrites = new Map<string, ScheduledStorageHandle>();
 
 function shouldPersistPolicyToSession(policy?: ClientResourceCachePolicy) {
@@ -27,7 +27,11 @@ function getStorageKey(key: string) {
 }
 
 function canUseStorage() {
-  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+  try {
+    return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+  } catch {
+    return false;
+  }
 }
 
 function isLocalDevelopmentRuntime() {
@@ -229,23 +233,26 @@ export async function getClientResourceCached<T>({
     }
   }
 
-  const pending = pendingCache.get(key) as Promise<T> | undefined;
-  if (pending) return pending;
+  const pending = pendingCache.get(key);
+  if (pending && (!forceFresh || pending.forceFresh)) return pending.promise as Promise<T>;
 
   const nextPromise = loader()
     .then((value) => {
-      writeClientResourceCache(key, value, ttlMs, {
-        persistToSession: persistToSession ?? shouldPersistPolicyToSession(policy),
-      });
-      pendingCache.delete(key);
+      // An invalidation may have replaced this request while it was in flight.
+      if (pendingCache.get(key)?.promise === nextPromise) {
+        writeClientResourceCache(key, value, ttlMs, {
+          persistToSession: persistToSession ?? shouldPersistPolicyToSession(policy),
+        });
+        pendingCache.delete(key);
+      }
       return value;
     })
     .catch((error) => {
-      pendingCache.delete(key);
+      if (pendingCache.get(key)?.promise === nextPromise) pendingCache.delete(key);
       throw error;
     });
 
-  pendingCache.set(key, nextPromise as Promise<unknown>);
+  pendingCache.set(key, { promise: nextPromise, forceFresh });
   return nextPromise;
 }
 
@@ -264,6 +271,12 @@ export function invalidateClientResourceCache(prefixes: string | string[]) {
     }
   }
 
+  for (const key of scheduledStorageWrites.keys()) {
+    if (targetPrefixes.some((prefix) => key.startsWith(prefix))) {
+      cancelScheduledStorageWrite(key);
+    }
+  }
+
   if (!canUseStorage()) return;
 
   try {
@@ -274,12 +287,6 @@ export function invalidateClientResourceCache(prefixes: string | string[]) {
       const cacheKey = storageKey.slice(STORAGE_PREFIX.length);
       if (targetPrefixes.some((prefix) => cacheKey.startsWith(prefix))) {
         removals.push(storageKey);
-      }
-    }
-
-    for (const key of scheduledStorageWrites.keys()) {
-      if (targetPrefixes.some((prefix) => key.startsWith(prefix))) {
-        cancelScheduledStorageWrite(key);
       }
     }
 

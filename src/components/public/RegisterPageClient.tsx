@@ -171,7 +171,7 @@ export default function RegisterPageClient() {
       mode="register"
       badge="Registro"
       title="Crea tu cuenta"
-      description="Abre tu escuela en Condusoft con una base seria y lista para empezar a operar."
+      description="Abre tu escuela en ConduSoft con una base seria y lista para empezar a operar."
       backLabel="Volver al inicio"
       helperTitle="Empieza con una base clara, sobria y lista para crecer"
       highlights={[

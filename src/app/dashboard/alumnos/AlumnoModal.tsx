@@ -1,6 +1,6 @@
 "use client";
 
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import {
   BookOpen,
   CalendarDays,
@@ -13,7 +13,11 @@ import {
   UserRound,
 } from "lucide-react";
 import Modal from "@/components/dashboard/Modal";
-import { DEPARTAMENTOS_COLOMBIA } from "@/lib/colombia";
+import {
+  BILLING_DEPARTMENTS,
+  BILLING_RESPONSIBILITIES,
+  COLOMBIA_MUNICIPALITIES,
+} from "@/lib/student-billing-contact";
 import type { EstadoAlumno, MetodoPago, TipoRegistroAlumno } from "@/types/database";
 import type { AlumnoFormType, AlumnoRow, MatriculaResumen } from "./constants";
 import { useContractPreview } from "./useContractPreview";
@@ -26,6 +30,7 @@ import {
   inputClass,
   labelClass,
   metodosPago,
+  orderRegularContractCategories,
   tiposRegistroAlumno,
 } from "./constants";
 
@@ -114,6 +119,14 @@ export default function AlumnoModal({
 }: AlumnoModalProps) {
   const tramitadorListId = "alumno-tramitador-options";
   const isRegularForm = !isAptitudForm && !isPracticeForm;
+  const contactRequired = !editing;
+  const municipalities = useMemo(
+    () =>
+      Object.entries(COLOMBIA_MUNICIPALITIES)
+        .filter(([, municipality]) => municipality[1] === form.departamento)
+        .sort((a, b) => a[1][0].localeCompare(b[1][0], "es")),
+    [form.departamento]
+  );
   const valorTotal = parseFloat(String(form.valor_total)) || 0;
   const pagoInicial = parseFloat(String(form.abono)) || 0;
   const saldoPendiente = Math.max(valorTotal - pagoInicial, 0);
@@ -132,7 +145,9 @@ export default function AlumnoModal({
     categorias: selectedCategorias,
     lockedNumber: lockedRegularContractNumber,
   });
-  const regularCategories = categoriasEscuela.length > 0 ? categoriasEscuela : TODAS_CATEGORIAS;
+  const regularCategories = orderRegularContractCategories(
+    categoriasEscuela.length > 0 ? categoriasEscuela : TODAS_CATEGORIAS
+  );
   const title = editing
     ? isAptitudForm
       ? "Editar proceso de aptitud"
@@ -248,9 +263,15 @@ export default function AlumnoModal({
                   </select>
                 </div>
                 <div>
-                  <label className={labelClass}>Teléfono *</label>
+                  <label htmlFor="alumno-telefono" className={labelClass}>
+                    Teléfono *
+                  </label>
                   <input
-                    type="text"
+                    id="alumno-telefono"
+                    type="tel"
+                    autoComplete="tel"
+                    required={contactRequired}
+                    maxLength={30}
                     value={form.telefono}
                     onChange={(event) => setForm({ ...form, telefono: event.target.value })}
                     className={inputClass}
@@ -258,9 +279,15 @@ export default function AlumnoModal({
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Correo</label>
+                  <label htmlFor="alumno-email" className={labelClass}>
+                    Correo electrónico para facturación {contactRequired ? "*" : ""}
+                  </label>
                   <input
+                    id="alumno-email"
                     type="email"
+                    autoComplete="email"
+                    maxLength={254}
+                    required={contactRequired}
                     value={form.email}
                     onChange={(event) => setForm({ ...form, email: event.target.value })}
                     className={inputClass}
@@ -298,9 +325,15 @@ export default function AlumnoModal({
             >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label className={labelClass}>Dirección</label>
+                  <label htmlFor="alumno-direccion" className={labelClass}>
+                    Dirección {contactRequired ? "*" : ""}
+                  </label>
                   <input
+                    id="alumno-direccion"
                     type="text"
+                    autoComplete="street-address"
+                    required={contactRequired}
+                    maxLength={200}
                     value={form.direccion}
                     onChange={(event) => setForm({ ...form, direccion: event.target.value })}
                     className={inputClass}
@@ -308,26 +341,131 @@ export default function AlumnoModal({
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Ciudad</label>
-                  <input
-                    type="text"
-                    value={form.ciudad}
-                    onChange={(event) => setForm({ ...form, ciudad: event.target.value })}
-                    className={inputClass}
-                    placeholder="Ciudad"
-                  />
+                  <label htmlFor="alumno-pais" className={labelClass}>
+                    País {contactRequired ? "*" : ""}
+                  </label>
+                  <select
+                    id="alumno-pais"
+                    value={form.pais}
+                    required={contactRequired}
+                    className={selectClass}
+                    onChange={(event) => setForm({ ...form, pais: event.target.value })}
+                  >
+                    <option value="CO">Colombia</option>
+                  </select>
                 </div>
                 <div>
-                  <label className={labelClass}>Departamento</label>
+                  <label htmlFor="alumno-departamento" className={labelClass}>
+                    Departamento {contactRequired ? "*" : ""}
+                  </label>
                   <select
+                    id="alumno-departamento"
+                    required={contactRequired}
                     value={form.departamento}
-                    onChange={(event) => setForm({ ...form, departamento: event.target.value })}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        departamento: event.target.value,
+                        ciudad: "",
+                        municipio_codigo: "",
+                      })
+                    }
                     className={selectClass}
                   >
                     <option value="">Selecciona un departamento</option>
-                    {DEPARTAMENTOS_COLOMBIA.map((departamento) => (
+                    {BILLING_DEPARTMENTS.map((departamento) => (
                       <option key={departamento} value={departamento}>
                         {departamento}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="alumno-municipio" className={labelClass}>
+                    Municipio {contactRequired ? "*" : ""}
+                  </label>
+                  <select
+                    id="alumno-municipio"
+                    required={contactRequired}
+                    value={form.municipio_codigo}
+                    disabled={!form.departamento}
+                    className={selectClass}
+                    onChange={(event) => {
+                      const code = event.target.value;
+                      setForm({
+                        ...form,
+                        municipio_codigo: code,
+                        ciudad: COLOMBIA_MUNICIPALITIES[code]?.[0] ?? "",
+                      });
+                    }}
+                  >
+                    <option value="">
+                      {!form.municipio_codigo && form.ciudad
+                        ? `${form.ciudad} (sin código)`
+                        : "Selecciona un municipio"}
+                    </option>
+                    {municipalities.map(([code, municipality]) => (
+                      <option key={code} value={code}>
+                        {municipality[0]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="alumno-regimen" className={labelClass}>
+                    Régimen fiscal {contactRequired ? "*" : ""}
+                  </label>
+                  <select
+                    id="alumno-regimen"
+                    required={contactRequired}
+                    value={form.regimen_fiscal}
+                    className={selectClass}
+                    onChange={(event) => {
+                      const regime = event.target.value;
+                      setForm((current) => ({
+                        ...current,
+                        regimen_fiscal: regime,
+                        responsabilidad_fiscal:
+                          regime === "simple"
+                            ? "O-47"
+                            : current.responsabilidad_fiscal === "O-47"
+                              ? "R-99-PN"
+                              : current.responsabilidad_fiscal,
+                      }));
+                    }}
+                  >
+                    <option value="">Selecciona según el RUT</option>
+                    <option value="ordinario">Régimen ordinario</option>
+                    <option value="especial">Régimen tributario especial</option>
+                    <option value="simple">Régimen SIMPLE</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="alumno-responsabilidad" className={labelClass}>
+                    Tipo de contribuyente / responsabilidad fiscal *
+                  </label>
+                  <select
+                    id="alumno-responsabilidad"
+                    required={contactRequired}
+                    value={form.responsabilidad_fiscal}
+                    onChange={(event) => {
+                      const responsibility = event.target.value;
+                      setForm((current) => ({
+                        ...current,
+                        responsabilidad_fiscal: responsibility,
+                        regimen_fiscal:
+                          responsibility === "O-47"
+                            ? "simple"
+                            : current.regimen_fiscal === "simple"
+                              ? ""
+                              : current.regimen_fiscal,
+                      }));
+                    }}
+                    className={selectClass}
+                  >
+                    {BILLING_RESPONSIBILITIES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
                       </option>
                     ))}
                   </select>
@@ -681,6 +819,9 @@ export default function AlumnoModal({
                       Categorías del curso * ({selectedCategorias.length} seleccionada
                       {selectedCategorias.length !== 1 ? "s" : ""})
                     </label>
+                    <p className="mt-1 text-xs text-[#66707a] dark:text-[#aeb6bf]">
+                      Para combo, selecciona moto y carro dentro de esta misma matrícula.
+                    </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {regularCategories.map((cat) => (
                         <Chip
@@ -718,7 +859,7 @@ export default function AlumnoModal({
                               ? `Formato final: ${contractPreview.nextNumber}. Solo se usa ${contractPreview.prefix} y el consecutivo siguiente.`
                               : contractPreviewError
                                 ? "No pudimos previsualizar el contrato. El número definitivo se reserva automáticamente al guardar."
-                                : "El número definitivo se reserva automáticamente al guardar la matrícula como MOT, CAR o COM más el consecutivo."}
+                                : "El número definitivo se reserva automáticamente al guardar esta matrícula como MOT, CAR o COM más el consecutivo."}
                       </p>
                     </div>
                     <div>

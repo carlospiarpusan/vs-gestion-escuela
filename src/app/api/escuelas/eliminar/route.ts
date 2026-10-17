@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest, buildSupabaseAdminClient, parseJsonBody } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
+import { revalidateServerReadCache } from "@/lib/server-read-cache";
+import {
+  buildBroadDashboardInvalidationTags,
+  buildDashboardListCacheTags,
+} from "@/lib/server-cache-tags";
 
 const deleteEscuelaSchema = z.object({
   escuela_id: z.string().uuid(),
@@ -110,6 +115,13 @@ export async function POST(request: Request) {
         );
       }
     }
+
+    revalidateServerReadCache([
+      ...buildDashboardListCacheTags("escuelas"),
+      ...buildBroadDashboardInvalidationTags(),
+      "superadmin",
+      "analytics",
+    ]);
 
     return NextResponse.json({
       success: true,

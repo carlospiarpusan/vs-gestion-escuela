@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { APP_TIME_ZONE } from "@/lib/date-utils";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
@@ -58,21 +59,23 @@ export type SuperAdminAnalyticsResponse = {
   generatedAt: string;
 };
 
-const CACHE_TTL_MS = 3 * 60 * 1000; // 3 min
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
 
 // ── GET /api/dashboard/superadmin-analytics ─────────────────────────────
-export async function GET() {
+export async function GET(request: Request) {
   const authz = await authorizeApiRequest(["super_admin"]);
   if (!authz.ok) return authz.response;
 
   const pool = getServerDbPool();
   const cacheKey = `dashboard:superadmin-analytics:${authz.perfil.id}`;
+  const cacheBypass = new URL(request.url).searchParams.get("fresh") === "1";
 
   try {
     const analytics = await getServerReadCached<SuperAdminAnalyticsResponse>({
       key: cacheKey,
       ttlMs: CACHE_TTL_MS,
       tags: [...buildDashboardCacheTags("superadmin"), "analytics"],
+      bypass: cacheBypass,
       loader: async () => {
         const [usersByRoleRes, dataVolumeRes, monthlyGrowthRes, topSchoolsRes, systemHealthRes] =
           await Promise.all([
@@ -124,40 +127,40 @@ export async function GET() {
             pool.query<MonthlyGrowth>(`
             with meses as (
               select generate_series(
-                date_trunc('month', current_date) - interval '5 months',
-                date_trunc('month', current_date),
+                date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) - interval '5 months',
+                date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)),
                 interval '1 month'
               )::date as mes
             ),
             alumnos_m as (
-              select date_trunc('month', created_at)::date as mes, count(*)::int as cnt
+              select date_trunc('month', created_at AT TIME ZONE '${APP_TIME_ZONE}')::date as mes, count(*)::int as cnt
               from public.alumnos
-              where created_at >= date_trunc('month', current_date) - interval '5 months'
+              where (created_at AT TIME ZONE '${APP_TIME_ZONE}') >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) - interval '5 months'
               group by 1
             ),
             clases_m as (
               select date_trunc('month', fecha)::date as mes, count(*)::int as cnt
               from public.clases
-              where fecha >= date_trunc('month', current_date) - interval '5 months'
+              where fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) - interval '5 months'
               group by 1
             ),
             ingresos_m as (
               select date_trunc('month', fecha)::date as mes, coalesce(sum(monto),0)::numeric as cnt
               from public.ingresos
               where estado = 'cobrado'
-                and fecha >= date_trunc('month', current_date) - interval '5 months'
+                and fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) - interval '5 months'
               group by 1
             ),
             gastos_m as (
               select date_trunc('month', fecha)::date as mes, coalesce(sum(monto),0)::numeric as cnt
               from public.gastos
-              where fecha >= date_trunc('month', current_date) - interval '5 months'
+              where fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) - interval '5 months'
               group by 1
             ),
             examenes_m as (
-              select date_trunc('month', created_at)::date as mes, count(*)::int as cnt
+              select date_trunc('month', created_at AT TIME ZONE '${APP_TIME_ZONE}')::date as mes, count(*)::int as cnt
               from public.examenes
-              where created_at >= date_trunc('month', current_date) - interval '5 months'
+              where (created_at AT TIME ZONE '${APP_TIME_ZONE}') >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) - interval '5 months'
               group by 1
             )
             select
@@ -181,16 +184,16 @@ export async function GET() {
             with clases_agg as (
               select escuela_id, count(*)::int as clases_mes
               from public.clases
-              where fecha >= date_trunc('month', current_date)
-                and fecha < date_trunc('month', current_date) + interval '1 month'
+              where fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
+                and fecha < date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) + interval '1 month'
               group by escuela_id
             ),
             ingresos_agg as (
               select escuela_id, coalesce(sum(monto),0)::numeric as ingresos_mes
               from public.ingresos
               where estado = 'cobrado'
-                and fecha >= date_trunc('month', current_date)
-                and fecha < date_trunc('month', current_date) + interval '1 month'
+                and fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
+                and fecha < date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) + interval '1 month'
               group by escuela_id
             ),
             alumnos_agg as (
@@ -250,12 +253,12 @@ export async function GET() {
               ) as tasa_actividad,
               (select coalesce(sum(monto),0)::numeric from public.ingresos
                where estado = 'cobrado'
-                 and fecha >= date_trunc('month', current_date)
-                 and fecha < date_trunc('month', current_date) + interval '1 month'
+                 and fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
+                 and fecha < date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) + interval '1 month'
               ) as ingresos_plataforma_mes,
               (select coalesce(sum(monto),0)::numeric from public.gastos
-               where fecha >= date_trunc('month', current_date)
-                 and fecha < date_trunc('month', current_date) + interval '1 month'
+               where fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
+                 and fecha < date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) + interval '1 month'
               ) as gastos_plataforma_mes
           `),
           ]);

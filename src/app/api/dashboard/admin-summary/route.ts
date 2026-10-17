@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { APP_TIME_ZONE } from "@/lib/date-utils";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import {
   DASHBOARD_SUMMARY_CACHE_TTL_MS,
@@ -13,6 +14,7 @@ import { buildDashboardCacheTags } from "@/lib/server-cache-tags";
 import { withRetry } from "@/lib/retry";
 import type { Rol } from "@/types/database";
 import { toNumber } from "@/lib/api-helpers";
+import { createServerTiming } from "@/lib/server-timing";
 
 const ALLOWED_ROLES: Rol[] = [
   "super_admin",
@@ -105,8 +107,9 @@ function createPeriodCte(
 }
 
 export async function GET(request: Request) {
-  const authorization = await authorizeApiRequest(ALLOWED_ROLES);
-  if (!authorization.ok) return authorization.response;
+  const timing = createServerTiming();
+  const authorization = await timing.measure("auth", () => authorizeApiRequest(ALLOWED_ROLES));
+  if (!authorization.ok) return timing.apply(authorization.response);
 
   const escuelaId = resolveEscuelaIdForRequest(
     request,
@@ -115,11 +118,13 @@ export async function GET(request: Request) {
   );
 
   if (!escuelaId) {
-    return NextResponse.json(createEmptyAdminDashboardSummary(), {
-      headers: {
-        "Cache-Control": "private, max-age=30, stale-while-revalidate=60",
-      },
-    });
+    return timing.apply(
+      NextResponse.json(createEmptyAdminDashboardSummary(), {
+        headers: {
+          "Cache-Control": "private, max-age=30, stale-while-revalidate=60",
+        },
+      })
+    );
   }
 
   const currentMonthRange = getDashboardMonthRange(0);
@@ -131,81 +136,82 @@ export async function GET(request: Request) {
 
   try {
     const cacheKey = `dashboard:admin:${authorization.perfil.id}:${authorization.perfil.rol}:${escuelaId}:${authorization.perfil.sede_id || "all"}:${currentMonthRange.start}:${today}`;
-    const response = await getServerReadCached<AdminDashboardSummaryResponse>({
-      key: cacheKey,
-      ttlMs: DASHBOARD_SUMMARY_CACHE_TTL_MS,
-      tags: buildDashboardCacheTags("admin", {
-        escuelaId,
-        sedeId: authorization.perfil.sede_id,
-      }),
-      bypass: cacheBypass,
-      loader: async () => {
-        const nextResponse = createEmptyAdminDashboardSummary();
-        const enrollmentValues: Array<string | number> = [];
-        const enrollmentPeriodCte = createPeriodCte(
-          enrollmentValues,
-          previousMonthRange,
-          currentMonthRange
-        );
-        const alumnoWhere = [
-          `a.tipo_registro = 'regular'`,
-          ...buildScopedWhere("a", authorization.perfil, escuelaId, enrollmentValues),
-        ];
-        const matriculaWhere = [
-          `m.alumno_id is not null`,
-          ...buildScopedWhere("m", authorization.perfil, escuelaId, enrollmentValues),
-        ];
+    const response = await timing.measure("summary", () =>
+      getServerReadCached<AdminDashboardSummaryResponse>({
+        key: cacheKey,
+        ttlMs: DASHBOARD_SUMMARY_CACHE_TTL_MS,
+        tags: buildDashboardCacheTags("admin", {
+          escuelaId,
+          sedeId: authorization.perfil.sede_id,
+        }),
+        bypass: cacheBypass,
+        loader: async () => {
+          const nextResponse = createEmptyAdminDashboardSummary();
+          const enrollmentValues: Array<string | number> = [];
+          const enrollmentPeriodCte = createPeriodCte(
+            enrollmentValues,
+            previousMonthRange,
+            currentMonthRange
+          );
+          const alumnoWhere = [
+            `a.tipo_registro = 'regular'`,
+            ...buildScopedWhere("a", authorization.perfil, escuelaId, enrollmentValues),
+          ];
+          const matriculaWhere = [
+            `m.alumno_id is not null`,
+            ...buildScopedWhere("m", authorization.perfil, escuelaId, enrollmentValues),
+          ];
 
-        const activeValues: Array<string | number> = [];
-        const activeAlumnoWhere = [
-          `a.tipo_registro = 'regular'`,
-          `a.estado in ('activo', 'pre_registrado')`,
-          ...buildScopedWhere("a", authorization.perfil, escuelaId, activeValues),
-        ];
-        const activeMatriculaWhere = [
-          `m.alumno_id is not null`,
-          `m.estado = 'activo'`,
-          ...buildScopedWhere("m", authorization.perfil, escuelaId, activeValues),
-        ];
+          const activeValues: Array<string | number> = [];
+          const activeAlumnoWhere = [
+            `a.tipo_registro = 'regular'`,
+            `a.estado in ('activo', 'pre_registrado')`,
+            ...buildScopedWhere("a", authorization.perfil, escuelaId, activeValues),
+          ];
+          const activeMatriculaWhere = [
+            `m.alumno_id is not null`,
+            `m.estado = 'activo'`,
+            ...buildScopedWhere("m", authorization.perfil, escuelaId, activeValues),
+          ];
 
-        const incomeValues: Array<string | number> = [];
-        const incomePeriodCte = createPeriodCte(
-          incomeValues,
-          previousMonthRange,
-          currentMonthRange
-        );
-        const incomeWhere = [
-          `i.estado = 'cobrado'`,
-          ...buildScopedWhere("i", authorization.perfil, escuelaId, incomeValues),
-        ];
+          const incomeValues: Array<string | number> = [];
+          const incomePeriodCte = createPeriodCte(
+            incomeValues,
+            previousMonthRange,
+            currentMonthRange
+          );
+          const incomeWhere = [
+            `i.estado = 'cobrado'`,
+            ...buildScopedWhere("i", authorization.perfil, escuelaId, incomeValues),
+          ];
 
-        const dailyValues: Array<string | number> = [
-          currentMonthRange.start,
-          currentMonthRange.end,
-        ];
-        const dailyWhere = [
-          `i.estado = 'cobrado'`,
-          `i.fecha >= $1::date`,
-          `i.fecha < $2::date`,
-          ...buildScopedWhere("i", authorization.perfil, escuelaId, dailyValues),
-        ];
+          const dailyValues: Array<string | number> = [
+            currentMonthRange.start,
+            currentMonthRange.end,
+          ];
+          const dailyWhere = [
+            `i.estado = 'cobrado'`,
+            `i.fecha >= $1::date`,
+            `i.fecha < $2::date`,
+            ...buildScopedWhere("i", authorization.perfil, escuelaId, dailyValues),
+          ];
 
-        const countsValues: Array<string | number> = [today];
-        const classWhere = [
-          `c.fecha = $1::date`,
-          ...buildScopedWhere("c", authorization.perfil, escuelaId, countsValues),
-        ];
-        const examWhere = [
-          `e.resultado = 'pendiente'`,
-          ...buildScopedWhere("e", authorization.perfil, escuelaId, countsValues),
-        ];
+          const countsValues: Array<string | number> = [today];
+          const classWhere = [
+            `c.fecha = $1::date`,
+            ...buildScopedWhere("c", authorization.perfil, escuelaId, countsValues),
+          ];
+          const examWhere = [
+            `e.resultado = 'pendiente'`,
+            ...buildScopedWhere("e", authorization.perfil, escuelaId, countsValues),
+          ];
 
-        const [enrollmentRes, activeStudentsRes, incomeRes, dailyIncomeRes, countsRes] =
-          await withRetry(
-            () =>
-              Promise.all([
-                pool.query<EnrollmentSummaryRow>(
-                  `
+          const [enrollmentRes, activeStudentsRes, incomeRes, dailyIncomeRes, countsRes] =
+            await withRetry(
+              () =>
+                Promise.all([
+                  pool.query<EnrollmentSummaryRow>(
+                    `
               ${enrollmentPeriodCte},
               enrollment_sources as (
                 select
@@ -214,8 +220,8 @@ export async function GET(request: Request) {
                   coalesce(a.categorias, '{}'::text[]) as categorias
                 from public.alumnos a
                 inner join periods p
-                  on coalesce(a.fecha_inscripcion, a.created_at::date) >= p.start_date
-                  and coalesce(a.fecha_inscripcion, a.created_at::date) < p.end_date
+                  on coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) >= p.start_date
+                  and coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) < p.end_date
                 where ${alumnoWhere.join(" and ")}
 
                 union all
@@ -226,8 +232,8 @@ export async function GET(request: Request) {
                   coalesce(m.categorias, '{}'::text[]) as categorias
                 from public.matriculas_alumno m
                 inner join periods p
-                  on coalesce(m.fecha_inscripcion, m.created_at::date) >= p.start_date
-                  and coalesce(m.fecha_inscripcion, m.created_at::date) < p.end_date
+                  on coalesce(m.fecha_inscripcion, (m.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) >= p.start_date
+                  and coalesce(m.fecha_inscripcion, (m.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) < p.end_date
                 where ${matriculaWhere.join(" and ")}
               ),
               expanded as (
@@ -298,10 +304,10 @@ export async function GET(request: Request) {
               from student_buckets
               group by period_key
             `,
-                  enrollmentValues
-                ),
-                pool.query<ActiveStudentSummaryRow>(
-                  `
+                    enrollmentValues
+                  ),
+                  pool.query<ActiveStudentSummaryRow>(
+                    `
               with active_sources as (
                 select
                   a.id as alumno_id
@@ -323,10 +329,10 @@ export async function GET(request: Request) {
                 count(distinct alumno_id)::int as total
               from active_sources
             `,
-                  activeValues
-                ),
-                pool.query<IncomeSummaryRow>(
-                  `
+                    activeValues
+                  ),
+                  pool.query<IncomeSummaryRow>(
+                    `
               ${incomePeriodCte},
               filtered_ingresos as (
                 select
@@ -359,10 +365,10 @@ export async function GET(request: Request) {
               from filtered_ingresos
               group by period_key
             `,
-                  incomeValues
-                ),
-                pool.query<DailyIncomeRow>(
-                  `
+                    incomeValues
+                  ),
+                  pool.query<DailyIncomeRow>(
+                    `
               select
                 extract(day from i.fecha)::int as date,
                 coalesce(sum(coalesce(i.monto, 0)::numeric), 0)::numeric as monto
@@ -371,10 +377,10 @@ export async function GET(request: Request) {
               group by 1
               order by 1 asc
             `,
-                  dailyValues
-                ),
-                pool.query<CountsRow>(
-                  `
+                    dailyValues
+                  ),
+                  pool.query<CountsRow>(
+                    `
               select
                 (
                   select count(*)::int
@@ -387,65 +393,69 @@ export async function GET(request: Request) {
                   where ${examWhere.join(" and ")}
                 ) as examenes_pendientes
             `,
-                  countsValues
-                ),
-              ]),
-            { attempts: 3, baseDelayMs: 400 }
+                    countsValues
+                  ),
+                ]),
+              { attempts: 3, baseDelayMs: 400 }
+            );
+
+          const enrollmentByPeriod = new Map(
+            enrollmentRes.rows.map((row) => [row.period_key, row] as const)
           );
+          const incomeByPeriod = new Map(
+            incomeRes.rows.map((row) => [row.period_key, row] as const)
+          );
+          const currentEnrollment = enrollmentByPeriod.get("current");
+          const previousEnrollment = enrollmentByPeriod.get("previous");
+          const activeStudents = activeStudentsRes.rows[0];
+          const currentIncome = incomeByPeriod.get("current");
+          const previousIncome = incomeByPeriod.get("previous");
+          const counts = countsRes.rows[0];
 
-        const enrollmentByPeriod = new Map(
-          enrollmentRes.rows.map((row) => [row.period_key, row] as const)
-        );
-        const incomeByPeriod = new Map(incomeRes.rows.map((row) => [row.period_key, row] as const));
-        const currentEnrollment = enrollmentByPeriod.get("current");
-        const previousEnrollment = enrollmentByPeriod.get("previous");
-        const activeStudents = activeStudentsRes.rows[0];
-        const currentIncome = incomeByPeriod.get("current");
-        const previousIncome = incomeByPeriod.get("previous");
-        const counts = countsRes.rows[0];
+          nextResponse.stats = {
+            alumnos: toNumber(activeStudents?.total),
+            cursosNuevosMes: toNumber(currentEnrollment?.total),
+            clasesHoy: toNumber(counts?.clases_hoy),
+            examenesPendientes: toNumber(counts?.examenes_pendientes),
+            ingresosMes: toNumber(currentIncome?.ingresos_mes),
+            lineasMesMoto: toNumber(currentEnrollment?.moto),
+            lineasMesCarro: toNumber(currentEnrollment?.carro),
+            lineasMesCombos: toNumber(currentEnrollment?.combos),
+            lineasMesSinCategoria: toNumber(currentEnrollment?.unclassified),
+            practicaAdicionalMes: toNumber(currentIncome?.practica_adicional_mes),
+            evaluacionesAptitudMes: toNumber(currentIncome?.evaluaciones_aptitud_mes),
+          };
 
-        nextResponse.stats = {
-          alumnos: toNumber(activeStudents?.total),
-          cursosNuevosMes: toNumber(currentEnrollment?.total),
-          clasesHoy: toNumber(counts?.clases_hoy),
-          examenesPendientes: toNumber(counts?.examenes_pendientes),
-          ingresosMes: toNumber(currentIncome?.ingresos_mes),
-          lineasMesMoto: toNumber(currentEnrollment?.moto),
-          lineasMesCarro: toNumber(currentEnrollment?.carro),
-          lineasMesCombos: toNumber(currentEnrollment?.combos),
-          lineasMesSinCategoria: toNumber(currentEnrollment?.unclassified),
-          practicaAdicionalMes: toNumber(currentIncome?.practica_adicional_mes),
-          evaluacionesAptitudMes: toNumber(currentIncome?.evaluaciones_aptitud_mes),
-        };
+          nextResponse.comparisonStats = {
+            cursosNuevosMes: toNumber(previousEnrollment?.total),
+            ingresosMes: toNumber(previousIncome?.ingresos_mes),
+            practicaAdicionalMes: toNumber(previousIncome?.practica_adicional_mes),
+            evaluacionesAptitudMes: toNumber(previousIncome?.evaluaciones_aptitud_mes),
+          };
 
-        nextResponse.comparisonStats = {
-          cursosNuevosMes: toNumber(previousEnrollment?.total),
-          ingresosMes: toNumber(previousIncome?.ingresos_mes),
-          practicaAdicionalMes: toNumber(previousIncome?.practica_adicional_mes),
-          evaluacionesAptitudMes: toNumber(previousIncome?.evaluaciones_aptitud_mes),
-        };
+          nextResponse.dailyIngresos = dailyIncomeRes.rows
+            .map((row) => ({
+              date: toNumber(row.date),
+              monto: toNumber(row.monto),
+            }))
+            .filter((row) => row.date > 0);
 
-        nextResponse.dailyIngresos = dailyIncomeRes.rows
-          .map((row) => ({
-            date: toNumber(row.date),
-            monto: toNumber(row.monto),
-          }))
-          .filter((row) => row.date > 0);
+          return nextResponse;
+        },
+      })
+    );
 
-        return nextResponse;
-      },
-    });
-
-    return NextResponse.json(response, {
-      headers: {
-        "Cache-Control": `private, max-age=${Math.floor(DASHBOARD_SUMMARY_CACHE_TTL_MS / 1000)}, stale-while-revalidate=60`,
-      },
-    });
+    return timing.apply(
+      NextResponse.json(response, {
+        headers: {
+          "Cache-Control": `private, max-age=${Math.floor(DASHBOARD_SUMMARY_CACHE_TTL_MS / 1000)}, stale-while-revalidate=60`,
+        },
+      })
+    );
   } catch (error) {
     console.error("Error al construir el resumen del dashboard:", error);
-    return NextResponse.json(
-      { error: "No se pudo cargar el resumen del dashboard." },
-      { status: 500 }
+    return timing.apply(
+      NextResponse.json({ error: "No se pudo cargar el resumen del dashboard." }, { status: 500 })
     );
   }
 }

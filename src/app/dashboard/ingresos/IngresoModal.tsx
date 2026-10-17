@@ -1,6 +1,6 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
+import { memo, useMemo, type Dispatch, type SetStateAction } from "react";
 import Modal from "@/components/dashboard/Modal";
 import type { IncomeLedgerRow } from "@/lib/finance/types";
 import type { CategoriaIngreso, EstadoIngreso, MetodoPago } from "@/types/database";
@@ -8,7 +8,9 @@ import {
   AlumnoOption,
   categorias,
   estadosIngreso,
+  formatAlumnoOptionLabel,
   formatMatriculaLabel,
+  getAlumnoFullName,
   IngresoFormData,
   inputCls,
   labelCls,
@@ -31,6 +33,37 @@ type IngresoModalProps = {
   onSave: () => void;
 };
 
+const AlumnoSelect = memo(function AlumnoSelect({
+  alumnos,
+  value,
+  onChange,
+}: {
+  alumnos: AlumnoOption[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div>
+      <label htmlFor="income-student" className={labelCls}>
+        Alumno
+      </label>
+      <select
+        id="income-student"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={inputCls}
+      >
+        <option value="">Sin alumno</option>
+        {alumnos.map((alumno) => (
+          <option key={alumno.id} value={alumno.id}>
+            {formatAlumnoOptionLabel(alumno)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+});
+
 export default function IngresoModal({
   open,
   editing,
@@ -45,6 +78,20 @@ export default function IngresoModal({
   onClose,
   onSave,
 }: IngresoModalProps) {
+  const selectedAlumno = useMemo(
+    () => alumnos.find((alumno) => alumno.id === form.alumno_id) ?? null,
+    [alumnos, form.alumno_id]
+  );
+  const selectedMatricula =
+    matriculasDisponibles.find((matricula) => matricula.id === form.matricula_id) ?? null;
+  const alumnoLabel =
+    getAlumnoFullName(selectedAlumno) || editing?.contraparte || "Sin alumno asociado";
+  const alumnoDocumento = selectedAlumno?.dni || editing?.documento || "Sin documento";
+  const alumnoContrato =
+    form.categoria === "examen_aptitud"
+      ? null
+      : selectedMatricula?.numero_contrato || editing?.contrato || null;
+
   return (
     <Modal
       open={open}
@@ -81,20 +128,34 @@ export default function IngresoModal({
               ))}
             </select>
           </div>
-          <div>
-            <label className={labelCls}>Alumno</label>
-            <select
-              value={form.alumno_id}
-              onChange={(e) => onAlumnoChange(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">Sin alumno</option>
-              {alumnos.map((alumno) => (
-                <option key={alumno.id} value={alumno.id}>
-                  {alumno.nombre} {alumno.apellidos}
-                </option>
-              ))}
-            </select>
+          <AlumnoSelect alumnos={alumnos} value={form.alumno_id} onChange={onAlumnoChange} />
+        </div>
+
+        <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-muted)] p-4">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
+            Datos del alumno
+          </p>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
+                Alumno
+              </p>
+              <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">{alumnoLabel}</p>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
+                Cédula
+              </p>
+              <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">{alumnoDocumento}</p>
+            </div>
+            {alumnoContrato ? (
+              <div>
+                <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
+                  Contrato
+                </p>
+                <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">{alumnoContrato}</p>
+              </div>
+            ) : null}
           </div>
         </div>
 

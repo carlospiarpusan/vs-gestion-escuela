@@ -53,6 +53,22 @@ const IngresoModal = dynamic(() => import("./IngresoModal"), {
   loading: () => null,
 });
 
+type EditableIncomeRecord = {
+  id: string;
+  alumno_id: string | null;
+  matricula_id: string | null;
+  categoria: CategoriaIngreso;
+  concepto: string;
+  monto: number;
+  metodo_pago: MetodoPago | null;
+  medio_especifico: string | null;
+  numero_factura: string | null;
+  fecha: string;
+  fecha_vencimiento: string | null;
+  estado: EstadoIngreso;
+  notas: string | null;
+};
+
 // ─── Component ───────────────────────────────────────────────────────
 
 export default function IngresosPage() {
@@ -164,7 +180,7 @@ export default function IngresosPage() {
                 fetchAllSupabaseRows<AlumnoOption>((from, to) =>
                   supabase
                     .from("alumnos")
-                    .select("id, nombre, apellidos")
+                    .select("id, nombre, apellidos, dni")
                     .eq("escuela_id", escuelaId)
                     .order("nombre", { ascending: true })
                     .order("apellidos", { ascending: true })
@@ -411,28 +427,51 @@ export default function IngresosPage() {
     });
   };
 
-  const openEdit = (row: IncomeLedgerRow) => {
+  const openEdit = async (row: IncomeLedgerRow) => {
     if (!canEditIncome) return;
-    setEditing(row);
-    setForm({
-      alumno_id: "",
-      matricula_id: "",
-      categoria: row.categoria as CategoriaIngreso,
-      concepto: row.concepto,
-      monto: String(row.monto),
-      metodo_pago: (row.metodo_pago || "efectivo") as MetodoPago,
-      medio_especifico: "",
-      numero_factura: row.numero_factura || "",
-      fecha: row.fecha,
-      fecha_vencimiento: row.fecha,
-      estado: row.estado as EstadoIngreso,
-      notas: "",
-    });
     setError("");
-    setModalOpen(true);
-    void loadIngresoCatalogs().catch((err) => {
-      console.error("[IngresosPage] Error cargando catálogos:", err);
-    });
+    setSaving(true);
+    try {
+      const supabase = createClient();
+      const [detailResult] = await Promise.all([
+        supabase
+          .from("ingresos")
+          .select(
+            "id, alumno_id, matricula_id, categoria, concepto, monto, metodo_pago, medio_especifico, numero_factura, fecha, fecha_vencimiento, estado, notas"
+          )
+          .eq("id", row.id)
+          .single<EditableIncomeRecord>(),
+        loadIngresoCatalogs(),
+      ]);
+
+      if (detailResult.error || !detailResult.data) {
+        throw detailResult.error ?? new Error("No se pudo cargar el ingreso para editar.");
+      }
+
+      const detail = detailResult.data;
+      setEditing(row);
+      setForm({
+        alumno_id: detail.alumno_id || "",
+        matricula_id: detail.matricula_id || "",
+        categoria: detail.categoria,
+        concepto: detail.concepto,
+        monto: String(detail.monto),
+        metodo_pago: detail.metodo_pago || "efectivo",
+        medio_especifico: detail.medio_especifico || "",
+        numero_factura: detail.numero_factura || "",
+        fecha: detail.fecha,
+        fecha_vencimiento: detail.fecha_vencimiento || detail.fecha,
+        estado: detail.estado,
+        notas: detail.notas || "",
+      });
+      setModalOpen(true);
+    } catch (err) {
+      console.error("[IngresosPage] Error cargando ingreso para editar:", err);
+      setEditing(null);
+      setError(err instanceof Error ? err.message : "No se pudo cargar el ingreso a editar.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openDelete = (row: IncomeLedgerRow) => {
@@ -441,14 +480,17 @@ export default function IngresosPage() {
     setDeleteOpen(true);
   };
 
-  const handleAlumnoChange = (alumnoId: string) => {
-    const opciones = matriculas.filter((m) => m.alumno_id === alumnoId);
-    setForm((prev) => ({
-      ...prev,
-      alumno_id: alumnoId,
-      matricula_id: opciones.length === 1 ? opciones[0].id : "",
-    }));
-  };
+  const handleAlumnoChange = useCallback(
+    (alumnoId: string) => {
+      const opciones = matriculas.filter((m) => m.alumno_id === alumnoId);
+      setForm((prev) => ({
+        ...prev,
+        alumno_id: alumnoId,
+        matricula_id: opciones.length === 1 ? opciones[0].id : "",
+      }));
+    },
+    [matriculas, setForm]
+  );
 
   const handleSave = async () => {
     if (editing ? !canEditIncome : !canCreateIncome) return;
@@ -695,28 +737,32 @@ export default function IngresosPage() {
         onDelete={canDeleteIncome ? openDelete : undefined}
       />
 
-      <IngresoModal
-        open={modalOpen}
-        editing={editing}
-        error={error}
-        form={form}
-        alumnos={alumnos}
-        matriculasDisponibles={matriculasDisponibles}
-        catalogsLoading={catalogsLoading}
-        saving={saving}
-        setForm={setForm}
-        onAlumnoChange={handleAlumnoChange}
-        onClose={() => setModalOpen(false)}
-        onSave={handleSave}
-      />
+      {modalOpen && (
+        <IngresoModal
+          open={modalOpen}
+          editing={editing}
+          error={error}
+          form={form}
+          alumnos={alumnos}
+          matriculasDisponibles={matriculasDisponibles}
+          catalogsLoading={catalogsLoading}
+          saving={saving}
+          setForm={setForm}
+          onAlumnoChange={handleAlumnoChange}
+          onClose={() => setModalOpen(false)}
+          onSave={handleSave}
+        />
+      )}
 
-      <DeleteConfirm
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        onConfirm={handleDelete}
-        loading={saving}
-        message="¿Eliminar este ingreso? Esta acción no se puede deshacer."
-      />
+      {deleteOpen && (
+        <DeleteConfirm
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          onConfirm={handleDelete}
+          loading={saving}
+          message="¿Eliminar este ingreso? Esta acción no se puede deshacer."
+        />
+      )}
     </div>
   );
 }

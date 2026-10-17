@@ -1,5 +1,7 @@
 "use client";
 
+import { APP_TIME_ZONE } from "@/lib/date-utils";
+
 import { type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -589,7 +591,7 @@ export function ExpenseFacturasSection({
                 </div>
                 <p className="mt-2 text-xs text-[#86868b]">
                   {item.created_at
-                    ? new Date(item.created_at).toLocaleString("es-CO")
+                    ? new Date(item.created_at).toLocaleString("es-CO", { timeZone: APP_TIME_ZONE })
                     : "Sin fecha"}
                   {item.detail ? ` • ${item.detail}` : ""}
                 </p>
@@ -689,7 +691,9 @@ export function ExpenseFacturasSection({
             label="Última sincronización"
             value={
               emailIntegration?.last_synced_at
-                ? new Date(emailIntegration.last_synced_at).toLocaleString("es-CO")
+                ? new Date(emailIntegration.last_synced_at).toLocaleString("es-CO", {
+                    timeZone: APP_TIME_ZONE,
+                  })
                 : "Aún no sincronizado"
             }
             detail={`UID máximo: ${emailIntegration?.last_uid || "—"}`}

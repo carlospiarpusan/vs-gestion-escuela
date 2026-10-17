@@ -23,7 +23,7 @@ const inputCls = "apple-input";
 const labelCls = "apple-label";
 
 const VARIABLES_DISPONIBLES = [
-  { var: "{{NOMBRE_CEA}}", desc: "Nombre legal de la escuela", example: "CEA Condusoft" },
+  { var: "{{NOMBRE_CEA}}", desc: "Nombre legal de la escuela", example: "CEA ConduSoft" },
   { var: "{{NIT_CEA}}", desc: "NIT de la escuela", example: "900.123.456-7" },
   { var: "{{DIRECCION_CEA}}", desc: "Direccion legal de la escuela", example: "Cra 10 #20-30" },
   { var: "{{TELEFONO_CEA}}", desc: "Telefono de la escuela", example: "300 123 4567" },

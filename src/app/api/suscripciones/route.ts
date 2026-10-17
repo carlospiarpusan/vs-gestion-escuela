@@ -9,6 +9,7 @@ import {
   createEmptyPlatformSubscriptionsResponse,
   type PlatformSubscriptionsResponse,
 } from "@/lib/platform-subscriptions";
+import { loadCommercialPlanConfigs } from "@/lib/school-subscription-service";
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardCacheTags, buildDashboardListCacheTags } from "@/lib/server-cache-tags";
@@ -31,13 +32,18 @@ export async function GET() {
       tags: unique([
         ...buildDashboardCacheTags("superadmin"),
         ...buildDashboardListCacheTags("subscriptions"),
+        "planes-config",
       ]),
       loader: async () => {
         const payload = createEmptyPlatformSubscriptionsResponse();
-        const overviews = await loadPlatformSchoolOverviews(pool);
+        const [overviews, plans] = await Promise.all([
+          loadPlatformSchoolOverviews(pool),
+          loadCommercialPlanConfigs(pool),
+        ]);
         payload.schools = buildPlatformSubscriptionSchools(overviews);
         payload.stats = buildPlatformSubscriptionStats(payload.schools);
         payload.planBreakdown = buildPlatformSubscriptionPlanBreakdown(payload.schools);
+        payload.plans = plans;
         return payload;
       },
     });

@@ -1,4 +1,11 @@
 import { createClient } from "@/lib/supabase";
+import { getCurrentYear, getTodayDateString } from "@/lib/date-utils";
+import { studentBillingFormDefaults } from "@/lib/student-billing-defaults";
+import {
+  inferTipoPermisoFromCategories,
+  normalizeStoredCourseCategories,
+  SELECTABLE_COURSE_CATEGORIES,
+} from "@/lib/course-categories";
 import type {
   EstadoAlumno,
   Alumno,
@@ -27,9 +34,7 @@ export const MONTH_OPTIONS = [
   { value: "12", label: "Diciembre" },
 ];
 
-export const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) =>
-  String(new Date().getFullYear() - i)
-);
+export const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => String(getCurrentYear() - i));
 
 export const estadosAlumno: EstadoAlumno[] = ["activo", "inactivo", "graduado", "pre_registrado"];
 
@@ -51,26 +56,9 @@ export const metodosPago: { value: MetodoPago; label: string }[] = [
   { value: "sistecredito", label: "Sistecrédito" },
   { value: "otro", label: "Otro" },
 ];
-export const TODAS_CATEGORIAS = [
-  "A1",
-  "A2",
-  "B1",
-  "C1",
-  "RC1",
-  "C2",
-  "C3",
-  "A2 y B1",
-  "A2 y C1",
-  "A2 y RC1",
-  "A2 y C2",
-  "A2 y C3",
-  "A1 y B1",
-  "A1 y C1",
-  "A1 y RC1",
-  "A1 y C2",
-  "A1 y C3",
-];
+export const TODAS_CATEGORIAS = [...SELECTABLE_COURSE_CATEGORIES];
 export const CATEGORIAS_APTITUD = ["C1", "C2", "C3"];
+export const CONTRACT_CATEGORY_BUTTON_ORDER = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
 
 export type MatriculaResumen = Pick<
   MatriculaAlumno,
@@ -88,7 +76,7 @@ export type MatriculaResumen = Pick<
   | "tramitador_nombre"
   | "tramitador_valor"
   | "created_at"
->;
+> & { facturax_invoice?: { number: string | null; state: string } | null };
 
 export type AlumnoRow = Alumno & {
   matriculas: MatriculaResumen[];
@@ -100,9 +88,15 @@ export type AlumnoRow = Alumno & {
 
 export type AlumnosListResponse = {
   totalCount: number;
+  summary: {
+    regularCount: number;
+    specialCount: number;
+    periodStudentCount: number;
+  };
   rows: AlumnoRow[];
 };
 
+const defaultBillingContact = studentBillingFormDefaults({});
 export const emptyForm = {
   tipo_registro: "regular" as TipoRegistroAlumno,
   nombre: "",
@@ -114,8 +108,12 @@ export const emptyForm = {
   lugar_expedicion_documento: "",
   fecha_nacimiento: "",
   direccion: "",
-  ciudad: "",
-  departamento: "",
+  ciudad: defaultBillingContact.ciudad,
+  departamento: defaultBillingContact.departamento,
+  pais: defaultBillingContact.datos_facturacion.country,
+  municipio_codigo: defaultBillingContact.datos_facturacion.cityCode,
+  regimen_fiscal: defaultBillingContact.datos_facturacion.taxRegime,
+  responsabilidad_fiscal: defaultBillingContact.datos_facturacion.responsibilities,
   tipo_permiso: "B" as TipoPermiso,
   categorias: [] as string[],
   estado: "activo" as EstadoAlumno,
@@ -126,7 +124,7 @@ export const emptyForm = {
   fecha_examen_practico: "",
   notas: "",
   numero_contrato: "",
-  fecha_inscripcion: new Date().toISOString().split("T")[0],
+  fecha_inscripcion: getTodayDateString(),
   valor_total: "",
   abono: "",
   metodo_pago_abono: "efectivo" as MetodoPago,
@@ -139,7 +137,7 @@ export const emptyForm = {
 };
 
 export const emptyMatriculaForm = {
-  fecha_inscripcion: new Date().toISOString().split("T")[0],
+  fecha_inscripcion: getTodayDateString(),
   categorias: [] as string[],
   valor_total: "",
   notas: "",
@@ -153,17 +151,33 @@ export const emptyMatriculaForm = {
 export type AlumnoFormType = typeof emptyForm;
 export type MatriculaFormType = typeof emptyMatriculaForm;
 
+export function applyAlumnoBillingDefaults(form: AlumnoFormType): AlumnoFormType {
+  const suggested = studentBillingFormDefaults({
+    ciudad: form.ciudad,
+    departamento: form.departamento,
+    datos_facturacion: {
+      country: form.pais,
+      cityCode: form.municipio_codigo,
+      taxRegime: form.regimen_fiscal,
+      responsibilities: form.responsabilidad_fiscal,
+    },
+  });
+  return {
+    ...form,
+    ciudad: suggested.ciudad,
+    departamento: suggested.departamento,
+    pais: suggested.datos_facturacion.country,
+    municipio_codigo: suggested.datos_facturacion.cityCode,
+    regimen_fiscal: suggested.datos_facturacion.taxRegime,
+    responsabilidad_fiscal: suggested.datos_facturacion.responsibilities,
+  };
+}
+
 export const inputClass = "apple-input";
 export const labelClass = "apple-label";
 
 export function mapTipoPermiso(categorias: string[]) {
-  const first = categorias[0] ? categorias[0].toUpperCase() : "";
-  if (first.startsWith("AM")) return "AM";
-  if (first.startsWith("A1")) return "A1";
-  if (first.startsWith("A2")) return "A2";
-  if (first.startsWith("A")) return "A";
-  if (first.startsWith("RC") || first.startsWith("C")) return "C";
-  return "B";
+  return inferTipoPermisoFromCategories(categorias);
 }
 
 export function buildAptitudReference() {
@@ -213,6 +227,17 @@ export function getCategoriasDisponiblesParaTipos(
   }
 
   return Array.from(categorias);
+}
+
+export function orderRegularContractCategories(categorias: string[]) {
+  const uniqueCategories = normalizeStoredCourseCategories(categorias);
+  const preferred = new Set(CONTRACT_CATEGORY_BUTTON_ORDER);
+  const leading = CONTRACT_CATEGORY_BUTTON_ORDER.filter((categoria) =>
+    uniqueCategories.includes(categoria)
+  );
+  const trailing = uniqueCategories.filter((categoria) => !preferred.has(categoria));
+
+  return [...leading, ...trailing];
 }
 
 export async function resolveSedeId(escuelaId: string, preferredSedeId: string | null) {

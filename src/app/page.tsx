@@ -4,6 +4,7 @@ import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Features from "@/components/Features";
 
+const ProductTour = dynamic(() => import("@/components/ProductTour"));
 const HowItWorks = dynamic(() => import("@/components/HowItWorks"));
 const Pricing = dynamic(() => import("@/components/Pricing"));
 const CTA = dynamic(() => import("@/components/CTA"));
@@ -20,7 +21,7 @@ import {
 } from "@/lib/site-metadata";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "Condusoft | Software para autoescuelas en Colombia con cumplimiento interno",
+  title: "ConduSoft | Software para autoescuelas y CEA en Colombia",
   description: SITE_DESCRIPTION,
   path: "/",
   keywords: SITE_KEYWORDS,
@@ -38,22 +39,12 @@ export default function Home() {
         description: SITE_DESCRIPTION,
         inLanguage: "es-CO",
         publisher: { "@id": `${siteUrl}#organization` },
-        potentialAction: [
-          {
-            "@type": "SearchAction",
-            target: {
-              "@type": "EntryPoint",
-              urlTemplate: `${siteUrl}?s={search_term_string}`,
-            },
-            "query-input": "required name=search_term_string",
-          },
-        ],
       },
       {
         "@type": "Organization",
         "@id": `${siteUrl}#organization`,
         name: SITE_NAME,
-        alternateName: "Condusoft.co",
+        alternateName: "ConduSoft.co",
         url: siteUrl.toString(),
         logo: {
           "@type": "ImageObject",
@@ -64,13 +55,6 @@ export default function Home() {
           "@type": "Country",
           name: "Colombia",
         },
-        contactPoint: {
-          "@type": "ContactPoint",
-          telephone: "+57XXXXXXXXXX",
-          contactType: "sales",
-          areaServed: "CO",
-          availableLanguage: "Spanish",
-        },
         knowsAbout: [
           "Software para autoescuelas",
           "Escuelas de conducción",
@@ -78,6 +62,8 @@ export default function Home() {
           "Gestión financiera",
           "Gestión de flota",
           "Centros de Enseñanza Automovilística (CEA)",
+          "Preparación CALE",
+          "App oficial en Google Play",
           "Protección de datos",
           "Solicitudes ARCO",
           "Cumplimiento interno",
@@ -93,12 +79,6 @@ export default function Home() {
         brand: {
           "@type": "Brand",
           name: SITE_NAME,
-        },
-        offers: {
-          "@type": "Offer",
-          price: "0",
-          priceCurrency: "COP",
-          description: "Planes flexibles según el tamaño de la autoescuela.",
         },
         description: SITE_DESCRIPTION,
         url: siteUrl.toString(),
@@ -128,6 +108,7 @@ export default function Home() {
       <main id="main-content">
         <Hero />
         <Features />
+        <ProductTour />
         <HowItWorks />
         <TrustSection />
         <Pricing />

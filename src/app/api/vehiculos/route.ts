@@ -48,6 +48,7 @@ type CountRow = {
 const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
 
 import { parseInteger, toNumber } from "@/lib/api-helpers";
+import { getStaffReadSedeScope } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
@@ -59,6 +60,8 @@ export async function GET(request: Request) {
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
+  const { sedeId, error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
@@ -66,7 +69,7 @@ export async function GET(request: Request) {
 
   const scope = {
     escuelaId,
-    sedeId: perfil.sede_id,
+    sedeId,
   };
 
   const values: Array<string | number> = [];
@@ -77,6 +80,7 @@ export async function GET(request: Request) {
 
   const where: string[] = [];
   where.push(`v.escuela_id = ${addValue(escuelaId)}`);
+  if (sedeId) where.push(`v.sede_id = ${addValue(sedeId)}`);
 
   if (search) {
     const ref = addValue(`%${search}%`);
@@ -96,7 +100,7 @@ export async function GET(request: Request) {
   const offsetRef = `$${values.length + 2}`;
 
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("vehiculos", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey("vehiculos", perfil.rol, scope, url.searchParams),
     ttlMs: DASHBOARD_LIST_CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("vehiculos", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),
@@ -177,17 +181,17 @@ export async function GET(request: Request) {
         created_at: string;
       }>(
         `select id, escuela_id, sede_id, user_id, marca, modelo, matricula, tipo, anio, fecha_itv, seguro_vencimiento, estado, kilometraje, notas, created_at
-         from public.vehiculos where escuela_id = $1 order by created_at desc`,
-        [escuelaId]
+         from public.vehiculos where escuela_id = $1 ${sedeId ? "and sede_id = $2" : ""} order by created_at desc`,
+        sedeId ? [escuelaId, sedeId] : [escuelaId]
       ),
       pool.query<{ id: string; nombre: string; apellidos: string }>(
-        `select id, nombre, apellidos from public.instructores where escuela_id = $1 order by nombre, apellidos`,
-        [escuelaId]
+        `select id, nombre, apellidos from public.instructores where escuela_id = $1 ${sedeId ? "and sede_id = $2" : ""} order by nombre, apellidos`,
+        sedeId ? [escuelaId, sedeId] : [escuelaId]
       ),
       perfil.rol === "instructor"
         ? pool.query<{ id: string }>(
-            `select id from public.instructores where user_id = $1 limit 1`,
-            [perfil.id]
+            `select id from public.instructores where user_id = $1 and escuela_id = $2 limit 1`,
+            [perfil.id, escuelaId]
           )
         : Promise.resolve({ rows: [] as Array<{ id: string }> }),
     ]);

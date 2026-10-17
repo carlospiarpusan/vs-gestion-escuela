@@ -8,6 +8,7 @@ import {
   parseJsonBody,
 } from "@/lib/api-auth";
 import { getAuditedRolesForCapabilityAction } from "@/lib/role-capabilities";
+import { normalizeStoredCourseCategories } from "@/lib/course-categories";
 import { getServerDbPool } from "@/lib/server-db";
 import type { EstadoSede, Rol } from "@/types/database";
 
@@ -67,6 +68,7 @@ async function saveSede(
   authzPerfil: Parameters<typeof ensureSchoolScope>[0],
   data: z.infer<typeof upsertSedeSchema>
 ) {
+  const normalizedCategorias = normalizeStoredCourseCategories(data.categorias);
   const schoolScopeError = ensureSchoolScope(authzPerfil, data.escuela_id);
   if (schoolScopeError) {
     return NextResponse.json({ error: schoolScopeError }, { status: 403 });
@@ -104,7 +106,7 @@ async function saveSede(
         where id = $1
         returning id
       `,
-      [data.escuela_id, data.categorias]
+      [data.escuela_id, normalizedCategorias]
     );
 
     if (!schoolRes.rows[0]?.id) {

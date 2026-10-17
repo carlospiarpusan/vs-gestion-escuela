@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PUBLIC_FOOTER_LINKS } from "@/lib/public-navigation";
+import CondusoftLogo from "@/components/brand/CondusoftLogo";
 
 export default function Footer() {
   return (
@@ -10,11 +11,13 @@ export default function Footer() {
       <div className="mx-auto max-w-[1180px] px-4 py-12 sm:px-6">
         <div className="mb-12 grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
           <div className="apple-panel p-6 sm:p-8">
-            <span className="text-foreground block text-lg font-semibold">
-              Condu<span className="gradient-text">soft</span>
-            </span>
+            <CondusoftLogo
+              size="lg"
+              subtitle="Software para autoescuelas en Colombia"
+              subtitleClassName="mt-2"
+            />
             <p className="apple-copy mt-4 max-w-xl text-sm leading-7">
-              Condusoft es software para autoescuelas y escuelas de conducción en Colombia, diseñado
+              ConduSoft es software para autoescuelas y escuelas de conducción en Colombia, diseñado
               para que la operación se vea clara, trazable y profesional desde el primer día.
             </p>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -37,12 +40,14 @@ export default function Footer() {
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/registro"
+                prefetch={false}
                 className="apple-button-primary min-h-[46px] w-full justify-center text-sm font-semibold sm:w-auto"
               >
                 Crear cuenta
               </Link>
               <Link
                 href="/login"
+                prefetch={false}
                 className="apple-button-secondary min-h-[46px] w-full justify-center text-sm font-semibold sm:w-auto"
               >
                 Iniciar sesión
@@ -57,12 +62,22 @@ export default function Footer() {
                 <ul className="space-y-2.5">
                   {links.map((link) => (
                     <li key={link.label}>
-                      <Link
-                        href={link.href}
-                        className="apple-copy hover:text-blue-apple text-sm transition-colors hover:underline"
-                      >
-                        {link.label}
-                      </Link>
+                      {link.href.startsWith("#") ? (
+                        <a
+                          href={link.href}
+                          className="apple-copy hover:text-blue-apple text-sm transition-colors hover:underline"
+                        >
+                          {link.label}
+                        </a>
+                      ) : (
+                        <Link
+                          href={link.href}
+                          prefetch={false}
+                          className="apple-copy hover:text-blue-apple text-sm transition-colors hover:underline"
+                        >
+                          {link.label}
+                        </Link>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -73,9 +88,9 @@ export default function Footer() {
 
         <div className="apple-copy flex flex-col items-start justify-between gap-4 border-t border-[var(--surface-border)] pt-8 md:flex-row md:items-center">
           <p className="text-sm">
-            Copyright © {new Date().getFullYear()} Condusoft. Todos los derechos reservados.
+            Copyright © {new Date().getFullYear()} ConduSoft. Todos los derechos reservados.
           </p>
-          <p className="text-sm">condusoft.co · Hecho para escuelas de conducción en Colombia.</p>
+          <p className="text-sm">ConduSoft.co · Hecho para escuelas de conducción en Colombia.</p>
         </div>
       </div>
     </footer>

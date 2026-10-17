@@ -23,11 +23,7 @@ import { useDraftForm } from "@/hooks/useDraftForm";
 import { AccountingWorkspaceHeader } from "@/components/dashboard/accounting/AccountingWorkspace";
 import ExportFormatActions from "@/components/dashboard/ExportFormatActions";
 import { runSupabaseMutationWithRetry } from "@/lib/retry";
-import {
-  buildElectronicInvoiceNote,
-  parseElectronicInvoiceFile,
-  type ElectronicInvoicePreview,
-} from "@/lib/electronic-invoice";
+import type { ElectronicInvoicePreview } from "@/lib/electronic-invoice";
 import {
   buildAccountingYears,
   downloadCsv,
@@ -1066,6 +1062,8 @@ export default function GastosPage() {
     setInvoicePreview(null);
 
     try {
+      const { parseElectronicInvoiceFile, buildElectronicInvoiceNote } =
+        await import("@/lib/electronic-invoice");
       const preview = await parseElectronicInvoiceFile(file);
 
       setInvoicePreview(preview);
@@ -1381,7 +1379,7 @@ export default function GastosPage() {
   const years = buildAccountingYears();
   const mesesDelAno =
     Number(filtroYear) === currentYear
-      ? MONTH_OPTIONS.filter((mes) => !mes.value || Number(mes.value) <= new Date().getMonth() + 1)
+      ? MONTH_OPTIONS.filter((mes) => !mes.value || Number(mes.value) <= currentMonth)
       : MONTH_OPTIONS;
   const hayFiltros = Boolean(
     (activeSection !== "tramitadores" && activeSection !== "nomina" && filtroCategoria) ||
@@ -1568,67 +1566,77 @@ export default function GastosPage() {
         pageSize={PAGE_SIZE}
       />
 
-      <GastoModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        editing={!!editing}
-        form={form}
-        setForm={setForm}
-        error={error}
-        saving={saving}
-        onSave={handleSave}
-        tramitadorOptions={tramitadorOptions.filter((option) => option !== "Sin tramitador")}
-      />
+      {modalOpen && (
+        <GastoModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          editing={!!editing}
+          form={form}
+          setForm={setForm}
+          error={error}
+          saving={saving}
+          onSave={handleSave}
+          tramitadorOptions={tramitadorOptions.filter((option) => option !== "Sin tramitador")}
+        />
+      )}
 
-      <ImportInvoiceModal
-        open={importModalOpen}
-        onClose={() => {
-          setImportModalOpen(false);
-          resetInvoiceImport();
-        }}
-        invoiceImportError={invoiceImportError}
-        parsingInvoice={parsingInvoice}
-        importingInvoice={importingInvoice}
-        invoicePreview={invoicePreview}
-        invoiceForm={invoiceForm}
-        setInvoiceForm={setInvoiceForm}
-        invoiceFileInputRef={invoiceFileInputRef}
-        onFileChange={handleInvoiceFileChange}
-        onImport={handleImportInvoice}
-      />
+      {importModalOpen && (
+        <ImportInvoiceModal
+          open={importModalOpen}
+          onClose={() => {
+            setImportModalOpen(false);
+            resetInvoiceImport();
+          }}
+          invoiceImportError={invoiceImportError}
+          parsingInvoice={parsingInvoice}
+          importingInvoice={importingInvoice}
+          invoicePreview={invoicePreview}
+          invoiceForm={invoiceForm}
+          setInvoiceForm={setInvoiceForm}
+          invoiceFileInputRef={invoiceFileInputRef}
+          onFileChange={handleInvoiceFileChange}
+          onImport={handleImportInvoice}
+        />
+      )}
 
-      <EmailIntegrationModal
-        open={emailModalOpen}
-        onClose={() => setEmailModalOpen(false)}
-        emailIntegration={emailIntegration}
-        emailForm={emailForm}
-        setEmailForm={setEmailForm}
-        sedesOptions={sedesOptions}
-        emailError={emailError}
-        emailSaving={emailSaving}
-        onSave={handleSaveEmailIntegration}
-        onEmailAddressChange={handleEmailAddressChange}
-      />
+      {emailModalOpen && (
+        <EmailIntegrationModal
+          open={emailModalOpen}
+          onClose={() => setEmailModalOpen(false)}
+          emailIntegration={emailIntegration}
+          emailForm={emailForm}
+          setEmailForm={setEmailForm}
+          sedesOptions={sedesOptions}
+          emailError={emailError}
+          emailSaving={emailSaving}
+          onSave={handleSaveEmailIntegration}
+          onEmailAddressChange={handleEmailAddressChange}
+        />
+      )}
 
-      <HistoricalSearchModal
-        open={emailHistoryModalOpen}
-        onClose={() => setEmailHistoryModalOpen(false)}
-        emailHistoryMonths={emailHistoryMonths}
-        setEmailHistoryMonths={setEmailHistoryMonths}
-        emailHistoryMaxMessages={emailHistoryMaxMessages}
-        setEmailHistoryMaxMessages={setEmailHistoryMaxMessages}
-        emailSyncing={emailSyncing}
-        onSearch={handleHistoricalEmailSync}
-      />
+      {emailHistoryModalOpen && (
+        <HistoricalSearchModal
+          open={emailHistoryModalOpen}
+          onClose={() => setEmailHistoryModalOpen(false)}
+          emailHistoryMonths={emailHistoryMonths}
+          setEmailHistoryMonths={setEmailHistoryMonths}
+          emailHistoryMaxMessages={emailHistoryMaxMessages}
+          setEmailHistoryMaxMessages={setEmailHistoryMaxMessages}
+          emailSyncing={emailSyncing}
+          onSearch={handleHistoricalEmailSync}
+        />
+      )}
 
       {/* Delete confirmation dialog */}
-      <DeleteConfirm
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        onConfirm={handleDelete}
-        loading={saving}
-        message="¿Eliminar este gasto?"
-      />
+      {deleteOpen && (
+        <DeleteConfirm
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          onConfirm={handleDelete}
+          loading={saving}
+          message="¿Eliminar este gasto?"
+        />
+      )}
     </div>
   );
 }

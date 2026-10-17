@@ -5,6 +5,11 @@ import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { clearSchoolCategoriesCache } from "@/lib/school-categories";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
+import {
+  normalizeStoredCourseCategories,
+  SELECTABLE_COURSE_CATEGORIES,
+  toggleCourseCategorySelection,
+} from "@/lib/course-categories";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import Modal from "@/components/dashboard/Modal";
 import DeleteConfirm from "@/components/dashboard/DeleteConfirm";
@@ -14,20 +19,8 @@ import { Plus, MapPin, Phone, Mail, Clock, Star, Building2, AlertTriangle } from
 /* ─── estilos reutilizables ─── */
 const inputCls = "apple-input";
 const labelCls = "apple-label";
-const CATEGORIAS_INDIVIDUALES = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
-const CATEGORIAS_COMBO = [
-  "A2 y B1",
-  "A2 y C1",
-  "A2 y RC1",
-  "A2 y C2",
-  "A2 y C3",
-  "A1 y B1",
-  "A1 y C1",
-  "A1 y RC1",
-  "A1 y C2",
-  "A1 y C3",
-];
-const TODAS_CATEGORIAS = [...CATEGORIAS_INDIVIDUALES, ...CATEGORIAS_COMBO];
+const CATEGORIAS_INDIVIDUALES = [...SELECTABLE_COURSE_CATEGORIES];
+const TODAS_CATEGORIAS = [...CATEGORIAS_INDIVIDUALES];
 
 const emptyForm = {
   escuela_id: "",
@@ -91,7 +84,10 @@ export default function SedesPage() {
 
         if (cancelled) return;
 
-        const escuelasData = (escuelasRes.data as EscuelaOption[]) || [];
+        const escuelasData = ((escuelasRes.data as EscuelaOption[]) || []).map((escuela) => ({
+          ...escuela,
+          categorias: normalizeStoredCourseCategories(escuela.categorias || []),
+        }));
         const schoolNameById = new Map(escuelasData.map((escuela) => [escuela.id, escuela.nombre]));
         const sedesData = ((sedesRes.data as Sede[]) || []).map((sede) => ({
           ...sede,
@@ -126,9 +122,18 @@ export default function SedesPage() {
 
       if (cancelled) return;
 
-      setEscuelas(escuelaRes.data ? [escuelaRes.data as EscuelaOption] : []);
+      setEscuelas(
+        escuelaRes.data
+          ? [
+              {
+                ...(escuelaRes.data as EscuelaOption),
+                categorias: normalizeStoredCourseCategories(escuelaRes.data.categorias || []),
+              },
+            ]
+          : []
+      );
       setSedes((sedesRes.data as SedeRow[]) || []);
-      setCategoriasEscuela(escuelaRes.data?.categorias || []);
+      setCategoriasEscuela(normalizeStoredCourseCategories(escuelaRes.data?.categorias || []));
       setLoading(false);
     };
 
@@ -195,9 +200,7 @@ export default function SedesPage() {
   const toggleCategoria = (categoria: string) => {
     setForm((prev) => ({
       ...prev,
-      categorias: prev.categorias.includes(categoria)
-        ? prev.categorias.filter((item) => item !== categoria)
-        : [...prev.categorias, categoria],
+      categorias: toggleCourseCategorySelection(prev.categorias, categoria),
     }));
   };
 
@@ -654,9 +657,12 @@ export default function SedesPage() {
             </div>
 
             <div className="mt-4 space-y-4">
+              <p className="text-xs text-[#86868b]">
+                Los combos se generan seleccionando moto y carro por separado en la matrícula.
+              </p>
               <div>
                 <p className="mb-2 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
-                  Individuales
+                  Categorías
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
                   {CATEGORIAS_INDIVIDUALES.map((categoria) => {
@@ -667,31 +673,6 @@ export default function SedesPage() {
                         type="button"
                         onClick={() => toggleCategoria(categoria)}
                         className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
-                          activa
-                            ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                            : "border-gray-200 text-[#1d1d1f] hover:border-gray-300 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:border-gray-600"
-                        }`}
-                      >
-                        {categoria}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-2 text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
-                  Combos
-                </p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {CATEGORIAS_COMBO.map((categoria) => {
-                    const activa = form.categorias.includes(categoria);
-                    return (
-                      <button
-                        key={categoria}
-                        type="button"
-                        onClick={() => toggleCategoria(categoria)}
-                        className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors ${
                           activa
                             ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
                             : "border-gray-200 text-[#1d1d1f] hover:border-gray-300 dark:border-gray-700 dark:text-[#f5f5f7] dark:hover:border-gray-600"

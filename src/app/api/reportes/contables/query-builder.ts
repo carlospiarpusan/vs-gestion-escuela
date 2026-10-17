@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseExpenseSearch } from "@/lib/expense-search";
 import { normalizeUuid } from "@/lib/dashboard-scope";
+import { APP_TIME_ZONE, getTodayDateString, isValidDateOnly } from "@/lib/date-utils";
 import {
   EXAMEN_INCOME_CATEGORIES,
   MATRICULA_INCOME_CATEGORIES,
@@ -64,23 +65,21 @@ export const TRAMITADOR_EXPENSE_CATEGORY = "tramitador";
 
 export function parseDateInput(value: string | null, fallback: string) {
   if (!value) return fallback;
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
+  return isValidDateOnly(value) ? value : fallback;
 }
 
 export function parseInteger(value: string | null, fallback: number, min: number, max: number) {
+  if (value === null || !value.trim()) return fallback;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.floor(parsed)));
 }
 
-export function getCurrentMonthRange() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
+export function getCurrentMonthRange(now = new Date()) {
+  const today = getTodayDateString(now);
   return {
-    from: `${year}-${month}-01`,
-    to: `${year}-${month}-${day}`,
+    from: `${today.slice(0, 7)}-01`,
+    to: today,
   };
 }
 
@@ -118,7 +117,7 @@ export function resolveScope(
     };
   }
 
-  if (perfil.rol === "admin_sede") {
+  if (perfil.rol === "admin_sede" || perfil.rol === "administrativo") {
     return {
       escuelaId: perfil.escuela_id,
       sedeId: perfil.sede_id,
@@ -189,13 +188,17 @@ export function buildQueryParts({
   ingresosWhere.push(`i.fecha >= ${fromRef}`);
   gastosWhere.push(`g.fecha >= ${fromRef}`);
   matriculasWhere.push(`m.fecha_inscripcion >= ${fromRef}`);
-  standaloneWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) >= ${fromRef}`);
+  standaloneWhere.push(
+    `coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) >= ${fromRef}`
+  );
 
   const toRef = addValue(to);
   ingresosWhere.push(`i.fecha <= ${toRef}`);
   gastosWhere.push(`g.fecha <= ${toRef}`);
   matriculasWhere.push(`m.fecha_inscripcion <= ${toRef}`);
-  standaloneWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) <= ${toRef}`);
+  standaloneWhere.push(
+    `coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) <= ${toRef}`
+  );
 
   if (alumnoId) {
     const ref = addValue(alumnoId);
@@ -473,8 +476,12 @@ export function buildQueryParts({
   }
   matriculaScopeWhere.push(`m.fecha_inscripcion >= ${fromRef}`);
   matriculaScopeWhere.push(`m.fecha_inscripcion <= ${toRef}`);
-  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) >= ${fromRef}`);
-  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) <= ${toRef}`);
+  standaloneScopeWhere.push(
+    `coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) >= ${fromRef}`
+  );
+  standaloneScopeWhere.push(
+    `coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) <= ${toRef}`
+  );
 
   const matWhere = matriculaScopeWhere.join(" AND ");
   const staWhere = standaloneScopeWhere.join(" AND ");
@@ -565,14 +572,14 @@ export function buildQueryParts({
           ('alumno:' || a.id::text) AS obligation_id,
           a.id AS alumno_id,
           a.tipo_registro::text AS tipo_registro,
-          COALESCE(a.fecha_inscripcion, a.created_at::date) AS fecha_registro,
+          COALESCE(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) AS fecha_registro,
           a.numero_contrato AS referencia,
           COALESCE(NULLIF(TRIM(CONCAT(a.nombre, ' ', a.apellidos)), ''), 'Sin alumno asociado') AS nombre,
           a.dni AS documento,
           COALESCE(a.valor_total, 0)::numeric AS valor_esperado,
           COALESCE(pagos.total_cobrado, 0)::numeric AS valor_cobrado,
           GREATEST(COALESCE(a.valor_total, 0) - COALESCE(pagos.total_cobrado, 0), 0)::numeric AS saldo_pendiente,
-          COALESCE(pagos.oldest_pending_date, COALESCE(a.fecha_inscripcion, a.created_at::date))::date AS fecha_referencia,
+          COALESCE(pagos.oldest_pending_date, COALESCE(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date))::date AS fecha_referencia,
           COALESCE(a.categorias, '{}'::text[]) AS categorias
         FROM alumnos a
         LEFT JOIN LATERAL (

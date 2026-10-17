@@ -1,5 +1,7 @@
 "use client";
 
+import { APP_TIME_ZONE } from "@/lib/date-utils";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
@@ -18,7 +20,12 @@ import {
   Zap,
 } from "lucide-react";
 import { fetchJsonWithRetry } from "@/lib/retry";
+import { getClientResourceCached, readClientResourceCache } from "@/lib/client-resource-cache";
+import { buildDashboardListCacheKey } from "@/lib/dashboard-client-cache";
 import type { SuperAdminAnalyticsResponse } from "@/app/api/dashboard/superadmin-analytics/route";
+import { useAuth } from "@/hooks/useAuth";
+
+const ANALYTICS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 // ── Helpers ────────────────────────────────────────────────────────────
 function formatCOP(value: number) {
@@ -225,32 +232,70 @@ function KpiCard({
 
 // ── Main page ──────────────────────────────────────────────────────────
 export default function AnaliticasPage() {
+  const { perfil } = useAuth();
   const [data, setData] = useState<SuperAdminAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
+  const cacheKey = useMemo(
+    () =>
+      buildDashboardListCacheKey(
+        "superadmin-analytics",
+        {
+          id: perfil?.id ?? null,
+          rol: perfil?.rol ?? null,
+          escuelaId: perfil?.escuela_id ?? null,
+          sedeId: perfil?.sede_id ?? null,
+        },
+        "scope=v1"
+      ),
+    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
+  );
 
-    try {
-      const res = await fetchJsonWithRetry<SuperAdminAnalyticsResponse>(
-        "/api/dashboard/superadmin-analytics"
-      );
-      setData(res);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error cargando analiticas");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const fetchData = useCallback(
+    async (isRefresh = false) => {
+      if (!perfil) return;
+
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
+
+      try {
+        const res = await getClientResourceCached<SuperAdminAnalyticsResponse>({
+          key: cacheKey,
+          ttlMs: ANALYTICS_CACHE_TTL_MS,
+          forceFresh: isRefresh,
+          persistToSession: true,
+          policy: "summary",
+          loader: () =>
+            fetchJsonWithRetry<SuperAdminAnalyticsResponse>(
+              `/api/dashboard/superadmin-analytics${isRefresh ? "?fresh=1" : ""}`
+            ),
+        });
+        setData(res);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error cargando analiticas");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [cacheKey, perfil]
+  );
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!perfil) return;
+
+    const cachedSnapshot = readClientResourceCache<SuperAdminAnalyticsResponse>(cacheKey);
+    if (cachedSnapshot) {
+      setData(cachedSnapshot);
+      setLoading(false);
+      return;
+    }
+
+    void fetchData();
+  }, [cacheKey, fetchData, perfil]);
 
   // Compute growth trend (last month vs previous)
   const growthTrends = useMemo(() => {
@@ -338,6 +383,7 @@ export default function AnaliticasPage() {
             <span className="flex items-center gap-1.5 text-xs text-zinc-400">
               <Clock className="h-3.5 w-3.5" />
               {new Date(data.generatedAt).toLocaleTimeString("es-CO", {
+                timeZone: APP_TIME_ZONE,
                 hour: "2-digit",
                 minute: "2-digit",
               })}
@@ -639,7 +685,9 @@ export default function AnaliticasPage() {
                           <>
                             {" "}
                             · Admin:{" "}
-                            {new Date(school.ultimo_acceso_admin).toLocaleDateString("es-CO")}
+                            {new Date(school.ultimo_acceso_admin).toLocaleDateString("es-CO", {
+                              timeZone: APP_TIME_ZONE,
+                            })}
                           </>
                         )}
                       </div>

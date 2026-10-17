@@ -1,19 +1,35 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
 import { AlertCircle, ChevronLeft, ChevronRight, ReceiptText, RefreshCw } from "lucide-react";
+import ExportFormatActions from "@/components/dashboard/ExportFormatActions";
 import TableScrollArea from "@/components/dashboard/TableScrollArea";
 import {
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
+import {
+  getCurrentDayOfMonth,
+  getCurrentMonthIndex,
+  getCurrentYear,
+  getTodayDateString,
+} from "@/lib/date-utils";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
-import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import {
+  buildDashboardListCacheTags,
+  buildScopedMutationRevalidationTags,
+} from "@/lib/server-cache-tags";
+import {
+  downloadCsv,
+  downloadSpreadsheetWorkbook,
+  type SpreadsheetCell,
+} from "@/lib/spreadsheet-export";
 import type { CierreHorasInstructor, Instructor } from "@/types/database";
+import { formatCop } from "@/lib/intl-formatters";
 
 // ─── Constantes ────────────────────────────────────────────────
 
@@ -38,6 +54,7 @@ const DIA_ABREV = ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"];
 
 type HorasMap = Record<string, Record<number, number>>;
 type InputOverrides = Record<string, string>;
+type ExportFormat = "csv" | "xls";
 type InstructorHorasRow = Pick<Instructor, "id" | "nombre" | "apellidos" | "color" | "sede_id"> & {
   valor_hora?: number | null;
 };
@@ -92,22 +109,20 @@ function padMonth(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-const fmtCOP = (n: number) =>
-  new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(n);
+const fmtCOP = formatCop;
 
 // ─── Componente principal ──────────────────────────────────────
 
 export default function HorasPage() {
   const { perfil } = useAuth();
   const isMobile = useIsMobileVariant();
-  const today = new Date();
+  const todayDate = getTodayDateString();
+  const todayYear = getCurrentYear();
+  const todayMonthIndex = getCurrentMonthIndex();
+  const todayDay = getCurrentDayOfMonth();
 
-  const [mes, setMes] = useState(today.getMonth());
-  const [anio, setAnio] = useState(today.getFullYear());
+  const [mes, setMes] = useState(todayMonthIndex);
+  const [anio, setAnio] = useState(todayYear);
   const [instructores, setInstructores] = useState<Instructor[]>([]);
   const [horasMap, setHorasMap] = useState<HorasMap>({});
   const [inputOverrides, setInputOverrides] = useState<InputOverrides>({});
@@ -124,9 +139,13 @@ export default function HorasPage() {
   const [closingMonth, setClosingMonth] = useState(false);
   const [closureError, setClosureError] = useState<string | null>(null);
   const [closureNotice, setClosureNotice] = useState<string | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
+  const dataRequestIdRef = useRef(0);
+  const hasPendingWrites = savingCells.size > 0 || savingValor.size > 0;
+  const periodLocked = hasPendingWrites || closingMonth;
 
   const daysInMonth = getDaysInMonth(anio, mes);
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const days = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
 
   const isReadOnly = perfil?.rol === "instructor" || perfil?.rol === "alumno";
   const canEditValor = ["super_admin", "admin_escuela", "admin_sede"].includes(perfil?.rol ?? "");
@@ -137,9 +156,7 @@ export default function HorasPage() {
   const monthNumber = mes + 1;
   const monthKey = `${anio}-${String(monthNumber).padStart(2, "0")}`;
   const selectedMonthLabel = `${MESES[mes]} ${anio}`;
-  const selectedMonthLastDay = new Date(anio, mes + 1, 0);
-  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const monthClosed = selectedMonthLastDay < startOfToday;
+  const monthClosed = padMonth(anio, mes, daysInMonth) < todayDate;
 
   // Anchos fijos de columnas sticky derecha
   const VALOR_COL_W = 110; // px — columna valor total (solo admins)
@@ -148,84 +165,99 @@ export default function HorasPage() {
 
   // ── Carga de datos ────────────────────────────────────────────
 
-  const fetchData = useCallback(async () => {
-    if (!perfil?.escuela_id) return;
-    setLoading(true);
-    setLoadingClosures(true);
-    setClosureError(null);
+  const fetchData = useCallback(
+    async (forceFresh = false) => {
+      if (!perfil?.escuela_id) return;
+      const requestId = ++dataRequestIdRef.current;
+      setLoading(true);
+      setLoadingClosures(true);
+      setClosureError(null);
 
-    try {
-      const params = new URLSearchParams({
-        anio: String(anio),
-        mes: String(mes),
-      });
-      if (canGenerateMonthlyExpenses && monthClosed) {
-        params.set("include_closures", "1");
+      try {
+        const params = new URLSearchParams({
+          anio: String(anio),
+          mes: String(mes),
+        });
+        if (canGenerateMonthlyExpenses && monthClosed) {
+          params.set("include_closures", "1");
+        }
+        if (forceFresh) {
+          params.set("fresh", "1");
+        }
+        const payload = await getDashboardListCached<HorasDashboardResponse>({
+          name: "horas-dashboard",
+          scope: {
+            id: perfil.id,
+            rol: perfil.rol,
+            escuelaId: perfil.escuela_id,
+            sedeId: perfil.sede_id,
+          },
+          params,
+          forceFresh,
+          loader: () =>
+            fetchJsonWithRetry<HorasDashboardResponse>(`/api/horas?${params.toString()}`),
+        });
+        if (requestId !== dataRequestIdRef.current) return;
+
+        const map: HorasMap = {};
+        const vh: Record<string, number> = {};
+
+        payload.instructores.forEach((i) => {
+          map[i.id] = {};
+          vh[i.id] = Number(i.valor_hora) || 0;
+        });
+
+        payload.horas.forEach((h) => {
+          const day = parseInt(h.fecha.split("-")[2], 10);
+          if (!map[h.instructor_id]) map[h.instructor_id] = {};
+          map[h.instructor_id][day] = Number(h.horas);
+        });
+
+        setInstructores(payload.instructores as unknown as Instructor[]);
+        setHorasMap(map);
+        setValorHoras(vh);
+        setMonthClosures(
+          canGenerateMonthlyExpenses && monthClosed ? payload.monthClosures || [] : []
+        );
+        setInputOverrides({});
+        setValorHoraEdits({});
+        setSaveError(null);
+      } catch (loadError) {
+        if (requestId !== dataRequestIdRef.current) return;
+        console.error("[HorasPage] Error cargando horas:", loadError);
+        setInstructores([]);
+        setHorasMap({});
+        setValorHoras({});
+        setMonthClosures([]);
+        setSaveError("No se pudieron cargar las horas del mes.");
+        if (canGenerateMonthlyExpenses && monthClosed) {
+          setClosureError("No se pudo verificar el cierre contable del mes.");
+        }
+      } finally {
+        if (requestId === dataRequestIdRef.current) {
+          setLoading(false);
+          setLoadingClosures(false);
+        }
       }
-      const payload = await getDashboardListCached<HorasDashboardResponse>({
-        name: "horas-dashboard",
-        scope: {
-          id: perfil.id,
-          rol: perfil.rol,
-          escuelaId: perfil.escuela_id,
-          sedeId: perfil.sede_id,
-        },
-        params,
-        loader: () => fetchJsonWithRetry<HorasDashboardResponse>(`/api/horas?${params.toString()}`),
-      });
-
-      const map: HorasMap = {};
-      const vh: Record<string, number> = {};
-
-      payload.instructores.forEach((i) => {
-        map[i.id] = {};
-        vh[i.id] = Number(i.valor_hora) || 0;
-      });
-
-      payload.horas.forEach((h) => {
-        const day = parseInt(h.fecha.split("-")[2], 10);
-        if (!map[h.instructor_id]) map[h.instructor_id] = {};
-        map[h.instructor_id][day] = Number(h.horas);
-      });
-
-      setInstructores(payload.instructores as unknown as Instructor[]);
-      setHorasMap(map);
-      setValorHoras(vh);
-      setMonthClosures(
-        canGenerateMonthlyExpenses && monthClosed ? payload.monthClosures || [] : []
-      );
-      setInputOverrides({});
-      setValorHoraEdits({});
-      setSaveError(null);
-    } catch (loadError) {
-      console.error("[HorasPage] Error cargando horas:", loadError);
-      setInstructores([]);
-      setHorasMap({});
-      setValorHoras({});
-      setMonthClosures([]);
-      setSaveError("No se pudieron cargar las horas del mes.");
-      if (canGenerateMonthlyExpenses && monthClosed) {
-        setClosureError("No se pudo verificar el cierre contable del mes.");
-      }
-    } finally {
-      setLoading(false);
-      setLoadingClosures(false);
-    }
-  }, [
-    anio,
-    canGenerateMonthlyExpenses,
-    mes,
-    monthClosed,
-    perfil?.escuela_id,
-    perfil?.id,
-    perfil?.rol,
-    perfil?.sede_id,
-  ]);
+    },
+    [
+      anio,
+      canGenerateMonthlyExpenses,
+      mes,
+      monthClosed,
+      perfil?.escuela_id,
+      perfil?.id,
+      perfil?.rol,
+      perfil?.sede_id,
+    ]
+  );
 
   useEffect(() => {
-    if (perfil) fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perfil?.id, mes, anio]);
+    void fetchData();
+    return () => {
+      dataRequestIdRef.current += 1;
+    };
+  }, [fetchData]);
 
   // ── Celdas de horas ──────────────────────────────────────────
 
@@ -242,13 +274,22 @@ export default function HorasPage() {
   };
 
   const handleBlur = async (instructorId: string, day: number) => {
-    if (!perfil?.escuela_id) return;
+    if (isReadOnly || !perfil?.escuela_id || closingMonth || loading) return;
     const key = `${instructorId}-${day}`;
+    if (!(key in inputOverrides) || savingCells.has(key)) return;
     const previousValue = horasMap[instructorId]?.[day];
     const raw = inputOverrides[key] ?? String(horasMap[instructorId]?.[day] ?? "");
     const isEmpty = raw.trim() === "";
     const parsed = parseInt(raw, 10);
     const hours = isNaN(parsed) ? 0 : Math.min(Math.max(parsed, 0), 24);
+    if ((isEmpty && previousValue === undefined) || (!isEmpty && hours === previousValue)) {
+      setInputOverrides((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
 
     // Si el campo queda vacío, limpiar del mapa local
     if (isEmpty) {
@@ -279,22 +320,26 @@ export default function HorasPage() {
 
     const query = isEmpty
       ? supabase.from("horas_trabajo").delete().eq("instructor_id", instructorId).eq("fecha", fecha)
-      : supabase
-          .from("horas_trabajo")
-          .upsert(
-            {
-              escuela_id: perfil.escuela_id,
-              sede_id: instructor.sede_id,
-              instructor_id: instructorId,
-              fecha,
-              horas: hours,
-            },
-            { onConflict: "instructor_id,fecha" }
-          );
+      : supabase.from("horas_trabajo").upsert(
+          {
+            escuela_id: perfil.escuela_id,
+            sede_id: instructor.sede_id,
+            instructor_id: instructorId,
+            fecha,
+            horas: hours,
+          },
+          { onConflict: "instructor_id,fecha" }
+        );
 
-    const { error } = await query;
-
-    if (error) {
+    try {
+      const { error } = await query;
+      if (error) throw error;
+      invalidateDashboardClientCaches([
+        "dashboard-list:horas-dashboard:",
+        "dashboard-list:horas-grid:",
+      ]);
+      void revalidateTaggedServerCaches(buildHorasRevalidationTags());
+    } catch {
       setSaveError("No se pudo guardar la hora. Recarga la página si el problema persiste.");
       setHorasMap((prev) => {
         const next = { ...prev, [instructorId]: { ...(prev[instructorId] || {}) } };
@@ -305,18 +350,13 @@ export default function HorasPage() {
         }
         return next;
       });
-    } else {
-      invalidateDashboardClientCaches([
-        "dashboard-list:horas-dashboard:",
-        "dashboard-list:horas-grid:",
-      ]);
+    } finally {
+      setSavingCells((prev) => {
+        const n = new Set(prev);
+        n.delete(key);
+        return n;
+      });
     }
-
-    setSavingCells((prev) => {
-      const n = new Set(prev);
-      n.delete(key);
-      return n;
-    });
   };
 
   // ── Valor hora por instructor ────────────────────────────────
@@ -328,10 +368,26 @@ export default function HorasPage() {
   };
 
   const handleValorHoraBlur = async (instructorId: string) => {
+    if (
+      !canEditValor ||
+      !(instructorId in valorHoraEdits) ||
+      savingValor.has(instructorId) ||
+      closingMonth ||
+      loading
+    )
+      return;
     const raw = valorHoraEdits[instructorId] ?? String(valorHoras[instructorId] ?? "");
     const parsed = parseFloat(raw.replace(/[^0-9.]/g, ""));
     const valor = isNaN(parsed) ? 0 : Math.max(parsed, 0);
     const previousValue = valorHoras[instructorId] ?? 0;
+    if (valor === previousValue) {
+      setValorHoraEdits((prev) => {
+        const next = { ...prev };
+        delete next[instructorId];
+        return next;
+      });
+      return;
+    }
 
     setValorHoras((prev) => ({ ...prev, [instructorId]: valor }));
     setValorHoraEdits((prev) => {
@@ -343,37 +399,56 @@ export default function HorasPage() {
     setSavingValor((prev) => new Set(prev).add(instructorId));
     setSaveError(null);
     const supabase = createClient();
-    const { error } = await supabase
-      .from("instructores")
-      .update({ valor_hora: valor })
-      .eq("id", instructorId);
-    if (error) {
-      setSaveError("No se pudo guardar el valor por hora.");
-      setValorHoras((prev) => ({ ...prev, [instructorId]: previousValue }));
-    } else {
+    try {
+      const { data, error } = await supabase
+        .from("instructores")
+        .update({ valor_hora: valor })
+        .eq("id", instructorId)
+        .select("id")
+        .maybeSingle();
+      if (error || !data) throw error || new Error("El instructor no pudo actualizarse.");
       invalidateDashboardClientCaches([
         "dashboard-list:horas-dashboard:",
         "dashboard-list:horas-grid:",
       ]);
+      void revalidateTaggedServerCaches(buildHorasRevalidationTags());
+    } catch {
+      setSaveError("No se pudo guardar el valor por hora.");
+      setValorHoras((prev) => ({ ...prev, [instructorId]: previousValue }));
+    } finally {
+      setSavingValor((prev) => {
+        const n = new Set(prev);
+        n.delete(instructorId);
+        return n;
+      });
     }
-    setSavingValor((prev) => {
-      const n = new Set(prev);
-      n.delete(instructorId);
-      return n;
-    });
   };
 
   // ── Totales ───────────────────────────────────────────────────
 
-  const getTotalInstructor = (id: string) =>
-    Object.values(horasMap[id] || {}).reduce((s, h) => s + (h || 0), 0);
+  const hoursTotals = useMemo(() => {
+    const byInstructor = new Map<string, number>();
+    const byDay: Record<number, number> = {};
+    let total = 0;
+    for (const instructor of instructores) {
+      let instructorTotal = 0;
+      for (const [day, hours] of Object.entries(horasMap[instructor.id] || {})) {
+        instructorTotal += hours || 0;
+        byDay[Number(day)] = (byDay[Number(day)] || 0) + (hours || 0);
+      }
+      byInstructor.set(instructor.id, instructorTotal);
+      total += instructorTotal;
+    }
+    return { byInstructor, byDay, total };
+  }, [horasMap, instructores]);
 
-  const getTotalDay = (day: number) =>
-    instructores.reduce((s, i) => s + ((horasMap[i.id] || {})[day] || 0), 0);
+  const getTotalInstructor = (id: string) => hoursTotals.byInstructor.get(id) || 0;
+
+  const getTotalDay = (day: number) => hoursTotals.byDay[day] || 0;
 
   const getTotalValor = (id: string) => getTotalInstructor(id) * (valorHoras[id] || 0);
 
-  const grandTotal = instructores.reduce((s, i) => s + getTotalInstructor(i.id), 0);
+  const grandTotal = hoursTotals.total;
   const grandTotalValor = instructores.reduce((s, i) => s + getTotalValor(i.id), 0);
   const closureByInstructor = useMemo(
     () => new Map(monthClosures.map((row) => [row.instructor_id, row])),
@@ -387,13 +462,107 @@ export default function HorasPage() {
     (inst) => getTotalInstructor(inst.id) > 0 && (valorHoras[inst.id] ?? 0) <= 0
   );
 
+  const handleExport = useCallback(
+    async (format: ExportFormat) => {
+      if (instructores.length === 0 || loading || periodLocked) return;
+
+      setExportingFormat(format);
+      try {
+        const dayHeaders = days.map((day) => String(day));
+        const headers = [
+          "Instructor",
+          ...dayHeaders,
+          "Total horas",
+          "Valor hora",
+          "Valor total",
+          "Gasto generado",
+        ];
+        const detailRows: SpreadsheetCell[][] = instructores.map((inst) => {
+          const totalHoras = Object.values(horasMap[inst.id] || {}).reduce(
+            (sum, hours) => sum + (Number(hours) || 0),
+            0
+          );
+          const valorHora = Number(valorHoras[inst.id] || 0);
+          const cierreMes = closureByInstructor.get(inst.id);
+
+          return [
+            `${inst.nombre} ${inst.apellidos}`,
+            ...days.map((day) => horasMap[inst.id]?.[day] ?? ""),
+            totalHoras,
+            valorHora,
+            totalHoras * valorHora,
+            cierreMes ? "Si" : "No",
+          ];
+        });
+
+        const summaryRows: SpreadsheetCell[][] = [
+          ["Mes", selectedMonthLabel],
+          ["Instructores", instructores.length],
+          ["Total horas", grandTotal],
+          ["Valor total", grandTotalValor],
+          ["Gastos generados", monthClosures.length],
+          ["Total gastos generados", closureTotal],
+        ];
+        const filenameBase = `horas-${anio}-${String(monthNumber).padStart(2, "0")}`;
+
+        if (format === "csv") {
+          downloadCsv(`${filenameBase}.csv`, headers, detailRows);
+          return;
+        }
+
+        await downloadSpreadsheetWorkbook(`${filenameBase}.xls`, [
+          {
+            name: "Resumen",
+            headers: ["Indicador", "Valor"],
+            rows: summaryRows,
+          },
+          {
+            name: "Detalle diario",
+            headers,
+            rows: detailRows,
+          },
+        ]);
+      } catch (error) {
+        setSaveError(getErrorMessage(error, "No se pudo exportar el archivo de horas."));
+      } finally {
+        setExportingFormat(null);
+      }
+    },
+    [
+      anio,
+      closureByInstructor,
+      closureTotal,
+      days,
+      grandTotal,
+      grandTotalValor,
+      horasMap,
+      instructores,
+      loading,
+      monthClosures.length,
+      monthNumber,
+      periodLocked,
+      selectedMonthLabel,
+      valorHoras,
+    ]
+  );
+
   useEffect(() => {
     setClosureNotice(null);
     setClosureError(null);
   }, [monthKey]);
 
   const handleGenerateMonthlyExpenses = async () => {
-    if (!monthClosed || !canGenerateMonthlyExpenses || !perfil?.escuela_id) return;
+    if (
+      !monthClosed ||
+      !canGenerateMonthlyExpenses ||
+      !perfil?.escuela_id ||
+      periodLocked ||
+      loading ||
+      loadingClosures ||
+      grandTotalValor <= 0 ||
+      instructorsMissingRate.length > 0
+    )
+      return;
 
     setClosingMonth(true);
     setClosureError(null);
@@ -440,7 +609,7 @@ export default function HorasPage() {
           includeDashboard: true,
         })
       );
-      await fetchData();
+      await fetchData(true);
     } catch (generationError) {
       console.error("[HorasPage] Error generando gastos mensuales:", generationError);
       setClosureError(
@@ -454,31 +623,45 @@ export default function HorasPage() {
   // ── Navegación de mes ─────────────────────────────────────────
 
   const prevMonth = () => {
+    if (periodLocked) return;
     if (mes === 0) {
       setAnio((a) => a - 1);
       setMes(11);
     } else setMes((m) => m - 1);
   };
   const nextMonth = () => {
+    if (periodLocked) return;
     if (mes === 11) {
       setAnio((a) => a + 1);
       setMes(0);
     } else setMes((m) => m + 1);
   };
 
-  const anios = Array.from({ length: 6 }, (_, i) => today.getFullYear() - 2 + i);
+  const anios = Array.from({ length: 6 }, (_, i) => todayYear - 2 + i);
 
   const pickerShellCls =
-    "inline-flex items-center gap-1.5 rounded-[24px] border border-gray-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-[#1d1d1f]/90";
+    "inline-flex items-center gap-1.5 rounded-[24px] border border-gray-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-[#15191f]/95 dark:shadow-[0_16px_34px_rgba(2,6,23,0.28)]";
   const sharedSelectCls =
-    "h-9 rounded-2xl border border-transparent bg-transparent px-3 text-sm font-medium text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/30 focus:bg-white focus:ring-0 dark:text-[#f5f5f7] dark:focus:bg-white/5";
+    "h-9 rounded-2xl border border-transparent bg-transparent px-3 text-sm font-medium text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/30 focus:bg-white focus:ring-0 dark:text-[#f5f5f7] dark:hover:bg-white/4 dark:focus:bg-white/6";
   const monthSelectCls = `${sharedSelectCls} min-w-[8.75rem]`;
   const yearSelectCls = `${sharedSelectCls} w-[5.4rem]`;
   const navBtnCls =
     "inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-transparent text-[#1d1d1f] transition hover:bg-[#f5f5f7] hover:text-[#0071e3] focus:outline-none focus:ring-2 focus:ring-[#0071e3]/20 dark:text-[#f5f5f7] dark:hover:bg-white/8 dark:hover:text-[#6cb6ff]";
+  const panelCls =
+    "border border-gray-100 bg-white shadow-sm dark:border-white/10 dark:bg-[#15191f] dark:shadow-[0_20px_44px_rgba(2,6,23,0.3)]";
+  const insetCls = "border border-gray-200/70 bg-white dark:border-white/8 dark:bg-[#0f1217]";
 
   // right offset para la columna de total horas (deja espacio para la columna valor)
   const totalColRight = canEditValor ? VALOR_COL_W : 0;
+
+  const buildHorasRevalidationTags = useCallback(
+    () =>
+      buildDashboardListCacheTags("horas-dashboard", {
+        escuelaId: perfil?.escuela_id,
+        sedeId: perfil?.sede_id,
+      }),
+    [perfil?.escuela_id, perfil?.sede_id]
+  );
 
   const renderMobileHoursCards = () => (
     <div className="space-y-4 p-4">
@@ -490,7 +673,7 @@ export default function HorasPage() {
         return (
           <div
             key={inst.id}
-            className="rounded-[1.75rem] border border-gray-100 bg-[#f7f9fc] p-4 dark:border-gray-800 dark:bg-[#111214]"
+            className="rounded-[1.75rem] border border-gray-100 bg-[#f7f9fc] p-4 shadow-sm dark:border-white/10 dark:bg-[#13171c] dark:shadow-[0_18px_40px_rgba(2,6,23,0.28)]"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -505,7 +688,7 @@ export default function HorasPage() {
                     {inst.nombre} {inst.apellidos}
                   </h3>
                 </div>
-                <p className="mt-1 text-xs text-[#86868b]">
+                <p className="mt-1 text-xs text-[#86868b] dark:text-[#98a2b3]">
                   {totalInst > 0
                     ? `${totalInst}h registradas en ${selectedMonthLabel}`
                     : `Sin horas registradas en ${selectedMonthLabel}`}
@@ -519,16 +702,16 @@ export default function HorasPage() {
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-white px-3 py-3 dark:bg-[#1a1c20]">
-                <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+              <div className={`${insetCls} rounded-2xl px-3 py-3`}>
+                <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase dark:text-[#98a2b3]">
                   Total horas
                 </p>
                 <p className="mt-1 text-lg font-semibold text-[#0071e3]">
                   {totalInst > 0 ? `${totalInst}h` : "—"}
                 </p>
               </div>
-              <div className="rounded-2xl bg-white px-3 py-3 dark:bg-[#1a1c20]">
-                <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+              <div className={`${insetCls} rounded-2xl px-3 py-3`}>
+                <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase dark:text-[#98a2b3]">
                   Valor total
                 </p>
                 <p className="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">
@@ -539,7 +722,7 @@ export default function HorasPage() {
 
             {canEditValor ? (
               <div className="mt-4">
-                <label className="mb-2 block text-[11px] font-semibold tracking-[0.18em] text-[#86868b] uppercase">
+                <label className="mb-2 block text-[11px] font-semibold tracking-[0.18em] text-[#86868b] uppercase dark:text-[#98a2b3]">
                   Valor por hora
                 </label>
                 <input
@@ -551,6 +734,8 @@ export default function HorasPage() {
                     setValorHoraEdits((prev) => ({ ...prev, [inst.id]: e.target.value }))
                   }
                   onBlur={() => handleValorHoraBlur(inst.id)}
+                  disabled={savingValor.has(inst.id) || closingMonth}
+                  aria-label={`Valor por hora de ${inst.nombre}`}
                   placeholder="0"
                   className={`apple-input ${savingValor.has(inst.id) ? "opacity-40" : ""}`}
                 />
@@ -572,7 +757,7 @@ export default function HorasPage() {
             ) : null}
 
             <div className="mt-4">
-              <p className="mb-3 text-[11px] font-semibold tracking-[0.18em] text-[#86868b] uppercase">
+              <p className="mb-3 text-[11px] font-semibold tracking-[0.18em] text-[#86868b] uppercase dark:text-[#98a2b3]">
                 Registro diario
               </p>
               <div className="grid grid-cols-4 gap-2">
@@ -583,13 +768,10 @@ export default function HorasPage() {
                   const hasVal = val !== "" && numVal > 0;
                   const isRest =
                     val === "0" || (val !== "" && numVal === 0 && horasMap[inst.id]?.[d] === 0);
-                  const isSaving = savingCells.has(key);
+                  const isSaving = savingCells.has(key) || closingMonth;
                   const dow = getDayOfWeek(anio, mes, d);
                   const isWE = dow === 0 || dow === 6;
-                  const isToday =
-                    d === today.getDate() &&
-                    mes === today.getMonth() &&
-                    anio === today.getFullYear();
+                  const isToday = d === todayDay && mes === todayMonthIndex && anio === todayYear;
 
                   return (
                     <div
@@ -626,7 +808,7 @@ export default function HorasPage() {
                               ? "text-[#0071e3]"
                               : isWE
                                 ? "text-[#0071e3]/70"
-                                : "text-[#86868b]"
+                                : "text-[#86868b] dark:text-[#98a2b3]"
                           }`}
                         >
                           {DIA_ABREV[dow]}
@@ -645,14 +827,15 @@ export default function HorasPage() {
                         onBlur={() => handleBlur(inst.id, d)}
                         onFocus={(e) => e.target.select()}
                         readOnly={isReadOnly}
+                        disabled={isSaving}
                         placeholder="·"
                         aria-label={`${inst.nombre} día ${d}`}
-                        className={`h-11 w-full rounded-xl border border-transparent bg-white/80 px-1 text-center text-sm outline-none dark:bg-[#0f1013] ${
+                        className={`h-11 w-full rounded-xl border border-transparent bg-white/80 px-1 text-center text-sm outline-none dark:border-white/6 dark:bg-[#0c0f13] ${
                           isRest
                             ? "font-semibold text-amber-600 dark:text-amber-400"
                             : hasVal
                               ? "font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"
-                              : "text-[#86868b]"
+                              : "text-[#86868b] dark:text-[#98a2b3]"
                         } ${
                           isReadOnly
                             ? "cursor-default"
@@ -668,17 +851,19 @@ export default function HorasPage() {
         );
       })}
 
-      <div className="rounded-[1.75rem] border border-gray-100 bg-white p-4 dark:border-gray-800 dark:bg-[#17181c]">
+      <div className="rounded-[1.75rem] border border-gray-100 bg-white p-4 dark:border-white/10 dark:bg-[#171b21] dark:shadow-[0_16px_36px_rgba(2,6,23,0.24)]">
         <div className={`grid gap-3 ${canEditValor ? "grid-cols-2" : "grid-cols-1"}`}>
-          <div className="rounded-2xl bg-gray-50 px-3 py-3 dark:bg-[#111214]">
-            <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">Total mes</p>
+          <div className={`${insetCls} rounded-2xl px-3 py-3`}>
+            <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase dark:text-[#98a2b3]">
+              Total mes
+            </p>
             <p className="mt-1 text-lg font-semibold text-[#0071e3]">
               {grandTotal > 0 ? `${grandTotal}h` : "—"}
             </p>
           </div>
           {canEditValor ? (
-            <div className="rounded-2xl bg-gray-50 px-3 py-3 dark:bg-[#111214]">
-              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+            <div className={`${insetCls} rounded-2xl px-3 py-3`}>
+              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase dark:text-[#98a2b3]">
                 Total a gasto
               </p>
               <p className="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">
@@ -696,45 +881,69 @@ export default function HorasPage() {
   return (
     <div>
       {/* ── Cabecera ── */}
-      <div className="animate-fade-in mb-6 flex items-center justify-between gap-4">
+      <div className="animate-fade-in mb-6 flex flex-col items-start justify-between gap-4 xl:flex-row xl:items-center">
         <div className="min-w-0">
           <h2 className="truncate text-3xl font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
             Horas de Instructores
           </h2>
-          <p className="mt-1 text-sm text-[#86868b]">
+          <p className="mt-1 text-sm text-[#86868b] dark:text-[#98a2b3]">
             Control mensual de horas trabajadas por instructor
           </p>
         </div>
 
-        <div className={`${pickerShellCls} shrink-0`}>
-          <button onClick={prevMonth} className={navBtnCls} aria-label="Mes anterior">
-            <ChevronLeft size={15} />
-          </button>
-          <select
-            value={mes}
-            onChange={(e) => setMes(Number(e.target.value))}
-            className={monthSelectCls}
-          >
-            {MESES.map((m, i) => (
-              <option key={i} value={i}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <select
-            value={anio}
-            onChange={(e) => setAnio(Number(e.target.value))}
-            className={yearSelectCls}
-          >
-            {anios.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-          <button onClick={nextMonth} className={navBtnCls} aria-label="Mes siguiente">
-            <ChevronRight size={15} />
-          </button>
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between xl:w-auto xl:justify-end">
+          <ExportFormatActions
+            exportingFormat={exportingFormat}
+            disabled={loading || periodLocked || instructores.length === 0}
+            onExportCsv={() => void handleExport("csv")}
+            onExportXls={() => void handleExport("xls")}
+            xlsLabel="Exportar Excel"
+          />
+
+          <div className={`${pickerShellCls} shrink-0`}>
+            <button
+              onClick={prevMonth}
+              disabled={periodLocked}
+              className={navBtnCls}
+              aria-label="Mes anterior"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <select
+              value={mes}
+              aria-label="Mes"
+              disabled={periodLocked}
+              onChange={(e) => setMes(Number(e.target.value))}
+              className={monthSelectCls}
+            >
+              {MESES.map((m, i) => (
+                <option key={i} value={i}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <select
+              value={anio}
+              aria-label="Año"
+              disabled={periodLocked}
+              onChange={(e) => setAnio(Number(e.target.value))}
+              className={yearSelectCls}
+            >
+              {anios.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={nextMonth}
+              disabled={periodLocked}
+              className={navBtnCls}
+              aria-label="Mes siguiente"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -745,14 +954,14 @@ export default function HorasPage() {
       )}
 
       {canGenerateMonthlyExpenses && (
-        <div className="mb-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#1d1d1f]">
+        <div className={`mb-4 rounded-3xl p-5 ${panelCls}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="flex items-center gap-2 text-[#1d1d1f] dark:text-[#f5f5f7]">
                 <ReceiptText size={18} className="text-[#0071e3]" />
                 <h3 className="text-lg font-semibold">Cierre contable de horas</h3>
               </div>
-              <p className="mt-1 text-sm text-[#86868b]">
+              <p className="mt-1 text-sm text-[#86868b] dark:text-[#98a2b3]">
                 Cuando el mes termina, puedes convertir el valor total de horas de cada instructor
                 en gasto de nómina sin duplicados.
               </p>
@@ -774,6 +983,7 @@ export default function HorasPage() {
                 onClick={handleGenerateMonthlyExpenses}
                 disabled={
                   closingMonth ||
+                  hasPendingWrites ||
                   loading ||
                   loadingClosures ||
                   !monthClosed ||
@@ -797,30 +1007,30 @@ export default function HorasPage() {
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-[#141414]">
-              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+            <div className={`${insetCls} rounded-2xl px-4 py-3`}>
+              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase dark:text-[#98a2b3]">
                 Total horas del mes
               </p>
               <p className="mt-1 text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                 {grandTotal > 0 ? `${grandTotal}h` : "—"}
               </p>
             </div>
-            <div className="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-[#141414]">
-              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+            <div className={`${insetCls} rounded-2xl px-4 py-3`}>
+              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase dark:text-[#98a2b3]">
                 Valor a gasto
               </p>
               <p className="mt-1 text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                 {grandTotalValor > 0 ? fmtCOP(grandTotalValor) : "—"}
               </p>
             </div>
-            <div className="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-[#141414]">
-              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase">
+            <div className={`${insetCls} rounded-2xl px-4 py-3`}>
+              <p className="text-[11px] tracking-[0.18em] text-[#86868b] uppercase dark:text-[#98a2b3]">
                 Gastos ya generados
               </p>
               <p className="mt-1 text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                 {loadingClosures ? "..." : `${monthClosures.length}`}
               </p>
-              <p className="mt-1 text-xs text-[#86868b]">
+              <p className="mt-1 text-xs text-[#86868b] dark:text-[#98a2b3]">
                 {loadingClosures
                   ? "Verificando..."
                   : monthClosures.length > 0
@@ -860,13 +1070,13 @@ export default function HorasPage() {
       )}
 
       {/* ── Tabla ── */}
-      <div className="animate-fade-in overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm delay-100 dark:border-gray-800 dark:bg-[#1d1d1f]">
+      <div className={`animate-fade-in overflow-hidden rounded-3xl delay-100 ${panelCls}`}>
         {loading ? (
           <div className="flex h-52 items-center justify-center">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#0071e3] border-t-transparent" />
           </div>
         ) : instructores.length === 0 ? (
-          <div className="flex h-52 flex-col items-center justify-center gap-2 text-[#86868b]">
+          <div className="flex h-52 flex-col items-center justify-center gap-2 text-[#86868b] dark:text-[#98a2b3]">
             <span className="text-4xl">📋</span>
             <p className="text-sm">No hay instructores activos para mostrar</p>
           </div>
@@ -886,7 +1096,7 @@ export default function HorasPage() {
                   {/* Instructor — sticky izquierda */}
                   <th
                     scope="col"
-                    className="sticky left-0 z-20 border-r-2 border-gray-200 bg-gray-50 px-4 py-2.5 text-left text-[10px] font-semibold tracking-wider text-[#86868b] uppercase dark:border-gray-700 dark:bg-[#141414]"
+                    className="sticky left-0 z-20 border-r-2 border-gray-200 bg-gray-50 px-4 py-2.5 text-left text-[10px] font-semibold tracking-wider text-[#86868b] uppercase dark:border-white/10 dark:bg-[#11151a] dark:text-[#98a2b3]"
                     style={{ width: 180, minWidth: 180 }}
                   >
                     Instructor
@@ -896,10 +1106,7 @@ export default function HorasPage() {
                   {days.map((d) => {
                     const dow = getDayOfWeek(anio, mes, d);
                     const isWE = dow === 0 || dow === 6;
-                    const isToday =
-                      d === today.getDate() &&
-                      mes === today.getMonth() &&
-                      anio === today.getFullYear();
+                    const isToday = d === todayDay && mes === todayMonthIndex && anio === todayYear;
                     return (
                       <th
                         key={d}
@@ -907,10 +1114,10 @@ export default function HorasPage() {
                         style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
                         className={`border-r border-gray-100 py-1.5 text-center dark:border-gray-800 ${
                           isToday
-                            ? "bg-[#0071e3]/10 dark:bg-[#0071e3]/15"
+                            ? "bg-[#0071e3]/10 dark:bg-[#0c2b4c]"
                             : isWE
-                              ? "bg-gray-100 dark:bg-[#1a1a1a]"
-                              : "bg-gray-50 dark:bg-[#141414]"
+                              ? "bg-gray-100 dark:bg-[#161a20]"
+                              : "bg-gray-50 dark:bg-[#11151a]"
                         }`}
                       >
                         <div
@@ -930,7 +1137,7 @@ export default function HorasPage() {
                   {/* Total horas — sticky derecha (desplazada si hay columna valor) */}
                   <th
                     scope="col"
-                    className="sticky z-20 border-l-2 border-gray-200 bg-gray-50 px-2 py-2.5 text-center text-[10px] font-semibold tracking-wider text-[#86868b] uppercase dark:border-gray-700 dark:bg-[#141414]"
+                    className="sticky z-20 border-l-2 border-gray-200 bg-gray-50 px-2 py-2.5 text-center text-[10px] font-semibold tracking-wider text-[#86868b] uppercase dark:border-white/10 dark:bg-[#11151a] dark:text-[#98a2b3]"
                     style={{ width: TOTAL_COL_W, minWidth: TOTAL_COL_W, right: totalColRight }}
                   >
                     Total h
@@ -940,7 +1147,7 @@ export default function HorasPage() {
                   {canEditValor && (
                     <th
                       scope="col"
-                      className="sticky right-0 z-20 border-l border-gray-200 bg-gray-50 px-2 py-2.5 text-center text-[10px] font-semibold tracking-wider text-[#86868b] uppercase dark:border-gray-700 dark:bg-[#141414]"
+                      className="sticky right-0 z-20 border-l border-gray-200 bg-gray-50 px-2 py-2.5 text-center text-[10px] font-semibold tracking-wider text-[#86868b] uppercase dark:border-white/10 dark:bg-[#11151a] dark:text-[#98a2b3]"
                       style={{ width: VALOR_COL_W, minWidth: VALOR_COL_W }}
                     >
                       Valor total
@@ -957,14 +1164,14 @@ export default function HorasPage() {
                   const cierreMes = closureByInstructor.get(inst.id);
                   const isEven = idx % 2 === 0;
                   const rowBg = isEven
-                    ? "bg-white dark:bg-[#1d1d1f]"
-                    : "bg-gray-50/40 dark:bg-[#1f1f1f]";
+                    ? "bg-white dark:bg-[#15191f]"
+                    : "bg-gray-50/40 dark:bg-[#1b2026]";
                   const stickyRowBg = isEven
-                    ? "bg-white dark:bg-[#1d1d1f]"
-                    : "bg-gray-50 dark:bg-[#1f1f1f]";
+                    ? "bg-white dark:bg-[#15191f]"
+                    : "bg-gray-50 dark:bg-[#1b2026]";
                   const stickyFootBg = isEven
-                    ? "bg-gray-50 dark:bg-[#141414]"
-                    : "bg-gray-100 dark:bg-[#111]";
+                    ? "bg-gray-50 dark:bg-[#10141a]"
+                    : "bg-gray-100 dark:bg-[#0d1015]";
 
                   return (
                     <tr
@@ -991,7 +1198,9 @@ export default function HorasPage() {
                             {/* Input valor/hora — solo admins de escuela/sede */}
                             {canEditValor && (
                               <div className="mt-1.5 flex items-center gap-1">
-                                <span className="shrink-0 text-[10px] text-[#86868b]">$/h</span>
+                                <span className="shrink-0 text-[10px] text-[#86868b] dark:text-[#98a2b3]">
+                                  $/h
+                                </span>
                                 <input
                                   type="number"
                                   min="0"
@@ -1004,8 +1213,10 @@ export default function HorasPage() {
                                     }))
                                   }
                                   onBlur={() => handleValorHoraBlur(inst.id)}
+                                  disabled={savingValor.has(inst.id) || closingMonth}
+                                  aria-label={`Valor por hora de ${inst.nombre}`}
                                   placeholder="0"
-                                  className={`w-[72px] [appearance:textfield] rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-[#1d1d1f] focus:border-[#0071e3] focus:ring-1 focus:ring-[#0071e3]/50 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-[#f5f5f7] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${savingValor.has(inst.id) ? "opacity-40" : ""}`}
+                                  className={`w-[72px] [appearance:textfield] rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-[#1d1d1f] focus:border-[#0071e3] focus:ring-1 focus:ring-[#0071e3]/50 focus:outline-none dark:border-white/10 dark:bg-[#0e1116] dark:text-[#f5f5f7] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${savingValor.has(inst.id) ? "opacity-40" : ""}`}
                                 />
                               </div>
                             )}
@@ -1042,13 +1253,11 @@ export default function HorasPage() {
                         const isRest =
                           val === "0" ||
                           (val !== "" && numVal === 0 && horasMap[inst.id]?.[d] === 0);
-                        const isSaving = savingCells.has(key);
+                        const isSaving = savingCells.has(key) || closingMonth;
                         const dow = getDayOfWeek(anio, mes, d);
                         const isWE = dow === 0 || dow === 6;
                         const isToday =
-                          d === today.getDate() &&
-                          mes === today.getMonth() &&
-                          anio === today.getFullYear();
+                          d === todayDay && mes === todayMonthIndex && anio === todayYear;
 
                         return (
                           <td
@@ -1056,17 +1265,17 @@ export default function HorasPage() {
                             style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
                             className={`border-r border-gray-100 p-0 transition-opacity dark:border-gray-800 ${isSaving ? "opacity-40" : ""} ${
                               isRest
-                                ? "bg-amber-100/70 dark:bg-amber-900/20"
+                                ? "bg-amber-100/70 dark:bg-amber-900/24"
                                 : isToday && hasVal
-                                  ? "bg-[#0071e3]/12"
+                                  ? "bg-[#0071e3]/12 dark:bg-[#0e355e]"
                                   : isToday
-                                    ? "bg-[#0071e3]/6"
+                                    ? "bg-[#0071e3]/6 dark:bg-[#0c243d]"
                                     : hasVal && isWE
-                                      ? "bg-blue-50/60 dark:bg-[#0071e3]/8"
+                                      ? "bg-blue-50/60 dark:bg-[#0d2a49]"
                                       : hasVal
-                                        ? "bg-[#0071e3]/5 dark:bg-[#0071e3]/7"
+                                        ? "bg-[#0071e3]/5 dark:bg-[#10263d]"
                                         : isWE
-                                          ? "bg-gray-50/60 dark:bg-[#1a1a1a]/60"
+                                          ? "bg-gray-50/60 dark:bg-[#161a20]/70"
                                           : ""
                             }`}
                           >
@@ -1083,6 +1292,7 @@ export default function HorasPage() {
                               onBlur={() => handleBlur(inst.id, d)}
                               onFocus={(e) => e.target.select()}
                               readOnly={isReadOnly}
+                              disabled={isSaving}
                               placeholder="·"
                               aria-label={`${inst.nombre} día ${d}`}
                               className={`h-9 w-full border-0 bg-transparent text-center text-sm outline-none placeholder:text-gray-300 dark:placeholder:text-gray-700 ${
@@ -1090,7 +1300,7 @@ export default function HorasPage() {
                                   ? "font-semibold text-amber-600 dark:text-amber-400"
                                   : hasVal
                                     ? "font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"
-                                    : "text-[#86868b]"
+                                    : "text-[#86868b] dark:text-[#98a2b3]"
                               } ${
                                 isReadOnly
                                   ? "cursor-default"
@@ -1135,7 +1345,7 @@ export default function HorasPage() {
               <tfoot>
                 <tr className="border-t-2 border-gray-200 dark:border-gray-700">
                   <td
-                    className="sticky left-0 z-10 border-r-2 border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-700 dark:bg-[#141414]"
+                    className="sticky left-0 z-10 border-r-2 border-gray-200 bg-gray-50 px-4 py-2 dark:border-white/10 dark:bg-[#11151a]"
                     style={{ width: 180, minWidth: 180 }}
                   >
                     <span className="text-[10px] font-semibold tracking-wider text-[#86868b] uppercase">
@@ -1151,7 +1361,7 @@ export default function HorasPage() {
                         key={d}
                         style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
                         className={`border-r border-gray-100 py-2 text-center dark:border-gray-800 ${
-                          isWE ? "bg-gray-100/70 dark:bg-[#1a1a1a]" : "bg-gray-50 dark:bg-[#141414]"
+                          isWE ? "bg-gray-100/70 dark:bg-[#161a20]" : "bg-gray-50 dark:bg-[#11151a]"
                         }`}
                       >
                         <span
@@ -1165,7 +1375,7 @@ export default function HorasPage() {
 
                   {/* Gran total horas */}
                   <td
-                    className="sticky z-10 border-l-2 border-gray-200 bg-gray-50 px-2 py-2 text-center dark:border-gray-700 dark:bg-[#141414]"
+                    className="sticky z-10 border-l-2 border-gray-200 bg-gray-50 px-2 py-2 text-center dark:border-white/10 dark:bg-[#11151a]"
                     style={{ width: TOTAL_COL_W, minWidth: TOTAL_COL_W, right: totalColRight }}
                   >
                     <span className="text-sm font-bold text-[#0071e3] tabular-nums">
@@ -1176,7 +1386,7 @@ export default function HorasPage() {
                   {/* Gran total valor (solo admins de escuela/sede) */}
                   {canEditValor && (
                     <td
-                      className="sticky right-0 z-10 border-l border-gray-200 bg-gray-50 px-2 py-2 text-center dark:border-gray-700 dark:bg-[#141414]"
+                      className="sticky right-0 z-10 border-l border-gray-200 bg-gray-50 px-2 py-2 text-center dark:border-white/10 dark:bg-[#11151a]"
                       style={{ width: VALOR_COL_W, minWidth: VALOR_COL_W }}
                     >
                       <span
@@ -1196,7 +1406,7 @@ export default function HorasPage() {
       {/* Leyenda */}
       {!loading && instructores.length > 0 && (
         <div
-          className={`animate-fade-in mt-4 flex flex-wrap gap-4 text-xs text-[#86868b] ${
+          className={`animate-fade-in mt-4 flex flex-wrap gap-4 text-xs text-[#86868b] dark:text-[#98a2b3] ${
             isMobile ? "items-start" : "items-center"
           }`}
         >
@@ -1209,7 +1419,7 @@ export default function HorasPage() {
             Descanso (0)
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-[#1a1a1a]" />
+            <span className="h-3 w-3 rounded-sm border border-gray-200 bg-gray-100 dark:border-white/10 dark:bg-[#161a20]" />
             Fin de semana
           </div>
           <div className="flex items-center gap-1.5">

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import {
-  DASHBOARD_SUMMARY_CACHE_TTL_MS,
   createEmptySuperAdminDashboardSummary,
   type SuperAdminDashboardResponse,
 } from "@/lib/dashboard-admin-summary";
@@ -10,18 +9,22 @@ import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardCacheTags } from "@/lib/server-cache-tags";
 
-export async function GET() {
+const SUPERADMIN_SUMMARY_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export async function GET(request: Request) {
   const authorization = await authorizeApiRequest(["super_admin"]);
   if (!authorization.ok) return authorization.response;
 
   const pool = getServerDbPool();
   const cacheKey = `dashboard:superadmin:${authorization.perfil.id}`;
+  const cacheBypass = new URL(request.url).searchParams.get("fresh") === "1";
 
   try {
     const response = await getServerReadCached<SuperAdminDashboardResponse>({
       key: cacheKey,
-      ttlMs: DASHBOARD_SUMMARY_CACHE_TTL_MS,
+      ttlMs: SUPERADMIN_SUMMARY_CACHE_TTL_MS,
       tags: buildDashboardCacheTags("superadmin"),
+      bypass: cacheBypass,
       loader: async () => {
         const nextResponse = createEmptySuperAdminDashboardSummary();
         const schoolOverviews = await loadPlatformSchoolOverviews(pool);
@@ -55,7 +58,7 @@ export async function GET() {
 
     return NextResponse.json(response, {
       headers: {
-        "Cache-Control": `private, max-age=${Math.floor(DASHBOARD_SUMMARY_CACHE_TTL_MS / 1000)}, stale-while-revalidate=60`,
+        "Cache-Control": `private, max-age=${Math.floor(SUPERADMIN_SUMMARY_CACHE_TTL_MS / 1000)}, stale-while-revalidate=60`,
       },
     });
   } catch (error) {

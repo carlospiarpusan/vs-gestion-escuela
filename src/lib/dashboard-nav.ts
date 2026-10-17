@@ -12,7 +12,6 @@ export type DashboardAreaId =
 export type DashboardIconKey =
   | "home"
   | "students"
-  | "classes"
   | "vehicles"
   | "hours"
   | "exams"
@@ -37,8 +36,8 @@ export type DashboardIconKey =
 
 export type DashboardModuleId =
   | "home"
+  | "invoicing"
   | "students"
-  | "classes"
   | "vehicles"
   | "hours"
   | "exams"
@@ -99,7 +98,7 @@ export const DASHBOARD_AREAS: DashboardAreaDescriptor[] = [
   {
     id: "operation",
     label: "Operación",
-    description: "Alumnos, agenda, flota y ejecución diaria de la escuela.",
+    description: "Alumnos, flota y horas de trabajo de la escuela.",
     priority: 1,
   },
   {
@@ -129,6 +128,19 @@ export const DASHBOARD_AREAS: DashboardAreaDescriptor[] = [
 ];
 
 export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
+  {
+    id: "invoicing",
+    label: "Conexion de facturacion",
+    shortLabel: "Facturacion",
+    href: "/dashboard/facturacion",
+    pathPrefix: "/dashboard/facturacion",
+    description: "Acceso privado de vs-facturacion a datos del alumno.",
+    area: "finance",
+    icon: "contracts",
+    roles: ["super_admin", "admin_escuela"],
+    priority: 55,
+    visibleInNav: false,
+  },
   {
     id: "home",
     label: "Inicio",
@@ -164,19 +176,6 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     priority: 10,
     mobilePriority: 1,
     homePriority: 10,
-  },
-  {
-    id: "classes",
-    label: "Clases",
-    shortLabel: "Clases",
-    href: "/dashboard/clases",
-    pathPrefix: "/dashboard/clases",
-    description: "Programación, control y estado de clases teóricas y prácticas.",
-    area: "operation",
-    icon: "classes",
-    roles: getDashboardRolesForCapabilityModule("classes"),
-    priority: 20,
-    homePriority: 20,
   },
   {
     id: "vehicles",
@@ -401,7 +400,7 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     description: "Facturación, métodos de pago y estado de cuenta de escuelas.",
     area: "platform",
     icon: "subscriptions",
-    roles: ["super_admin"],
+    roles: ["super_admin", "admin_escuela"],
     priority: 145,
     mobilePriority: 2,
     homePriority: 15,
@@ -489,8 +488,15 @@ export function getDashboardModulesForRole(
   }).sort((a, b) => a.priority - b.priority);
 }
 
-export function getDashboardNavigationForRole(rol?: Rol | null): DashboardNavConfig[] {
+export function getDashboardNavigationForRole(
+  rol?: Rol | null,
+  options?: { vsBilling?: boolean }
+): DashboardNavConfig[] {
   const modules = getDashboardModulesForRole(rol, { navOnly: true });
+  const pilot = DASHBOARD_MODULES.find((module) => module.id === "invoicing");
+  if (options?.vsBilling && pilot && isDashboardModuleVisibleToRole(pilot, rol)) {
+    modules.push(pilot);
+  }
   const grouped = new Map<DashboardAreaId, DashboardModuleDescriptor[]>();
 
   for (const moduleItem of modules) {
@@ -553,10 +559,19 @@ export function getDashboardPrimaryMobileModules(rol?: Rol | null) {
 }
 
 export function getDashboardHomePriorityModules(rol?: Rol | null) {
-  return getDashboardModulesForRole(rol, { navOnly: true })
-    .filter((module) => typeof module.homePriority === "number" && module.id !== "home")
-    .sort((a, b) => (a.homePriority ?? 999) - (b.homePriority ?? 999))
-    .slice(0, rol === "alumno" ? 2 : rol === "instructor" ? 4 : rol === "admin_escuela" ? 7 : 6);
+  const priorities: Record<Rol, DashboardModuleId[]> = {
+    super_admin: ["schools", "subscriptions", "analytics", "exams"],
+    admin_escuela: ["students", "income", "hours", "vehicles", "portfolio", "cash", "expenses"],
+    admin_sede: ["students", "hours", "income", "cash", "vehicles", "portfolio"],
+    administrativo: ["students", "income", "hours", "portfolio", "cash", "vehicles"],
+    recepcion: ["students", "income", "cash", "portfolio"],
+    instructor: ["vehicles", "logbook"],
+    alumno: ["exams"],
+  };
+  const allowed = getDashboardModulesForRole(rol, { navOnly: true });
+  return (rol ? (priorities[rol] ?? []) : [])
+    .map((id) => allowed.find((module) => module.id === id))
+    .filter((module): module is DashboardModuleDescriptor => Boolean(module));
 }
 
 export function getDashboardDefaultRoute(rol?: Rol | null) {

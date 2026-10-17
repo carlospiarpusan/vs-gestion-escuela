@@ -1,16 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BookOpen, Calendar, CarFront, DollarSign, FileText, Users } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { BookOpen, CarFront, DollarSign, FileText, Users } from "lucide-react";
+import DeferredIncomeChart from "./DeferredIncomeChart";
 import {
   getDashboardMonthRange,
   type AdminDashboardComparativeStats as ComparativeStats,
@@ -77,6 +69,9 @@ export default function AdminDashboardHome() {
       setDailyIngresos(cachedSnapshot.dailyIngresos);
       setLoadingStats(false);
       setSummaryWarning(null);
+      return () => {
+        isActive = false;
+      };
     }
 
     const fetchStats = async () => {
@@ -133,11 +128,6 @@ export default function AdminDashboardHome() {
       label: "Cursos nuevos del mes",
       value: stats.cursosNuevosMes.toString(),
       icon: <BookOpen size={20} />,
-    },
-    {
-      label: "Clases Hoy",
-      value: stats.clasesHoy.toString(),
-      icon: <Calendar size={20} />,
     },
     {
       label: "Exámenes Pendientes",
@@ -214,7 +204,7 @@ export default function AdminDashboardHome() {
       <PageScaffold
         eyebrow="Centro operativo"
         title={`Hola, ${nombre}`}
-        description="Resumen de la escuela con foco en alumnos activos, cursos nuevos del mes, agenda del día y recaudo."
+        description="Resumen de la escuela con foco en alumnos activos, cursos nuevos del mes y recaudo."
         aside={
           <div className="rounded-[22px] border border-[rgba(15,23,42,0.08)] bg-white/72 px-4 py-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
             <p className="text-[11px] font-semibold tracking-[0.16em] text-[#66707a] uppercase">
@@ -238,7 +228,7 @@ export default function AdminDashboardHome() {
           </div>
         ) : null}
         <SummaryRow
-          columns={5}
+          columns={4}
           items={statCards.map((stat) => ({
             id: stat.label,
             label: stat.label,
@@ -248,20 +238,16 @@ export default function AdminDashboardHome() {
                 ? "Regulares activos y pre-registrados en tu escuela."
                 : stat.label === "Cursos nuevos del mes"
                   ? "Matrículas regulares creadas en el mes actual."
-                  : stat.label === "Clases Hoy"
-                    ? "Agenda práctica y teórica del día."
-                    : stat.label === "Exámenes Pendientes"
-                      ? "Seguimientos que necesitan acción."
-                      : "Cobrado acumulado del mes vigente.",
+                  : stat.label === "Exámenes Pendientes"
+                    ? "Seguimientos que necesitan acción."
+                    : "Cobrado acumulado del mes vigente.",
             icon: stat.icon,
             tone:
-              stat.label === "Clases Hoy"
-                ? "success"
-                : stat.label === "Exámenes Pendientes"
-                  ? "warning"
-                  : stat.label === "Ingresos del Mes"
-                    ? "primary"
-                    : "default",
+              stat.label === "Exámenes Pendientes"
+                ? "warning"
+                : stat.label === "Ingresos del Mes"
+                  ? "primary"
+                  : "default",
           }))}
         />
       </PageScaffold>
@@ -400,48 +386,7 @@ export default function AdminDashboardHome() {
           </div>
         ) : (
           <div className={isMobile ? "h-[240px] w-full" : "h-[300px] w-full"}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dailyIngresos} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorMonto" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0071e3" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#0071e3" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                <XAxis
-                  dataKey="date"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 12, fill: "#86868b" }}
-                  tickFormatter={(val) => `Día ${val}`}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 12, fill: "#86868b" }}
-                  tickFormatter={(val) => `$${(val / 1000).toFixed(0)}k`}
-                />
-                <Tooltip
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  formatter={(value: any) => [`$${Number(value).toLocaleString()}`, "Ingreso"]}
-                  labelFormatter={(val) => `Día ${val} del mes`}
-                  contentStyle={{
-                    borderRadius: "12px",
-                    border: "none",
-                    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="monto"
-                  stroke="#0071e3"
-                  strokeWidth={3}
-                  fillOpacity={1}
-                  fill="url(#colorMonto)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <DeferredIncomeChart data={dailyIngresos} />
           </div>
         )}
       </div>
@@ -456,7 +401,7 @@ export default function AdminDashboardHome() {
         </h3>
         <p className={`text-sm text-[#86868b] ${isMobile ? "max-w-none" : "mx-auto max-w-md"}`}>
           Usa el menú lateral para navegar entre los módulos: alumnos, instructores, vehículos,
-          clases, exámenes y finanzas.
+          horas, exámenes y finanzas.
         </p>
       </div>
     </div>

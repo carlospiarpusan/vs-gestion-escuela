@@ -26,6 +26,8 @@ import {
 import { getSchoolPlanDescriptor } from "@/lib/school-plans";
 import { useAuth } from "@/hooks/useAuth";
 
+const SUPERADMIN_SUMMARY_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export default function SuperAdminDashboardHome() {
   const { perfil } = useAuth();
   const [stats, setStats] = useState<PlatformStats>({
@@ -57,6 +59,9 @@ export default function SuperAdminDashboardHome() {
       setStats(cachedSnapshot.stats);
       setSubscriptionSchools(buildPlatformSubscriptionSchools(cachedSnapshot.schoolOverviews));
       setLoading(false);
+      return () => {
+        isActive = false;
+      };
     }
 
     const fetchPlatformData = async () => {
@@ -64,6 +69,7 @@ export default function SuperAdminDashboardHome() {
         const snapshot = await getDashboardSummaryCached<SuperAdminDashboardResponse>({
           kind: "superadmin",
           scope: cacheScope,
+          ttlMs: SUPERADMIN_SUMMARY_CACHE_TTL_MS,
           loader: async () => {
             const response = await fetch("/api/dashboard/superadmin-summary", {
               cache: "default",

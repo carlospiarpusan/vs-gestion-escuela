@@ -1,11 +1,34 @@
 import type { Pool } from "pg";
-import type { PlanEscuela } from "@/types/database";
+import type {
+  PlanEscuela,
+  PlanEscuelaPago,
+  SchoolPaidBillingInterval,
+  SchoolSubscriptionPaymentAttempt,
+  SchoolSubscriptionStatus,
+} from "@/types/database";
 
 export type PlatformSchoolOverview = {
   id: string;
   nombre: string;
   estado: "activa" | "inactiva" | "suspendida";
   plan: PlanEscuela;
+  commercialPlan: PlanEscuelaPago;
+  subscriptionStatus: SchoolSubscriptionStatus;
+  subscriptionActualStatus: Exclude<SchoolSubscriptionStatus, "pending_payment">;
+  billingInterval: "trial" | "monthly" | "annual";
+  canWrite: boolean;
+  currentPeriodEnd: string | null;
+  trialEndsAt: string | null;
+  graceEndsAt: string | null;
+  scheduledPlanId: PlanEscuelaPago | null;
+  scheduledBillingInterval: SchoolPaidBillingInterval | null;
+  scheduledEffectiveAt: string | null;
+  pendingPaymentReference: string | null;
+  requiresReview: boolean;
+  currentAmount: number;
+  nextAmount: number;
+  latestPaymentStatus: SchoolSubscriptionPaymentAttempt["status"] | null;
+  latestPaymentReference: string | null;
   max_alumnos: number;
   max_sedes: number;
   created_at: string;
@@ -22,6 +45,23 @@ type OverviewRow = {
   nombre: string;
   estado: "activa" | "inactiva" | "suspendida";
   plan: PlanEscuela;
+  commercial_plan: PlanEscuelaPago;
+  subscription_status: SchoolSubscriptionStatus;
+  subscription_actual_status: Exclude<SchoolSubscriptionStatus, "pending_payment">;
+  billing_interval: "trial" | "monthly" | "annual";
+  can_write: boolean;
+  current_period_end: string | null;
+  trial_ends_at: string | null;
+  grace_ends_at: string | null;
+  scheduled_plan_id: PlanEscuelaPago | null;
+  scheduled_billing_interval: SchoolPaidBillingInterval | null;
+  scheduled_effective_at: string | null;
+  pending_payment_reference: string | null;
+  requires_review: boolean | null;
+  current_amount: number | string | null;
+  next_amount: number | string | null;
+  latest_payment_status: SchoolSubscriptionPaymentAttempt["status"] | null;
+  latest_payment_reference: string | null;
   max_alumnos: number | string | null;
   max_sedes: number | string | null;
   created_at: string;
@@ -66,12 +106,48 @@ export async function loadPlatformSchoolOverviews(db: Pick<Pool, "query">) {
         where tipo_registro = 'regular'
           and estado in ('activo', 'pre_registrado')
         group by escuela_id
+      ),
+      latest_attempt as (
+        select distinct on (spa.school_id)
+          spa.school_id,
+          spa.status as latest_payment_status,
+          spa.reference as latest_payment_reference
+        from public.school_payment_attempts spa
+        order by spa.school_id, spa.created_at desc
       )
       select
         e.id,
         e.nombre,
         e.estado,
         e.plan,
+        access.plan_id as commercial_plan,
+        access.status as subscription_status,
+        access.actual_status as subscription_actual_status,
+        access.billing_interval,
+        access.can_write,
+        access.current_period_end::text as current_period_end,
+        access.trial_ends_at::text as trial_ends_at,
+        access.grace_ends_at::text as grace_ends_at,
+        access.scheduled_plan_id,
+        access.scheduled_billing_interval,
+        access.scheduled_effective_at::text as scheduled_effective_at,
+        access.pending_payment_reference,
+        access.requires_review,
+        case
+          when access.billing_interval = 'annual' then coalesce(current_plan.precio_anual, 0)
+          when access.billing_interval = 'monthly' then coalesce(current_plan.precio_mensual, 0)
+          else 0
+        end as current_amount,
+        case
+          when access.scheduled_plan_id is not null and access.scheduled_billing_interval = 'annual'
+            then coalesce(scheduled_plan.precio_anual, 0)
+          when access.scheduled_plan_id is not null and access.scheduled_billing_interval = 'monthly'
+            then coalesce(scheduled_plan.precio_mensual, 0)
+          when access.billing_interval = 'annual' then coalesce(current_plan.precio_anual, 0)
+          else coalesce(current_plan.precio_mensual, 0)
+        end as next_amount,
+        latest_attempt.latest_payment_status,
+        latest_attempt.latest_payment_reference,
         e.max_alumnos,
         e.max_sedes,
         e.created_at::text as created_at,
@@ -81,9 +157,13 @@ export async function loadPlatformSchoolOverviews(db: Pick<Pool, "query">) {
         coalesce(p.admins_activos, 0)::int as admins_activos,
         coalesce(s.has_principal_sede, false) as has_principal_sede
       from public.escuelas e
+      left join lateral public.school_subscription_access(e.id) access on true
+      left join public.planes_config current_plan on current_plan.id = access.plan_id
+      left join public.planes_config scheduled_plan on scheduled_plan.id = access.scheduled_plan_id
       left join sedes_agg s on s.escuela_id = e.id
       left join admins_agg p on p.escuela_id = e.id
       left join alumnos_agg a on a.escuela_id = e.id
+      left join latest_attempt on latest_attempt.school_id = e.id
       order by e.created_at desc
     `
   );
@@ -97,6 +177,23 @@ export async function loadPlatformSchoolOverviews(db: Pick<Pool, "query">) {
       nombre: row.nombre,
       estado: row.estado,
       plan: row.plan,
+      commercialPlan: row.commercial_plan,
+      subscriptionStatus: row.subscription_status,
+      subscriptionActualStatus: row.subscription_actual_status,
+      billingInterval: row.billing_interval,
+      canWrite: Boolean(row.can_write),
+      currentPeriodEnd: row.current_period_end,
+      trialEndsAt: row.trial_ends_at,
+      graceEndsAt: row.grace_ends_at,
+      scheduledPlanId: row.scheduled_plan_id,
+      scheduledBillingInterval: row.scheduled_billing_interval,
+      scheduledEffectiveAt: row.scheduled_effective_at,
+      pendingPaymentReference: row.pending_payment_reference,
+      requiresReview: Boolean(row.requires_review),
+      currentAmount: toNumber(row.current_amount),
+      nextAmount: toNumber(row.next_amount),
+      latestPaymentStatus: row.latest_payment_status,
+      latestPaymentReference: row.latest_payment_reference,
       max_alumnos: maxAlumnos,
       max_sedes: toNumber(row.max_sedes),
       created_at: row.created_at,

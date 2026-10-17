@@ -8,9 +8,10 @@ import { useContractPreview } from "./useContractPreview";
 import {
   metodosPago,
   TODAS_CATEGORIAS,
+  formatMatriculaLabel,
   inputClass,
   labelClass,
-  formatMatriculaLabel,
+  orderRegularContractCategories,
 } from "./constants";
 
 interface MatriculaModalProps {
@@ -50,6 +51,9 @@ export default function MatriculaModal({
     enabled: matriculaOpen,
     categorias: matriculaForm.categorias,
   });
+  const regularCategories = orderRegularContractCategories(
+    categoriasEscuela.length > 0 ? categoriasEscuela : TODAS_CATEGORIAS
+  );
 
   return (
     <Modal
@@ -90,6 +94,9 @@ export default function MatriculaModal({
                 </div>
               ))}
             </div>
+            <p className="mt-3 border-t border-gray-200 pt-3 text-xs leading-5 text-[#86868b] dark:border-gray-800">
+              Si agregas una matrícula nueva, se crea un contrato independiente.
+            </p>
           </div>
         )}
 
@@ -101,8 +108,11 @@ export default function MatriculaModal({
               {matriculaForm.categorias.length !== 1 ? "s" : ""})
             </span>
           </label>
+          <p className="mt-1 text-xs text-[#86868b]">
+            Para combo, selecciona moto y carro dentro de esta misma matrícula.
+          </p>
           <div className="mt-1 flex flex-wrap gap-2">
-            {(categoriasEscuela.length > 0 ? categoriasEscuela : TODAS_CATEGORIAS).map((cat) => {
+            {regularCategories.map((cat) => {
               const selected = matriculaForm.categorias.includes(cat);
               return (
                 <button
@@ -145,7 +155,7 @@ export default function MatriculaModal({
                   ? `Se reservará ${contractPreview.nextNumber} al guardar. Solo se usa ${contractPreview.prefix} y el consecutivo siguiente.`
                   : contractPreviewError
                     ? "No pudimos previsualizar el contrato. Se reservará automáticamente al guardar."
-                    : "El contrato se reserva automáticamente al guardar como MOT, CAR o COM más el consecutivo."}
+                    : "El contrato se reserva automáticamente al guardar esta matrícula como MOT, CAR o COM más el consecutivo."}
             </p>
           </div>
           <div>

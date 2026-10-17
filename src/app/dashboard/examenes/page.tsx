@@ -1,8 +1,10 @@
 "use client";
 
+import { APP_TIME_ZONE } from "@/lib/date-utils";
+
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchJsonWithRetry } from "@/lib/retry";
@@ -26,7 +28,7 @@ import {
 } from "lucide-react";
 import {
   CALE_PASSING_PERCENTAGE,
-  CALE_QUESTION_COUNT_OPTIONS,
+  CALE_QUESTION_COUNT,
   formatElapsedTime,
   normalizeCaleAnswer,
   parseCaleExamNotes,
@@ -158,6 +160,7 @@ function formatDateTime(value: string) {
   return Number.isNaN(date.getTime())
     ? "Fecha no disponible"
     : new Intl.DateTimeFormat("es-CO", {
+        timeZone: APP_TIME_ZONE,
         dateStyle: "medium",
         timeStyle: "short",
       }).format(date);
@@ -313,8 +316,8 @@ function AlumnoEntrenamientoView() {
   const [categories, setCategories] = useState<CategoriaResumen[]>([]);
   const [history, setHistory] = useState<IntentoCale[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
-  const [questionCount, setQuestionCount] =
-    useState<(typeof CALE_QUESTION_COUNT_OPTIONS)[number]>(20);
+  const [preparing, setPreparing] = useState(false);
+  const requestPending = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [sessionQuestions, setSessionQuestions] = useState<PracticeQuestion[]>([]);
@@ -407,11 +410,14 @@ function AlumnoEntrenamientoView() {
   }, [inSession, sessionStartedAt]);
 
   const startPractice = async () => {
+    if (requestPending.current) return;
+    requestPending.current = true;
+    setPreparing(true);
     setError("");
 
     try {
       const params = new URLSearchParams({
-        count: String(questionCount),
+        count: String(CALE_QUESTION_COUNT),
       });
       if (selectedCategoryId !== "all") {
         params.set("categoryId", selectedCategoryId);
@@ -429,6 +435,9 @@ function AlumnoEntrenamientoView() {
       if (!response.ok || !payload.questions) {
         throw new Error(payload.error || "No se pudo iniciar la práctica.");
       }
+      if (payload.questions.length !== CALE_QUESTION_COUNT) {
+        throw new Error("Se necesitan 40 preguntas disponibles para iniciar el simulacro.");
+      }
 
       setSessionQuestions(payload.questions);
       setSessionStartedAt(Date.now());
@@ -441,24 +450,20 @@ function AlumnoEntrenamientoView() {
       setError(
         startError instanceof Error ? startError.message : "No se pudo iniciar la práctica."
       );
+    } finally {
+      requestPending.current = false;
+      setPreparing(false);
     }
   };
 
   const finishPractice = async () => {
-    if (!inSession) return;
+    if (!inSession || requestPending.current) return;
 
-    if (answeredCount === 0) {
-      setError("Responde al menos una pregunta antes de enviar el simulacro.");
+    if (sessionQuestions.length !== CALE_QUESTION_COUNT || unansweredCount > 0) {
+      setError("Responde las 40 preguntas antes de finalizar el simulacro.");
       return;
     }
-
-    if (unansweredCount > 0) {
-      const confirmed = window.confirm(
-        `Aún tienes ${unansweredCount} pregunta${unansweredCount !== 1 ? "s" : ""} sin responder. Si continúas, se marcarán como incorrectas.`
-      );
-      if (!confirmed) return;
-    }
-
+    requestPending.current = true;
     setSubmitting(true);
     setError("");
 
@@ -491,14 +496,19 @@ function AlumnoEntrenamientoView() {
       setAnswers({});
       setElapsedSeconds(0);
       invalidateDashboardClientCaches("dashboard-list:examenes-dashboard:");
-      const refreshed = await loadDashboard({ fresh: true });
-      setHistory(mapIntentosCale(refreshed.history || []));
+      try {
+        const refreshed = await loadDashboard({ fresh: true });
+        setHistory(mapIntentosCale(refreshed.history || []));
+      } catch (refreshError) {
+        console.error("[ExamenesPage] Error actualizando historial:", refreshError);
+      }
     } catch (submitError) {
       console.error("[ExamenesPage] Error enviando práctica:", submitError);
       setError(
         submitError instanceof Error ? submitError.message : "No se pudo calificar el simulacro."
       );
     } finally {
+      requestPending.current = false;
       setSubmitting(false);
     }
   };
@@ -601,26 +611,10 @@ function AlumnoEntrenamientoView() {
                 </div>
               </div>
 
-              <div>
-                <p className="mb-2 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  Cantidad de preguntas
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {CALE_QUESTION_COUNT_OPTIONS.map((count) => (
-                    <button
-                      key={count}
-                      onClick={() => setQuestionCount(count)}
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                        questionCount === count
-                          ? "bg-[#1d1d1f] text-white dark:bg-[#f5f5f7] dark:text-[#1d1d1f]"
-                          : "bg-white text-[#1d1d1f] hover:bg-gray-100 dark:bg-[#111] dark:text-[#f5f5f7] dark:hover:bg-gray-800"
-                      }`}
-                    >
-                      {count} preguntas
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <p className="text-sm text-[#86868b]">
+                Responde las 40 preguntas. Al finalizar podrás consultar tu resultado y las
+                explicaciones.
+              </p>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <InfoPill
@@ -633,10 +627,11 @@ function AlumnoEntrenamientoView() {
 
               <button
                 onClick={startPractice}
+                disabled={preparing}
                 className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] bg-[#0071e3] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
               >
                 <PlayCircle size={16} />
-                Iniciar simulacro
+                {preparing ? "Preparando..." : "Iniciar simulacro"}
               </button>
             </div>
           </div>
@@ -651,8 +646,8 @@ function AlumnoEntrenamientoView() {
 
             {history.length === 0 ? (
               <p className="rounded-2xl bg-white/80 px-4 py-6 text-sm text-[#86868b] dark:bg-[#0a0a0a]">
-                Todavía no has presentado simulacros CALE. Empieza con uno de 10 o 20 preguntas para
-                medir tu nivel.
+                Todavía no has presentado simulacros CALE. Completa uno de 40 preguntas para medir
+                tu nivel.
               </p>
             ) : (
               <div className="max-h-[32rem] space-y-2 overflow-y-auto pr-1">
@@ -768,6 +763,8 @@ function AlumnoEntrenamientoView() {
                 return (
                   <button
                     key={option}
+                    disabled={submitting}
+                    aria-pressed={isSelected}
                     onClick={() =>
                       setAnswers((current) => ({
                         ...current,
@@ -782,7 +779,7 @@ function AlumnoEntrenamientoView() {
                   >
                     <span className="mr-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.04] text-xs font-bold dark:bg-white/[0.06]">
                       {getAnswerBadge(option)}
-                    </span>
+                    </span>{" "}
                     {optionText}
                   </button>
                 );
@@ -813,7 +810,7 @@ function AlumnoEntrenamientoView() {
 
               <button
                 onClick={finishPractice}
-                disabled={submitting}
+                disabled={submitting || unansweredCount > 0}
                 className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] bg-[#0071e3] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting ? (
@@ -925,6 +922,7 @@ function AlumnoEntrenamientoView() {
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             <button
               onClick={startPractice}
+              disabled={preparing}
               className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] bg-[#0071e3] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0077ED]"
             >
               <RefreshCw size={16} />

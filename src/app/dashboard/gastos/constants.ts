@@ -9,6 +9,7 @@
 
 import { createClient } from "@/lib/supabase";
 import { getCurrentAccountingYear } from "@/lib/accounting-dashboard";
+import { getCurrentMonthNumber, getDateOnlyDiffInDays, getTodayDateString } from "@/lib/date-utils";
 import type {
   EstadoPagoGasto,
   FacturaCorreoImportacion,
@@ -20,7 +21,7 @@ import type { ExpenseSearchCriteria } from "@/lib/expense-search";
 
 export const PAGE_SIZE = 10;
 export const currentYear = getCurrentAccountingYear();
-export const currentMonth = new Date().getMonth() + 1;
+export const currentMonth = getCurrentMonthNumber();
 
 /** All available expense categories. */
 export const categorias: CategoriaGasto[] = [
@@ -51,8 +52,8 @@ export const emptyForm = {
   metodo_pago: "efectivo" as MetodoPagoGasto,
   proveedor: "",
   numero_factura: "",
-  fecha: new Date().toISOString().split("T")[0],
-  fecha_vencimiento: new Date().toISOString().split("T")[0],
+  fecha: getTodayDateString(),
+  fecha_vencimiento: getTodayDateString(),
   estado_pago: "pagado" as EstadoPagoGasto,
   recurrente: false,
   notas: "",
@@ -362,9 +363,14 @@ export function getExpenseDueMeta(dateValue: string | null) {
     };
   }
 
-  const target = new Date(`${dateValue}T00:00:00`);
-  const today = new Date(`${new Date().toISOString().split("T")[0]}T00:00:00`);
-  const daysUntil = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  const daysUntil = getDateOnlyDiffInDays(dateValue, getTodayDateString());
+  if (daysUntil == null) {
+    return {
+      label: "Sin vencimiento",
+      detail: "Sin fecha definida",
+      className: "bg-gray-100 text-[#86868b] dark:bg-gray-800 dark:text-gray-300",
+    };
+  }
 
   if (daysUntil < 0) {
     return {

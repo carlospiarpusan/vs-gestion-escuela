@@ -9,10 +9,7 @@ import {
   type AlumnoDashboardResponse,
   type AlumnoDashboardStudent as AlumnoInfo,
 } from "@/lib/dashboard-admin-summary";
-import {
-  getDashboardSummaryCached,
-  readDashboardSummaryCache,
-} from "@/lib/dashboard-client-cache";
+import { getDashboardSummaryCached, readDashboardSummaryCache } from "@/lib/dashboard-client-cache";
 import HomePriorityActions from "@/components/dashboard/HomePriorityActions";
 import PageScaffold from "@/components/dashboard/PageScaffold";
 import SummaryRow from "@/components/dashboard/SummaryRow";
@@ -56,6 +53,9 @@ export default function AlumnoDashboardHome() {
       setIngresos(cachedSnapshot.ingresos);
       setExamenes(cachedSnapshot.examenes);
       setLoading(false);
+      return () => {
+        isActive = false;
+      };
     }
 
     const fetchData = async () => {
@@ -150,7 +150,7 @@ export default function AlumnoDashboardHome() {
         description="Consulta tu estado de cuenta, el avance de pago y tus cursos activos desde una sola vista clara."
         aside={
           <div className="rounded-[22px] border border-[rgba(15,23,42,0.08)] bg-white/72 px-4 py-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#66707a]">
+            <p className="text-[11px] font-semibold tracking-[0.16em] text-[#66707a] uppercase">
               Avance general
             </p>
             <p className="mt-3 text-3xl font-semibold text-[#111214] dark:text-[#f5f5f7]">

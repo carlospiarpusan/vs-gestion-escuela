@@ -7,6 +7,8 @@ import {
   parseJsonBody,
 } from "@/lib/api-auth";
 import { getContractSchemaCapabilities, reserveNextContractNumber } from "@/lib/contracts-server";
+import { normalizeStoredCourseCategories } from "@/lib/course-categories";
+import { getTodayDateString, isValidDateOnly } from "@/lib/date-utils";
 import { getServerDbPool } from "@/lib/server-db";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags, buildFinanceCacheTags } from "@/lib/server-cache-tags";
@@ -24,7 +26,7 @@ const createMatriculaSchema = z
   .object({
     alumno_id: z.string().uuid(),
     sede_id: z.string().uuid(),
-    fecha_inscripcion: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    fecha_inscripcion: z.string().refine(isValidDateOnly, "Fecha inválida."),
     categorias: z.array(z.string().trim().min(1)).min(1).max(20),
     valor_total: z.number().min(0).nullable().optional(),
     notas: z.string().trim().max(10_000).optional().nullable(),
@@ -56,7 +58,7 @@ type AlumnoTarget = {
 };
 
 function getToday() {
-  return new Date().toISOString().slice(0, 10);
+  return getTodayDateString();
 }
 
 async function ensureSedeBelongsToSchool(escuelaId: string, sedeId: string) {
@@ -82,7 +84,10 @@ export async function POST(request: Request) {
   const parsed = await parseJsonBody(request, createMatriculaSchema);
   if (!parsed.ok) return parsed.response;
 
-  const payload = parsed.data;
+  const payload = {
+    ...parsed.data,
+    categorias: normalizeStoredCourseCategories(parsed.data.categorias),
+  };
   const pool = getServerDbPool();
 
   const alumnoRes = await pool.query<AlumnoTarget>(
@@ -261,6 +266,15 @@ export async function POST(request: Request) {
     if (!matriculaId) {
       throw new Error("No se pudo crear la matrícula.");
     }
+
+    await client.query(
+      `
+        update public.alumnos
+        set numero_contrato = $2
+        where id = $1
+      `,
+      [alumno.id, nextContract.nextNumber]
+    );
 
     if (payload.abono > 0) {
       await client.query(

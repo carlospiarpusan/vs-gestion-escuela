@@ -38,6 +38,8 @@ export default function InformesPage() {
   const searchParams = useSearchParams();
   const autoAlignedYearRef = useRef(false);
   const freshRetryKeyRef = useRef<string | null>(null);
+  const reportRequestIdRef = useRef(0);
+  const forceNextReportRef = useRef(false);
   const [activeSection, setActiveSection] = useState<ReportSection>(
     parseSection(searchParams.get("section"))
   );
@@ -60,6 +62,7 @@ export default function InformesPage() {
         useCache?: boolean;
       }
     ) => {
+      const requestId = ++reportRequestIdRef.current;
       setLoading(true);
       setLoadError(null);
       try {
@@ -67,8 +70,9 @@ export default function InformesPage() {
           buildParams(filters, section),
           options
         );
-        setReport(nextReport);
+        if (requestId === reportRequestIdRef.current) setReport(nextReport);
       } catch (reportError: unknown) {
+        if (requestId !== reportRequestIdRef.current) return;
         const message =
           reportError instanceof Error
             ? reportError.message
@@ -77,15 +81,28 @@ export default function InformesPage() {
         setReport(null);
         toast.error(message);
       } finally {
-        setLoading(false);
+        if (requestId === reportRequestIdRef.current) setLoading(false);
       }
     },
     []
   );
 
   useEffect(() => {
-    void loadReport(appliedFilters, activeSection);
+    const forceFresh = forceNextReportRef.current;
+    forceNextReportRef.current = false;
+    void loadReport(
+      appliedFilters,
+      activeSection,
+      forceFresh ? { forceFresh: true, useCache: false } : undefined
+    );
   }, [appliedFilters, activeSection, loadReport]);
+
+  useEffect(
+    () => () => {
+      reportRequestIdRef.current++;
+    },
+    []
+  );
 
   useEffect(() => {
     if (!report?.options) return;
@@ -108,7 +125,8 @@ export default function InformesPage() {
   }, [draftFilters.escuelaId, draftFilters.sedeId, report?.options]);
 
   const handleGenerate = () => {
-    setAppliedFilters(draftFilters);
+    forceNextReportRef.current = true;
+    setAppliedFilters({ ...draftFilters });
   };
 
   const handleReset = () => {
@@ -129,6 +147,9 @@ export default function InformesPage() {
           headers: ["Indicador", "Valor"],
           rows: [
             ["Ingresos cobrados", nextReport.summary?.ingresosCobrados || 0],
+            ["Esperado cohorte", nextReport.contracts?.totalEsperado || 0],
+            ["Cobrado cohorte", nextReport.contracts?.totalCobrado || 0],
+            ["Pendiente cohorte", nextReport.contracts?.totalPendiente || 0],
             ["Pendiente por cobrar", nextReport.summary?.ingresosPendientes || 0],
             ["Gastos totales", nextReport.summary?.gastosTotales || 0],
             ["Balance neto", nextReport.summary?.balanceNeto || 0],

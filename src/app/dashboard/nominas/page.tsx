@@ -7,6 +7,7 @@ import {
   getPendingInstructorPayrollClosures,
   type InstructorPayrollClosure,
 } from "@/lib/payroll";
+import { getCurrentMonthNumber, getCurrentYear, getTodayDateString } from "@/lib/date-utils";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import {
   Users,
@@ -167,8 +168,8 @@ export default function NominasPage() {
   const sedeId = perfil?.sede_id;
 
   const [tab, setTab] = useState<TipoEmpleadoNomina>("instructor");
-  const [anio, setAnio] = useState(new Date().getFullYear());
-  const [mes, setMes] = useState(new Date().getMonth() + 1);
+  const [anio, setAnio] = useState(getCurrentYear());
+  const [mes, setMes] = useState(getCurrentMonthNumber());
   const [nominas, setNominas] = useState<NominaRow[]>([]);
   const [instructores, setInstructores] = useState<EmpleadoOption[]>([]);
   const [administrativos, setAdministrativos] = useState<EmpleadoOption[]>([]);
@@ -533,6 +534,17 @@ export default function NominasPage() {
 
   const nominasFiltradas = nominas.filter((n) => n.empleado_tipo === tab);
   const hasLegacyRows = nominasFiltradas.some((n) => n.origen === "gasto_legacy");
+  const panelCls =
+    "rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#15191f] dark:shadow-[0_18px_40px_rgba(2,6,23,0.28)]";
+  const metricCardCls =
+    "rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-[#171b21] dark:shadow-[0_14px_32px_rgba(2,6,23,0.22)]";
+  const sectionCardCls =
+    "rounded-xl border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-white/10 dark:bg-[#161a20] dark:shadow-[0_16px_34px_rgba(2,6,23,0.24)]";
+  const formLabelCls = "apple-label";
+  const fieldCls = "apple-input";
+  const selectCls = "apple-select";
+  const compactFieldCls =
+    "rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15 dark:border-white/10 dark:bg-[#0f1217] dark:text-[#f5f5f7]";
 
   if (!escuelaId) {
     return (
@@ -565,13 +577,13 @@ export default function NominasPage() {
       </div>
 
       {/* Tabs instructores / administrativos */}
-      <div className="flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800/60">
+      <div className="flex gap-1 rounded-2xl border border-gray-200/80 bg-gray-100/90 p-1 dark:border-white/10 dark:bg-[#11151a]">
         <button
           onClick={() => setTab("instructor")}
           className={`flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all ${
             tab === "instructor"
-              ? "bg-white text-[#1d1d1f] shadow-sm dark:bg-gray-700 dark:text-white"
-              : "text-[#86868b] hover:text-[#1d1d1f] dark:text-gray-400 dark:hover:text-white"
+              ? "bg-white text-[#1d1d1f] shadow-sm dark:bg-[#1b2128] dark:text-[#f5f5f7] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_rgba(2,6,23,0.28)]"
+              : "text-[#86868b] hover:text-[#1d1d1f] dark:text-[#98a2b3] dark:hover:bg-white/5 dark:hover:text-[#f5f5f7]"
           }`}
         >
           <UserCheck size={16} />
@@ -581,8 +593,8 @@ export default function NominasPage() {
           onClick={() => setTab("administrativo")}
           className={`flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all ${
             tab === "administrativo"
-              ? "bg-white text-[#1d1d1f] shadow-sm dark:bg-gray-700 dark:text-white"
-              : "text-[#86868b] hover:text-[#1d1d1f] dark:text-gray-400 dark:hover:text-white"
+              ? "bg-white text-[#1d1d1f] shadow-sm dark:bg-[#1b2128] dark:text-[#f5f5f7] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_rgba(2,6,23,0.28)]"
+              : "text-[#86868b] hover:text-[#1d1d1f] dark:text-[#98a2b3] dark:hover:bg-white/5 dark:hover:text-[#f5f5f7]"
           }`}
         >
           <Users size={16} />
@@ -591,10 +603,10 @@ export default function NominasPage() {
       </div>
 
       {/* Navegación de periodo */}
-      <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800/40">
+      <div className={`${panelCls} flex items-center justify-between px-4 py-3`}>
         <button
           onClick={prevMonth}
-          className="rounded-lg p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700"
+          className="rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-white/6"
         >
           <ChevronLeft size={18} />
         </button>
@@ -603,7 +615,7 @@ export default function NominasPage() {
         </span>
         <button
           onClick={nextMonth}
-          className="rounded-lg p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700"
+          className="rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-white/6"
         >
           <ChevronRight size={18} />
         </button>
@@ -611,18 +623,18 @@ export default function NominasPage() {
 
       {/* Banner cierre de horas disponible */}
       {tab === "instructor" && instructoresSinNominaConCierre.length > 0 && (
-        <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-blue-800 dark:bg-blue-900/20">
+        <div className="flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-blue-900/50 dark:bg-[#0f223c]/70 dark:shadow-[0_16px_34px_rgba(2,6,23,0.2)]">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800/40">
-              <Zap size={18} className="text-blue-600 dark:text-blue-400" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/45">
+              <Zap size={18} className="text-blue-600 dark:text-blue-300" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+              <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
                 {instructoresSinNominaConCierre.length} cierre
                 {instructoresSinNominaConCierre.length !== 1 ? "s" : ""} de horas disponible
                 {instructoresSinNominaConCierre.length !== 1 ? "s" : ""}
               </p>
-              <p className="text-xs text-blue-700 dark:text-blue-300">
+              <p className="text-xs text-blue-700 dark:text-blue-200/85">
                 Hay instructores con horas cerradas en {MESES[mes - 1]} {anio} sin nómina. Importa
                 para crear borradores automáticos.
               </p>
@@ -641,25 +653,25 @@ export default function NominasPage() {
 
       {/* Resumen KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/40">
+        <div className={metricCardCls}>
           <p className="text-xs text-[#86868b] dark:text-gray-400">Total devengado</p>
           <p className="mt-1 text-lg font-bold text-[#1d1d1f] dark:text-white">
             {formatMoney(resumen.devengado)}
           </p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/40">
+        <div className={metricCardCls}>
           <p className="text-xs text-[#86868b] dark:text-gray-400">Deducciones</p>
           <p className="mt-1 text-lg font-bold text-red-600 dark:text-red-400">
             {formatMoney(resumen.deducciones)}
           </p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/40">
+        <div className={metricCardCls}>
           <p className="text-xs text-[#86868b] dark:text-gray-400">Neto a pagar</p>
           <p className="mt-1 text-lg font-bold text-emerald-600 dark:text-emerald-400">
             {formatMoney(resumen.neto)}
           </p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/40">
+        <div className={metricCardCls}>
           <p className="text-xs text-[#86868b] dark:text-gray-400">Nóminas</p>
           <p className="mt-1 text-lg font-bold text-[#1d1d1f] dark:text-white">
             {resumen.pagadas}/{resumen.total}
@@ -681,7 +693,7 @@ export default function NominasPage() {
       )}
 
       {hasLegacyRows && !loading && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200">
           Estás viendo histórico de nómina tomado desde <strong>Gastos</strong> para este periodo.
           Esos registros se muestran en modo lectura mientras terminas de mover la operación al
           módulo nuevo de nóminas.
@@ -700,7 +712,7 @@ export default function NominasPage() {
 
       {/* Formulario */}
       {showForm && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800/40">
+        <div className={`${panelCls} p-5`}>
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-white">
               {editingId ? "Editar nómina" : "Nueva nómina"} —{" "}
@@ -708,7 +720,7 @@ export default function NominasPage() {
             </h3>
             <button
               onClick={() => setShowForm(false)}
-              className="text-[#86868b] hover:text-[#1d1d1f] dark:text-gray-400"
+              className="rounded-xl p-1 text-[#86868b] transition-colors hover:bg-gray-100 hover:text-[#1d1d1f] dark:text-gray-400 dark:hover:bg-white/6 dark:hover:text-white"
             >
               <X size={18} />
             </button>
@@ -718,7 +730,7 @@ export default function NominasPage() {
             {/* Empleado */}
             {!editingId && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-[#86868b] dark:text-gray-400">
+                <label className={formLabelCls}>
                   {tab === "instructor" ? "Instructor" : "Empleado"}
                 </label>
                 <select
@@ -737,7 +749,7 @@ export default function NominasPage() {
                       }
                     }
                   }}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  className={selectCls}
                 >
                   <option value="">Seleccionar...</option>
                   {empleadosSinNomina.map((emp) => {
@@ -753,7 +765,7 @@ export default function NominasPage() {
                   })}
                 </select>
                 {formEmpleadoId && cierreMap.has(formEmpleadoId) && (
-                  <div className="mt-1.5 flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                  <div className="mt-1.5 flex items-center gap-1.5 rounded-xl border border-blue-200/70 bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 dark:border-blue-900/40 dark:bg-[#0f223c]/70 dark:text-blue-200">
                     <Clock size={12} />
                     <span>
                       Cierre de horas:{" "}
@@ -769,13 +781,11 @@ export default function NominasPage() {
             {/* Sede */}
             {!editingId && sedes.length > 1 && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-[#86868b] dark:text-gray-400">
-                  Sede
-                </label>
+                <label className={formLabelCls}>Sede</label>
                 <select
                   value={formSedeId}
                   onChange={(e) => setFormSedeId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  className={selectCls}
                 >
                   {sedes.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -788,7 +798,7 @@ export default function NominasPage() {
 
             {/* Salario/Honorarios base */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-[#86868b] dark:text-gray-400">
+              <label className={formLabelCls}>
                 {tab === "instructor" ? "Honorarios (pago base)" : "Salario base"}
               </label>
               <input
@@ -797,21 +807,19 @@ export default function NominasPage() {
                 value={formSalarioBase || ""}
                 onChange={(e) => setFormSalarioBase(Number(e.target.value) || 0)}
                 placeholder="0"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                className={fieldCls}
               />
             </div>
 
             {/* Notas */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-[#86868b] dark:text-gray-400">
-                Notas
-              </label>
+              <label className={formLabelCls}>Notas</label>
               <input
                 type="text"
                 value={formNotas}
                 onChange={(e) => setFormNotas(e.target.value)}
                 placeholder="Opcional..."
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                className={fieldCls}
               />
             </div>
           </div>
@@ -834,12 +842,12 @@ export default function NominasPage() {
               {formConceptos.map((c, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 p-2.5 dark:border-gray-700 dark:bg-gray-800/60"
+                  className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50/90 p-2.5 dark:border-white/8 dark:bg-[#0f1217]"
                 >
                   <select
                     value={c.tipo}
                     onChange={(e) => updateConcepto(idx, "tipo", e.target.value)}
-                    className="w-28 shrink-0 rounded border border-gray-200 bg-white px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    className={`w-28 shrink-0 ${compactFieldCls}`}
                   >
                     <option value="devengo">Devengo (+)</option>
                     <option value="deduccion">Deducción (-)</option>
@@ -849,7 +857,7 @@ export default function NominasPage() {
                     value={c.concepto}
                     onChange={(e) => updateConcepto(idx, "concepto", e.target.value)}
                     placeholder="Concepto"
-                    className="min-w-0 flex-1 rounded border border-gray-200 bg-white px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    className={`min-w-0 flex-1 ${compactFieldCls}`}
                   />
                   <input
                     type="number"
@@ -857,11 +865,11 @@ export default function NominasPage() {
                     value={c.valor || ""}
                     onChange={(e) => updateConcepto(idx, "valor", Number(e.target.value) || 0)}
                     placeholder="$0"
-                    className="w-28 shrink-0 rounded border border-gray-200 bg-white px-2 py-1.5 text-right text-xs dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    className={`w-28 shrink-0 text-right ${compactFieldCls}`}
                   />
                   <button
                     onClick={() => removeConcepto(idx)}
-                    className="shrink-0 text-[#86868b] hover:text-red-500 dark:text-gray-400"
+                    className="shrink-0 rounded-lg p-1 text-[#86868b] transition-colors hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
                   >
                     <X size={14} />
                   </button>
@@ -871,7 +879,7 @@ export default function NominasPage() {
           </div>
 
           {/* Preview totales */}
-          <div className="mt-4 grid grid-cols-3 gap-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/60">
+          <div className="mt-4 grid grid-cols-3 gap-3 rounded-2xl border border-gray-200/80 bg-gray-50/90 p-3 dark:border-white/8 dark:bg-[#0f1217]">
             <div className="text-center">
               <p className="text-[10px] tracking-wide text-[#86868b] uppercase dark:text-gray-400">
                 Devengado
@@ -902,7 +910,7 @@ export default function NominasPage() {
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={() => setShowForm(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-[#86868b] hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-700"
+              className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-[#86868b] transition-colors hover:bg-gray-50 dark:border-white/10 dark:text-gray-400 dark:hover:bg-white/6 dark:hover:text-white"
             >
               Cancelar
             </button>
@@ -920,7 +928,7 @@ export default function NominasPage() {
 
       {/* Tabla de nóminas */}
       {!loading && nominasFiltradas.length === 0 && !showForm && (
-        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 py-12 text-center dark:border-gray-700 dark:bg-gray-800/20">
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 py-12 text-center dark:border-white/10 dark:bg-[#14181d]">
           <Briefcase size={32} className="mx-auto text-[#86868b] dark:text-gray-400" />
           <p className="mt-3 text-sm font-medium text-[#1d1d1f] dark:text-white">
             No hay nóminas para {MESES[mes - 1]} {anio}
@@ -940,10 +948,7 @@ export default function NominasPage() {
             const isLegacy = n.origen === "gasto_legacy";
 
             return (
-              <div
-                key={n.id}
-                className="rounded-xl border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800/40"
-              >
+              <div key={n.id} className={sectionCardCls}>
                 {/* Cabecera */}
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -973,7 +978,7 @@ export default function NominasPage() {
                 {/* Detalle de conceptos */}
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   {/* Devengos */}
-                  <div className="rounded-lg bg-emerald-50/50 p-3 dark:bg-emerald-900/10">
+                  <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 p-3 dark:border-emerald-900/30 dark:bg-emerald-950/18">
                     <p className="mb-1.5 flex items-center gap-1 text-[10px] tracking-wide text-emerald-700 uppercase dark:text-emerald-400">
                       <Heart size={10} /> Devengos
                     </p>
@@ -996,7 +1001,7 @@ export default function NominasPage() {
                   </div>
 
                   {/* Deducciones */}
-                  <div className="rounded-lg bg-red-50/50 p-3 dark:bg-red-900/10">
+                  <div className="rounded-xl border border-red-200/70 bg-red-50/70 p-3 dark:border-red-900/30 dark:bg-red-950/18">
                     <p className="mb-1.5 flex items-center gap-1 text-[10px] tracking-wide text-red-700 uppercase dark:text-red-400">
                       <Shield size={10} /> Deducciones
                     </p>
@@ -1051,7 +1056,7 @@ export default function NominasPage() {
                           <button
                             onClick={() => openEditForm(n)}
                             disabled={saving}
-                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[#0071e3] hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[#0071e3] hover:bg-blue-50 dark:hover:bg-blue-900/20 dark:hover:text-blue-300"
                           >
                             <Edit3 size={12} /> Editar
                           </button>
@@ -1059,7 +1064,7 @@ export default function NominasPage() {
                         <button
                           onClick={() => changeEstado(n.id, "aprobada")}
                           disabled={saving}
-                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 dark:hover:text-blue-300"
                         >
                           <Check size={12} /> Aprobar
                         </button>
@@ -1067,7 +1072,7 @@ export default function NominasPage() {
                           <button
                             onClick={() => handleDelete(n.id, n.empleado_nombre)}
                             disabled={saving}
-                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:hover:text-red-300"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -1078,7 +1083,7 @@ export default function NominasPage() {
                       <>
                         <button
                           onClick={() => {
-                            const hoy = new Date().toISOString().split("T")[0];
+                            const hoy = getTodayDateString();
                             void changeEstado(n.id, "pagada", hoy);
                           }}
                           disabled={saving}
@@ -1089,7 +1094,7 @@ export default function NominasPage() {
                         <button
                           onClick={() => changeEstado(n.id, "borrador")}
                           disabled={saving}
-                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[#86868b] hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700"
+                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[#86868b] hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/6 dark:hover:text-white"
                         >
                           Devolver a borrador
                         </button>
@@ -1099,7 +1104,7 @@ export default function NominasPage() {
                       <button
                         onClick={() => changeEstado(n.id, "anulada")}
                         disabled={saving}
-                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:hover:text-red-300"
                       >
                         <Ban size={12} /> Anular
                       </button>

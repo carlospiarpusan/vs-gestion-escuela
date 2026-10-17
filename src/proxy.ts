@@ -12,8 +12,8 @@
  * 3. Si HAY sesión válida → permite el acceso
  * 4. Si está en /login o /registro Y tiene sesión → redirige a /dashboard
  *
- * IMPORTANTE: Este middleware se ejecuta en el Edge Runtime de Next.js.
- * No puede usar APIs de Node.js (fs, path, etc.).
+ * Proxy verifica la firma del token. Layout y APIs verifican ademas
+ * el usuario actual y los permisos antes de entregar datos privados.
  *
  * Configuración: La constante `config.matcher` define qué rutas proteger.
  * ============================================================
@@ -31,6 +31,15 @@ import {
 } from "@/lib/device-variant";
 import { CONTENT_SECURITY_POLICY } from "@/lib/security-headers";
 import { createServerTiming } from "@/lib/server-timing";
+
+const AUTH_COOKIE_PATTERNS = [
+  /^sb-.*auth-token(?:\.\d+)?$/i,
+  /^__Secure-sb-.*auth-token(?:\.\d+)?$/i,
+  /^__Host-sb-.*auth-token(?:\.\d+)?$/i,
+  /^supabase-auth-token(?:\.\d+)?$/i,
+  /^sb-access-token$/i,
+  /^sb-refresh-token$/i,
+];
 
 function applySecurityHeaders(response: NextResponse) {
   response.headers.set("Accept-CH", "Sec-CH-UA-Mobile");
@@ -57,9 +66,18 @@ function resolveRequestedVariant(searchParams: URLSearchParams): DeviceVariant |
   return null;
 }
 
+function hasSupabaseAuthCookies(request: NextRequest) {
+  return request.cookies
+    .getAll()
+    .some(({ name }) => AUTH_COOKIE_PATTERNS.some((pattern) => pattern.test(name)));
+}
+
 export async function proxy(request: NextRequest) {
   const timing = createServerTiming();
   const url = request.nextUrl.clone();
+  const pathname = request.nextUrl.pathname;
+  const isProtectedRoute = pathname.startsWith("/dashboard");
+  const isAuthRoute = pathname === "/login" || pathname === "/registro";
   const hasForceMobile = url.searchParams.has(FORCE_MOBILE_QUERY_PARAM);
   const hasForceDesktop = url.searchParams.has(FORCE_DESKTOP_QUERY_PARAM);
 
@@ -88,8 +106,19 @@ export async function proxy(request: NextRequest) {
     request: { headers: request.headers },
   });
 
+  const hasAuthCookies = hasSupabaseAuthCookies(request);
+
+  if (!hasAuthCookies) {
+    if (isProtectedRoute) {
+      const loginUrl = new URL("/login", request.url);
+      return timing.apply(applySecurityHeaders(NextResponse.redirect(loginUrl)));
+    }
+
+    return timing.apply(applySecurityHeaders(response));
+  }
+
   /**
-   * Crear cliente Supabase para el servidor (Edge Runtime).
+   * Crear cliente Supabase para el servidor.
    * Gestiona cookies de sesión automáticamente mediante los callbacks
    * getAll/setAll que leen/escriben en la request/response de Next.js.
    */
@@ -116,25 +145,23 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // --- Verificar si el usuario tiene una sesión activa ---
-  const {
-    data: { user },
-  } = await timing.measure("supabase_auth", () => supabase.auth.getUser(), "Validacion de sesion");
-
-  const pathname = request.nextUrl.pathname;
-
-  // Rutas protegidas: /dashboard y todas sus subrutas
-  const isProtectedRoute = pathname.startsWith("/dashboard");
-  // Rutas de autenticación: /login y /registro
-  const isAuthRoute = pathname === "/login" || pathname === "/registro";
+  // getClaims reutiliza las claves publicas; getUser sigue en layout y APIs.
+  const { data, error } = await timing.measure(
+    "supabase_auth",
+    () => supabase.auth.getClaims(),
+    "Validacion de sesion"
+  );
+  const hasVerifiedSession = !error && Boolean(data?.claims?.sub);
 
   // Si intenta acceder al dashboard sin sesión → redirigir a /login
-  if (isProtectedRoute && !user) {
+  if (isProtectedRoute && !hasVerifiedSession) {
     const loginUrl = new URL("/login", request.url);
     return timing.apply(applySecurityHeaders(NextResponse.redirect(loginUrl)));
   }
 
   // Si ya está logueado e intenta ir a /login o /registro → ir al dashboard
+  // En login comprobamos revocacion para evitar un bucle con el layout.
+  const user = isAuthRoute && hasVerifiedSession ? (await supabase.auth.getUser()).data.user : null;
   if (isAuthRoute && user) {
     const dashboardUrl = new URL("/dashboard", request.url);
     return timing.apply(applySecurityHeaders(NextResponse.redirect(dashboardUrl)));

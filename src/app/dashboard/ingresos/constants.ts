@@ -5,12 +5,10 @@ import type {
   MatriculaAlumno,
   MetodoPago,
 } from "@/types/database";
-import {
-  buildAccountingYears,
-  getCurrentAccountingYear,
-} from "@/lib/accounting-dashboard";
+import { buildAccountingYears, getCurrentAccountingYear } from "@/lib/accounting-dashboard";
+import { getCurrentMonthNumber, getTodayDateString } from "@/lib/date-utils";
 
-export type AlumnoOption = Pick<Alumno, "id" | "nombre" | "apellidos">;
+export type AlumnoOption = Pick<Alumno, "id" | "nombre" | "apellidos" | "dni">;
 export type MatriculaOption = Pick<
   MatriculaAlumno,
   "id" | "alumno_id" | "numero_contrato" | "categorias" | "valor_total" | "fecha_inscripcion"
@@ -58,7 +56,7 @@ export const labelCls = "apple-label";
 export const PAGE_SIZE = 15;
 
 export const currentYear = getCurrentAccountingYear();
-export const currentMonth = new Date().getMonth() + 1;
+export const currentMonth = getCurrentMonthNumber();
 export const years = buildAccountingYears();
 
 export const emptyForm: IngresoFormData = {
@@ -70,11 +68,20 @@ export const emptyForm: IngresoFormData = {
   metodo_pago: "efectivo",
   medio_especifico: "",
   numero_factura: "",
-  fecha: new Date().toISOString().split("T")[0],
-  fecha_vencimiento: new Date().toISOString().split("T")[0],
+  fecha: getTodayDateString(),
+  fecha_vencimiento: getTodayDateString(),
   estado: "cobrado",
   notas: "",
 };
+
+export function getAlumnoFullName(alumno?: Pick<Alumno, "nombre" | "apellidos"> | null) {
+  return `${alumno?.nombre ?? ""} ${alumno?.apellidos ?? ""}`.trim();
+}
+
+export function formatAlumnoOptionLabel(alumno: AlumnoOption) {
+  const nombreCompleto = getAlumnoFullName(alumno) || "Sin nombre";
+  return alumno.dni ? `${nombreCompleto} · ${alumno.dni}` : nombreCompleto;
+}
 
 export function formatMatriculaLabel(matricula: MatriculaOption) {
   if (matricula.numero_contrato) return `Contrato ${matricula.numero_contrato}`;

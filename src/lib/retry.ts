@@ -31,10 +31,7 @@ export function isRetryableError(error: unknown) {
   ].some((pattern) => message.includes(pattern));
 }
 
-export async function withRetry<T>(
-  operation: () => PromiseLike<T>,
-  options: RetryOptions = {}
-) {
+export async function withRetry<T>(operation: () => PromiseLike<T>, options: RetryOptions = {}) {
   const attempts = options.attempts ?? 3;
   const baseDelayMs = options.baseDelayMs ?? 500;
   const shouldRetry = options.shouldRetry ?? isRetryableError;
@@ -58,20 +55,22 @@ export async function withRetry<T>(
   throw lastError;
 }
 
-export async function runSupabaseMutationWithRetry<T extends { error?: { message?: string } | null }>(
-  operation: () => PromiseLike<T>,
-  options?: RetryOptions
-) {
-  return withRetry(async () => {
-    const result = await operation();
+export async function runSupabaseMutationWithRetry<
+  T extends { error?: { message?: string } | null },
+>(operation: () => PromiseLike<T>, options?: RetryOptions) {
+  return withRetry(
+    async () => {
+      const result = await operation();
 
-    if (result?.error) {
-      const err = new Error(result.error.message || "Error al guardar datos.");
-      throw err;
-    }
+      if (result?.error) {
+        const err = new Error(result.error.message || "Error al guardar datos.");
+        throw err;
+      }
 
-    return result;
-  }, options);
+      return result;
+    },
+    { attempts: 1, ...options }
+  );
 }
 
 export async function fetchJsonWithRetry<T>(
@@ -79,9 +78,20 @@ export async function fetchJsonWithRetry<T>(
   init?: RequestInit,
   options?: RetryOptions
 ) {
+  const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+  const retryOptions = { attempts: method === "GET" || method === "HEAD" ? 3 : 1, ...options };
   return withRetry(async () => {
     const response = await fetch(input, init);
-    const body = await response.json().catch(() => null);
+    let body: unknown = null;
+    if (response.status !== 204 && response.status !== 205) {
+      try {
+        body = await response.json();
+      } catch {
+        const err = new Error("La respuesta del servidor no es JSON válido.") as ErrorWithStatus;
+        err.status = response.ok ? 502 : response.status;
+        throw err;
+      }
+    }
 
     if (!response.ok) {
       const err = new Error(
@@ -92,5 +102,5 @@ export async function fetchJsonWithRetry<T>(
     }
 
     return body as T;
-  }, options);
+  }, retryOptions);
 }

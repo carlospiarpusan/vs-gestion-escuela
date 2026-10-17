@@ -27,7 +27,8 @@ export function getServerDbPool() {
       // Las pantallas financieras lanzan ~10 queries en paralelo.
       // 6 mantiene el costo bajo sin generar colas excesivas.
       max: isSupabasePooler ? 6 : 8,
-      idleTimeoutMillis: 5_000,
+      // Reutilizar conexiones al navegar entre modulos evita repetir el handshake.
+      idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 15_000,
       maxUses: 50,
       allowExitOnIdle: true,

@@ -37,6 +37,8 @@ interface DeleteConfirmProps {
   description?: React.ReactNode;
   /** Mensaje de error para mostrar si la eliminación falla */
   error?: string;
+  confirmLabel?: string;
+  loadingLabel?: string;
 }
 
 export default function DeleteConfirm({
@@ -48,9 +50,18 @@ export default function DeleteConfirm({
   message = "¿Estás seguro de que quieres eliminar este registro? Esta acción no se puede deshacer.",
   description,
   error,
+  confirmLabel = "Eliminar",
+  loadingLabel = "Eliminando...",
 }: DeleteConfirmProps) {
   return (
-    <Modal open={open} onClose={onClose} title={title} maxWidth="max-w-sm">
+    <Modal
+      open={open}
+      onClose={() => {
+        if (!loading) onClose();
+      }}
+      title={title}
+      maxWidth="max-w-sm"
+    >
       {/* Mensajes de error si la acción falla */}
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
@@ -59,18 +70,12 @@ export default function DeleteConfirm({
       )}
 
       {/* Mensaje de advertencia */}
-      <div className="apple-copy mb-6 text-sm">
-        {description ?? <p>{message}</p>}
-      </div>
+      <div className="apple-copy mb-6 text-sm">{description ?? <p>{message}</p>}</div>
 
       {/* Botones de acción */}
-      <div className="flex gap-3 justify-end">
+      <div className="flex justify-end gap-3">
         {/* Cancelar: cierra el diálogo sin hacer nada */}
-        <button
-          onClick={onClose}
-          disabled={loading}
-          className="apple-button-secondary text-sm"
-        >
+        <button onClick={onClose} disabled={loading} className="apple-button-secondary text-sm">
           Cancelar
         </button>
         {/* Eliminar: ejecuta la acción destructiva */}
@@ -79,7 +84,7 @@ export default function DeleteConfirm({
           disabled={loading}
           className="apple-button-danger text-sm disabled:opacity-50"
         >
-          {loading ? "Eliminando..." : "Eliminar"}
+          {loading ? loadingLabel : confirmLabel}
         </button>
       </div>
     </Modal>

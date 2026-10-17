@@ -1,4 +1,4 @@
-import type { PlanEscuela } from "@/types/database";
+import type { PlanEscuela, PlanEscuelaPago } from "@/types/database";
 
 export type SchoolPlanDescriptor = {
   id: PlanEscuela;
@@ -18,6 +18,11 @@ export type SchoolPlanDescriptor = {
 };
 
 export const SCHOOL_PLAN_ORDER: PlanEscuela[] = ["gratuito", "basico", "profesional", "enterprise"];
+export const COMMERCIAL_SCHOOL_PLAN_ORDER: PlanEscuelaPago[] = [
+  "basico",
+  "profesional",
+  "enterprise",
+];
 
 export const SCHOOL_PLAN_DESCRIPTORS: Record<PlanEscuela, SchoolPlanDescriptor> = {
   gratuito: {
@@ -125,6 +130,10 @@ export function isSchoolPlan(value: string | null | undefined): value is PlanEsc
 
 export function isPaidSchoolPlan(plan: string | null | undefined) {
   return isSchoolPlan(plan) && plan !== "gratuito";
+}
+
+export function isCommercialSchoolPlan(plan: string | null | undefined): plan is PlanEscuelaPago {
+  return COMMERCIAL_SCHOOL_PLAN_ORDER.includes(plan as PlanEscuelaPago);
 }
 
 export function getSchoolPlanDescriptor(plan: string | null | undefined) {

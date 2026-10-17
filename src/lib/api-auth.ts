@@ -141,6 +141,15 @@ export function ensureSedeScope(perfil: MinimalPerfil, sedeId: string): string |
   return null;
 }
 
+export function getStaffReadSedeScope(perfil: Pick<MinimalPerfil, "rol" | "sede_id">) {
+  const limited = ["admin_sede", "administrativo", "recepcion"].includes(perfil.rol);
+  const sedeId = limited ? perfil.sede_id : null;
+  return {
+    sedeId,
+    error: limited && !sedeId ? "Tu usuario no tiene sede asignada." : null,
+  };
+}
+
 export function resolveEscuelaIdForRequest(
   request: Request,
   perfil: Pick<MinimalPerfil, "rol" | "escuela_id">,

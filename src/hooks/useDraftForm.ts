@@ -47,8 +47,12 @@ export function useDraftForm<T>(
 
   const clearDraft = useCallback(
     (nextValue?: T) => {
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(storageKey);
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(storageKey);
+        }
+      } catch {
+        // A local draft cleanup failure must not turn a completed save into an error.
       }
       setValue(nextValue ?? initialValueRef.current);
     },

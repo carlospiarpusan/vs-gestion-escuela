@@ -1,20 +1,24 @@
 import type { Metadata } from "next";
 
-export const SITE_NAME = "Condusoft";
+export const SITE_NAME = "ConduSoft";
 export const DEFAULT_SITE_URL = "https://condusoft.co";
 export const SITE_SHARE_IMAGE_PATH = "/opengraph-image";
 export const SITE_DESCRIPTION =
-  "Condusoft es software para autoescuelas y centros de enseñanza automovilística (CEA) en Colombia. Gestiona alumnos, matrículas, clases, finanzas, flota, consentimiento de datos, solicitudes ARCO y cumplimiento interno desde una sola plataforma profesional.";
+  "ConduSoft organiza alumnos, pagos, clases, flota y cartera para autoescuelas y CEA en Colombia, con preparación CALE y app oficial en Google Play para alumnos.";
 export const DEFAULT_GOOGLE_SITE_VERIFICATION =
   "google-site-verification=U3R7Q9uL_tC3jpUJV65oksAggtp0CEB9yACnUoAMSrg";
 
 export const SITE_KEYWORDS = [
-  "Condusoft",
+  "ConduSoft",
+  "ConduSoft.co",
   "software para autoescuelas",
   "software CEA Colombia",
   "centros de enseñanza automovilística",
   "gestión de escuelas de conducción",
   "plataforma para autoescuelas",
+  "preparación CALE",
+  "app CALE Google Play",
+  "app para autoescuelas",
   "sistema de gestión automotriz",
   "control de alumnos autoescuela",
   "software administrativo CEA",

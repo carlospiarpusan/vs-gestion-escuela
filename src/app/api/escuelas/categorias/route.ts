@@ -3,6 +3,7 @@ import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth"
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildScopeCacheTags } from "@/lib/server-cache-tags";
+import { normalizeStoredCourseCategories } from "@/lib/course-categories";
 import type { Rol } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = [
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
         );
 
         return {
-          categorias: result.rows[0]?.categorias || [],
+          categorias: normalizeStoredCourseCategories(result.rows[0]?.categorias || []),
         };
       },
     });

@@ -14,7 +14,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <AuthProvider initialState={initialState}>
-      <DashboardClientLayout>
+      <DashboardClientLayout vsBillingEnabled={process.env.VS_BILLING_API_ENABLED === "true"}>
         {children}
         <DashboardToaster />
       </DashboardClientLayout>

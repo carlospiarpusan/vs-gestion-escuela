@@ -1,12 +1,13 @@
 "use client";
 
-import Link from "next/link";
+import DashboardNavLink from "./DashboardNavLink";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import type { Rol } from "@/types/database";
 import { PanelLeftClose } from "lucide-react";
 import { findDashboardModuleByPath, getDashboardNavigationForRole } from "@/lib/dashboard-nav";
 import { renderDashboardIcon } from "@/components/dashboard/dashboard-icons";
+import CondusoftLogo from "@/components/brand/CondusoftLogo";
 
 interface SidebarProps {
   rol: Rol | undefined;
@@ -14,6 +15,7 @@ interface SidebarProps {
   onClose: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  vsBillingEnabled?: boolean;
   scopeControl?: ReactNode | ((options: { compact: boolean }) => ReactNode);
   footer?: ReactNode | ((options: { compact: boolean }) => ReactNode);
 }
@@ -24,11 +26,12 @@ export default function Sidebar({
   onClose,
   collapsed,
   onToggleCollapse,
+  vsBillingEnabled = false,
   scopeControl,
   footer,
 }: SidebarProps) {
   const pathname = usePathname();
-  const navigation = getDashboardNavigationForRole(rol);
+  const navigation = getDashboardNavigationForRole(rol, { vsBilling: vsBillingEnabled });
   const activeModule = findDashboardModuleByPath(pathname);
   const collapsedDesktop = collapsed && !open;
   const scopeControlContent =
@@ -43,7 +46,7 @@ export default function Sidebar({
     const active = activeModule?.id === module.id;
 
     return (
-      <Link
+      <DashboardNavLink
         key={module.id}
         href={module.href}
         onClick={onClose}
@@ -80,7 +83,7 @@ export default function Sidebar({
             </span>
           </span>
         )}
-      </Link>
+      </DashboardNavLink>
     );
   };
 
@@ -109,16 +112,9 @@ export default function Sidebar({
             className={`flex items-center justify-between ${collapsedDesktop ? "px-3 py-4" : "px-4 py-4 sm:px-5"}`}
           >
             {collapsedDesktop ? (
-              <span className="apple-brand-mark mx-auto flex h-10 w-10 items-center justify-center text-sm font-semibold">
-                A
-              </span>
+              <CondusoftLogo className="mx-auto" iconOnly size="md" />
             ) : (
-              <div>
-                <p className="apple-kicker">Condusoft</p>
-                <span className="text-foreground text-lg font-semibold tracking-tight">
-                  Operación ordenada
-                </span>
-              </div>
+              <CondusoftLogo size="md" subtitle="Operación ordenada" />
             )}
 
             <button

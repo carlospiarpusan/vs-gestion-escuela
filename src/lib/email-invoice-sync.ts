@@ -109,6 +109,8 @@ type DecryptedSecretResult = {
   requiresReencryption: boolean;
 };
 
+type SupabaseAdminClient = ReturnType<typeof buildSupabaseAdminClient>;
+
 function normalizeText(value: string | null | undefined) {
   const trimmed = (value || "").trim();
   return trimmed.length > 0 ? trimmed : "";
@@ -507,8 +509,10 @@ async function openValidatedImapMailbox(config: ImapConnectionConfig) {
   throw new Error(formatImapConnectionError(lastError, config));
 }
 
-async function getIntegrationBySchool(escuelaId: string) {
-  const supabaseAdmin = buildSupabaseAdminClient();
+async function getIntegrationBySchool(
+  escuelaId: string,
+  supabaseAdmin: SupabaseAdminClient = buildSupabaseAdminClient()
+) {
   const { data, error } = await supabaseAdmin
     .from("facturas_correo_integraciones")
     .select("*")
@@ -522,8 +526,11 @@ async function getIntegrationBySchool(escuelaId: string) {
   return (data as IntegrationRow | null) ?? null;
 }
 
-async function listRecentImports(escuelaId: string, limit = 12) {
-  const supabaseAdmin = buildSupabaseAdminClient();
+async function listRecentImports(
+  escuelaId: string,
+  limit = 12,
+  supabaseAdmin: SupabaseAdminClient = buildSupabaseAdminClient()
+) {
   const { data, error } = await supabaseAdmin
     .from("facturas_correo_importaciones")
     .select(
@@ -545,8 +552,9 @@ async function listRecentImports(escuelaId: string, limit = 12) {
 }
 
 export async function getEmailInvoiceIntegrationState(escuelaId: string) {
-  const integration = await getIntegrationBySchool(escuelaId);
-  const history = await listRecentImports(escuelaId);
+  const supabaseAdmin = buildSupabaseAdminClient();
+  const integration = await getIntegrationBySchool(escuelaId, supabaseAdmin);
+  const history = await listRecentImports(escuelaId, 12, supabaseAdmin);
   return {
     integration: sanitizeIntegration(integration),
     history,
@@ -571,7 +579,7 @@ async function assertImapConnection(config: {
 
 export async function saveEmailInvoiceIntegration(input: SaveIntegrationInput) {
   const supabaseAdmin = buildSupabaseAdminClient();
-  const current = await getIntegrationBySchool(input.escuelaId);
+  const current = await getIntegrationBySchool(input.escuelaId, supabaseAdmin);
   let passwordToStore = input.imapPassword ?? null;
   let migratedEncryptedPassword: string | null = null;
 
@@ -774,12 +782,12 @@ async function listImportedAttachmentNames(
   integrationId: string,
   messageId: string | null,
   imapUid: number | null,
-  attachmentNames: string[]
+  attachmentNames: string[],
+  supabaseAdmin: SupabaseAdminClient
 ) {
   const uniqueNames = uniqueNonEmptyStrings(attachmentNames);
   if (uniqueNames.length === 0) return new Set<string>();
 
-  const supabaseAdmin = buildSupabaseAdminClient();
   let query = supabaseAdmin
     .from("facturas_correo_importaciones")
     .select("attachment_name")
@@ -824,9 +832,9 @@ async function createImportLog(input: {
   currency?: string | null;
   status: "importada" | "duplicada" | "omitida" | "error";
   detail?: string | null;
+  supabaseAdmin: SupabaseAdminClient;
 }) {
-  const supabaseAdmin = buildSupabaseAdminClient();
-  const { error } = await supabaseAdmin.from("facturas_correo_importaciones").insert({
+  const { error } = await input.supabaseAdmin.from("facturas_correo_importaciones").insert({
     integracion_id: input.integrationId,
     escuela_id: input.escuelaId,
     sede_id: input.sedeId,
@@ -853,9 +861,9 @@ async function createImportLog(input: {
 async function findDuplicateExpense(
   escuelaId: string,
   invoiceNumber: string,
-  supplierName: string
+  supplierName: string,
+  supabaseAdmin: SupabaseAdminClient
 ) {
-  const supabaseAdmin = buildSupabaseAdminClient();
   const { data, error } = await supabaseAdmin
     .from("gastos")
     .select("id, proveedor, numero_factura")
@@ -885,8 +893,8 @@ async function insertExpenseFromPreview(input: {
   payableAmount: number;
   paymentMethodSuggestion: MetodoPagoGasto;
   notes: string;
+  supabaseAdmin: SupabaseAdminClient;
 }) {
-  const supabaseAdmin = buildSupabaseAdminClient();
   const categoria = normalizeExpenseCategory(
     input.categorySuggestion,
     input.conceptSuggestion,
@@ -894,7 +902,7 @@ async function insertExpenseFromPreview(input: {
     input.notes
   );
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await input.supabaseAdmin
     .from("gastos")
     .insert({
       escuela_id: input.integration.escuela_id,
@@ -958,7 +966,8 @@ function classifyInvoiceAttachmentError(error: unknown) {
 
 async function syncSingleIntegration(
   integration: IntegrationRow,
-  rawOptions: EmailInvoiceSyncOptions = {}
+  rawOptions: EmailInvoiceSyncOptions = {},
+  supabaseAdmin: SupabaseAdminClient = buildSupabaseAdminClient()
 ): Promise<EmailInvoiceSyncSummary> {
   const options: Required<EmailInvoiceSyncOptions> = {
     mode: rawOptions.mode || "incremental",
@@ -980,7 +989,6 @@ async function syncSingleIntegration(
   };
 
   let maxUid = Number(integration.last_uid || 0);
-  const supabaseAdmin = buildSupabaseAdminClient();
   let client: ImapFlow | null = null;
   let releaseLock: (() => void) | null = null;
   const processedAttachmentKeys = new Set<string>();
@@ -1084,7 +1092,8 @@ async function syncSingleIntegration(
             integration.id,
             envelopeMessageId,
             uid,
-            hintedAttachmentNames
+            hintedAttachmentNames,
+            supabaseAdmin
           );
           const needsMessageSource = hintedAttachments.some((hint) => {
             if (!hint.fileName) return true;
@@ -1126,6 +1135,7 @@ async function syncSingleIntegration(
               attachmentName: `${ATTACHMENT_NAME_FALLBACK}-${uid}.eml`,
               status: "error",
               detail: "El correo no trajo el contenido completo para leer adjuntos.",
+              supabaseAdmin,
             });
             continue;
           }
@@ -1153,7 +1163,13 @@ async function syncSingleIntegration(
           const importedAttachmentNames =
             messageId === envelopeMessageId
               ? importedHintNames
-              : await listImportedAttachmentNames(integration.id, messageId, uid, attachmentNames);
+              : await listImportedAttachmentNames(
+                  integration.id,
+                  messageId,
+                  uid,
+                  attachmentNames,
+                  supabaseAdmin
+                );
           const seenMessageAttachmentNames = new Set<string>();
 
           for (const attachment of attachments) {
@@ -1191,7 +1207,8 @@ async function syncSingleIntegration(
                 duplicate = await findDuplicateExpense(
                   integration.escuela_id,
                   preview.invoiceNumber,
-                  preview.supplierName
+                  preview.supplierName,
+                  supabaseAdmin
                 );
                 duplicateExpenseCache.set(duplicateCacheKey, duplicate);
               }
@@ -1216,6 +1233,7 @@ async function syncSingleIntegration(
                   currency: preview.currency,
                   status: "duplicada",
                   detail: `La factura ${preview.invoiceNumber} ya existia en gastos para ${preview.supplierName}.`,
+                  supabaseAdmin,
                 });
                 continue;
               }
@@ -1239,6 +1257,7 @@ async function syncSingleIntegration(
                 payableAmount: preview.payableAmount,
                 paymentMethodSuggestion: preview.paymentMethodSuggestion,
                 notes,
+                supabaseAdmin,
               });
 
               processedAttachmentKeys.add(attachmentIdentity);
@@ -1260,6 +1279,7 @@ async function syncSingleIntegration(
                 currency: preview.currency,
                 status: "importada",
                 detail: `Factura ${preview.invoiceNumber} importada automaticamente desde correo.`,
+                supabaseAdmin,
               });
             } catch (error) {
               processedAttachmentKeys.add(attachmentIdentity);
@@ -1281,6 +1301,7 @@ async function syncSingleIntegration(
                 attachmentName,
                 status: failure.status,
                 detail: failure.detail,
+                supabaseAdmin,
               });
             }
           }
@@ -1322,12 +1343,13 @@ export async function syncEmailInvoiceIntegrationBySchool(
   escuelaId: string,
   options: EmailInvoiceSyncOptions = {}
 ) {
-  const integration = await getIntegrationBySchool(escuelaId);
+  const supabaseAdmin = buildSupabaseAdminClient();
+  const integration = await getIntegrationBySchool(escuelaId, supabaseAdmin);
   if (!integration || !integration.activa) {
     throw new Error("No hay una conexion de correo activa para esta escuela.");
   }
 
-  return syncSingleIntegration(integration, options);
+  return syncSingleIntegration(integration, options, supabaseAdmin);
 }
 
 export async function syncAllActiveEmailInvoiceIntegrations() {
@@ -1355,7 +1377,7 @@ export async function syncAllActiveEmailInvoiceIntegrations() {
 
   for (const row of rows) {
     try {
-      const summary = await syncSingleIntegration(row);
+      const summary = await syncSingleIntegration(row, undefined, supabaseAdmin);
       results.push({
         escuelaId: row.escuela_id,
         imported: summary.imported,

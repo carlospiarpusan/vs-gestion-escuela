@@ -11,7 +11,7 @@ export default function FAQ() {
         <SectionIntro
           badge="Preguntas frecuentes"
           title="Respuestas claras para escuelas de conducción en Colombia"
-          description="La home responde lo básico que suelen buscar los administradores antes de pedir una demo o crear su cuenta."
+          description="La home responde lo básico que suelen revisar los administradores antes de evaluar la plataforma o crear su cuenta."
         />
 
         <div className="space-y-4">

@@ -12,12 +12,13 @@ import {
 export const DASHBOARD_SUMMARY_CACHE_PREFIX = "dashboard-summary:";
 export const DASHBOARD_CATALOG_CACHE_PREFIX = "dashboard-catalog:";
 export const DASHBOARD_LIST_CACHE_PREFIX = "dashboard-list:";
-export const ACCOUNTING_REPORT_CACHE_PREFIX = "accounting-report:";
-export const FINANCE_INCOME_CACHE_PREFIX = "finance-income:";
-export const FINANCE_EXPENSE_CACHE_PREFIX = "finance-expense:";
-export const FINANCE_PORTFOLIO_CACHE_PREFIX = "finance-portfolio:";
-export const FINANCE_CASH_CACHE_PREFIX = "finance-cash:";
-export const FINANCE_REPORTS_CACHE_PREFIX = "finance-reports:v2:";
+export const STAFF_SCOPE_CACHE_VERSION = "staff-scope-v2";
+export const ACCOUNTING_REPORT_CACHE_PREFIX = `accounting-report:${STAFF_SCOPE_CACHE_VERSION}:`;
+export const FINANCE_INCOME_CACHE_PREFIX = `finance-income:${STAFF_SCOPE_CACHE_VERSION}:`;
+export const FINANCE_EXPENSE_CACHE_PREFIX = `finance-expense:${STAFF_SCOPE_CACHE_VERSION}:`;
+export const FINANCE_PORTFOLIO_CACHE_PREFIX = `finance-portfolio:${STAFF_SCOPE_CACHE_VERSION}:`;
+export const FINANCE_CASH_CACHE_PREFIX = `finance-cash:${STAFF_SCOPE_CACHE_VERSION}:`;
+export const FINANCE_REPORTS_CACHE_PREFIX = `finance-reports:v2:${STAFF_SCOPE_CACHE_VERSION}:`;
 
 type CacheScope = {
   id?: string | null;
@@ -56,17 +57,19 @@ export function buildDashboardSummaryClientCacheKey(
 export async function getDashboardSummaryCached<T>({
   kind,
   scope,
+  ttlMs = DASHBOARD_SUMMARY_CACHE_TTL_MS,
   forceFresh = false,
   loader,
 }: {
   kind: "admin" | "superadmin" | "alumno";
   scope: CacheScope;
+  ttlMs?: number;
   forceFresh?: boolean;
   loader: () => Promise<T>;
 }) {
   return getClientResourceCached<T>({
     key: buildDashboardSummaryClientCacheKey(kind, scope),
-    ttlMs: DASHBOARD_SUMMARY_CACHE_TTL_MS,
+    ttlMs,
     forceFresh,
     policy: "summary",
     loader,
@@ -87,7 +90,7 @@ export function buildDashboardCatalogCacheKey(
 ) {
   const serializedParams =
     typeof params === "string" ? params : params ? serializeSearchParams(params) : "";
-  return `${DASHBOARD_CATALOG_CACHE_PREFIX}${name}:${serializeScope(scope)}${serializedParams ? `:${serializedParams}` : ""}`;
+  return `${DASHBOARD_CATALOG_CACHE_PREFIX}${name}:${STAFF_SCOPE_CACHE_VERSION}:${serializeScope(scope)}${serializedParams ? `:${serializedParams}` : ""}`;
 }
 
 export async function getDashboardCatalogCached<T>({
@@ -121,7 +124,7 @@ export function buildDashboardListCacheKey(
 ) {
   const serializedParams =
     typeof params === "string" ? params : params ? serializeSearchParams(params) : "";
-  return `${DASHBOARD_LIST_CACHE_PREFIX}${name}:${serializeScope(scope)}${serializedParams ? `:${serializedParams}` : ""}`;
+  return `${DASHBOARD_LIST_CACHE_PREFIX}${name}:${STAFF_SCOPE_CACHE_VERSION}:${serializeScope(scope)}${serializedParams ? `:${serializedParams}` : ""}`;
 }
 
 export async function getDashboardListCached<T>({

@@ -4,14 +4,14 @@
  * Contract numbers follow the pattern: PREFIX-SEQUENCE (e.g. "MOT-0042", "CAR-0015", "COM-0003").
  * PREFIX is derived from the selected categories:
  *   - Only moto categories (A, A1, A2, AM) -> "MOT"
- *   - Only car categories (B, C, D) -> "CAR"
+ *   - Only car categories (B, B1, C, C1, RC, RC1, C2, C3, D) -> "CAR"
  *   - Mixed categories -> "COM"
  */
 
-export type ContractSequencePrefix = "MOT" | "CAR" | "COM";
+import { getContractPrefix, type ContractPrefix } from "./contract-number";
+import type { TipoPlantillaContratoEscuela } from "@/types/database";
 
-const MOTO_CATEGORIES = new Set(["AM", "A1", "A2", "A"]);
-const CAR_CATEGORIES = new Set(["B", "C", "D"]);
+export type ContractSequencePrefix = ContractPrefix;
 
 /**
  * Normalize a stored prefix value (e.g. "MOT", "CAR", "COM") to the canonical enum value,
@@ -79,10 +79,14 @@ export function inferHistoricContractPrefix({
  * Given a list of license categories, derive the contract prefix.
  */
 export function derivePrefixFromCategories(categorias: string[]): ContractSequencePrefix {
-  const hasMoto = categorias.some((c) => MOTO_CATEGORIES.has(c));
-  const hasCar = categorias.some((c) => CAR_CATEGORIES.has(c));
+  return getContractPrefix(categorias);
+}
 
-  if (hasMoto && hasCar) return "COM";
-  if (hasMoto) return "MOT";
-  return "CAR";
+export function getContractTemplateTypeFromCategories(
+  categorias: string[] | null | undefined
+): TipoPlantillaContratoEscuela {
+  const prefix = getContractPrefix(categorias);
+  if (prefix === "MOT") return "moto";
+  if (prefix === "COM") return "combo";
+  return "vehiculo";
 }

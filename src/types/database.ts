@@ -10,7 +10,17 @@ export type Rol =
   | "alumno";
 
 export type PlanEscuela = "gratuito" | "basico" | "profesional" | "enterprise";
+export type PlanEscuelaPago = Exclude<PlanEscuela, "gratuito">;
 export type EstadoEscuela = "activa" | "inactiva" | "suspendida";
+export type SchoolBillingInterval = "trial" | "monthly" | "annual";
+export type SchoolPaidBillingInterval = Exclude<SchoolBillingInterval, "trial">;
+export type SchoolSubscriptionStatus =
+  | "trialing"
+  | "pending_payment"
+  | "active"
+  | "grace"
+  | "read_only"
+  | "suspended";
 export type EstadoSede = "activa" | "inactiva";
 export type EstadoAlumno = "activo" | "inactivo" | "graduado" | "pre_registrado";
 export type TipoRegistroAlumno = "regular" | "aptitud_conductor" | "practica_adicional";
@@ -121,6 +131,7 @@ export interface Perfil {
 }
 
 export interface Alumno {
+  datos_facturacion?: import("@/lib/student-billing-contact").StudentBillingProfile | null;
   id: string;
   escuela_id: string;
   sede_id: string;
@@ -501,6 +512,7 @@ export interface PlanConfig {
   nombre: string;
   descripcion: string | null;
   precio_mensual: number;
+  precio_anual: number;
   max_alumnos_default: number;
   max_sedes_default: number;
   caracteristicas: string[];
@@ -508,6 +520,53 @@ export interface PlanConfig {
   updated_by: string | null;
   updated_at: string;
   created_at: string;
+}
+
+export interface SchoolSubscriptionAccess {
+  school_id: string;
+  cycle_id: string | null;
+  plan_id: PlanEscuelaPago;
+  billing_interval: SchoolBillingInterval;
+  status: SchoolSubscriptionStatus;
+  actual_status: Exclude<SchoolSubscriptionStatus, "pending_payment">;
+  can_write: boolean;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  trial_ends_at: string | null;
+  grace_ends_at: string | null;
+  scheduled_plan_id: PlanEscuelaPago | null;
+  scheduled_billing_interval: SchoolPaidBillingInterval | null;
+  scheduled_effective_at: string | null;
+  requires_review: boolean;
+  pending_payment_reference: string | null;
+  pending_payment_created_at: string | null;
+}
+
+export interface SchoolSubscriptionPaymentAttempt {
+  id: string;
+  school_id: string;
+  subscription_cycle_id: string | null;
+  operation_type: "activation" | "renewal" | "change_immediate";
+  target_plan_id: PlanEscuelaPago;
+  target_billing_interval: SchoolPaidBillingInterval;
+  amount_in_cents: number;
+  currency: "COP";
+  reference: string;
+  status: "pending" | "approved" | "declined" | "voided" | "error" | "cancelled" | "expired";
+  redirect_url: string | null;
+  expires_at: string | null;
+  initiated_by: string | null;
+  customer_email: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_legal_id: string | null;
+  wompi_transaction_id: string | null;
+  wompi_status: string | null;
+  wompi_payload: Record<string, unknown>;
+  failure_reason: string | null;
+  processed_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Evaluacion {

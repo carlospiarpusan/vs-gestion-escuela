@@ -109,8 +109,7 @@ function ExecutivePriorityCard({
   tone?: "default" | "success" | "warning" | "danger";
 }) {
   const toneClasses = {
-    default:
-      "border-[var(--surface-border)] bg-[var(--surface-muted)] text-foreground",
+    default: "border-[var(--surface-border)] bg-[var(--surface-muted)] text-foreground",
     success:
       "border-emerald-200/70 bg-emerald-50/80 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200",
     warning:
@@ -121,7 +120,7 @@ function ExecutivePriorityCard({
 
   return (
     <div className={`rounded-[22px] border px-4 py-4 ${toneClasses[tone]}`}>
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-75">{title}</p>
+      <p className="text-xs font-semibold tracking-[0.16em] uppercase opacity-75">{title}</p>
       <p className="mt-2 text-lg font-semibold tracking-tight">{value}</p>
       <p className="mt-2 text-sm leading-6 opacity-80">{detail}</p>
     </div>
@@ -144,12 +143,12 @@ export function InformesFiltersPanel({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const hasAdvancedFilters = Boolean(
     draftFilters.ingresoView ||
-      draftFilters.ingresoCategoria ||
-      draftFilters.ingresoMetodo ||
-      draftFilters.gastoView ||
-      draftFilters.gastoCategoria ||
-      draftFilters.gastoMetodo ||
-      draftFilters.gastoContraparte.trim()
+    draftFilters.ingresoCategoria ||
+    draftFilters.ingresoMetodo ||
+    draftFilters.gastoView ||
+    draftFilters.gastoCategoria ||
+    draftFilters.gastoMetodo ||
+    draftFilters.gastoContraparte.trim()
   );
 
   const activeFilterChips = [
@@ -160,8 +159,8 @@ export function InformesFiltersPanel({
       }`,
     draftFilters.ingresoCategoria &&
       `Categoría ingreso: ${
-        INGRESO_CATEGORY_OPTIONS.find((item) => item.value === draftFilters.ingresoCategoria)?.label ||
-        draftFilters.ingresoCategoria
+        INGRESO_CATEGORY_OPTIONS.find((item) => item.value === draftFilters.ingresoCategoria)
+          ?.label || draftFilters.ingresoCategoria
       }`,
     draftFilters.ingresoMetodo &&
       `Método ingreso: ${
@@ -197,7 +196,11 @@ export function InformesFiltersPanel({
             onClick={() => setShowAdvanced((current) => !current)}
             className="apple-button-secondary min-h-[42px] px-4 text-sm font-semibold"
           >
-            {showAdvanced || hasAdvancedFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            {showAdvanced || hasAdvancedFilters ? (
+              <ChevronUp size={16} />
+            ) : (
+              <ChevronDown size={16} />
+            )}
             Filtros avanzados
           </button>
           <button
@@ -239,9 +242,7 @@ export function InformesFiltersPanel({
           <span className="apple-kicker">Sede</span>
           <select
             value={draftFilters.sedeId}
-            onChange={(e) =>
-              setDraftFilters((current) => ({ ...current, sedeId: e.target.value }))
-            }
+            onChange={(e) => setDraftFilters((current) => ({ ...current, sedeId: e.target.value }))}
             className="apple-input"
           >
             <option value="">Todas</option>
@@ -272,9 +273,7 @@ export function InformesFiltersPanel({
           <span className="apple-kicker">Mes</span>
           <select
             value={draftFilters.month}
-            onChange={(e) =>
-              setDraftFilters((current) => ({ ...current, month: e.target.value }))
-            }
+            onChange={(e) => setDraftFilters((current) => ({ ...current, month: e.target.value }))}
             className="apple-input"
           >
             <option value="all">Todo el año</option>
@@ -421,11 +420,7 @@ export function InformesFiltersPanel({
   );
 }
 
-export function InformesStatusBanner({
-  loading,
-  periodLabel,
-  error,
-}: InformesStatusBannerProps) {
+export function InformesStatusBanner({ loading, periodLabel, error }: InformesStatusBannerProps) {
   return (
     <div
       className={`mb-4 rounded-[24px] px-4 py-4 ${
@@ -437,7 +432,7 @@ export function InformesStatusBanner({
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <p className="apple-kicker">Lectura principal</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">
+          <p className="text-foreground mt-1 text-sm font-semibold">
             {error
               ? "Hubo un problema al preparar la lectura ejecutiva."
               : loading
@@ -487,7 +482,9 @@ export function InformesSummarySection({ loading, report }: InformesSummarySecti
   const topProvider = payables?.topProveedores?.[0];
   const netTone = (summary?.balanceNeto || 0) >= 0 ? "success" : "danger";
   const payablePressureTone =
-    (payables?.totalPendiente || 0) > (summary?.ingresosCobrados || 0) * 0.35 ? "warning" : "default";
+    (payables?.totalPendiente || 0) > (summary?.ingresosCobrados || 0) * 0.35
+      ? "warning"
+      : "default";
   const monthlyTrend = (report?.series?.mensual || []).slice(0, 6).map((row) => ({
     label: row.periodo,
     value: formatAccountingMoney(row.balance),
@@ -524,7 +521,7 @@ export function InformesSummarySection({ loading, report }: InformesSummarySecti
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
         <AccountingStatCard
           eyebrow="Resultado"
           label="Ingresos cobrados"
@@ -535,27 +532,35 @@ export function InformesSummarySection({ loading, report }: InformesSummarySecti
         />
         <AccountingStatCard
           eyebrow="Resultado"
-          label="Balance neto"
-          value={loading ? "..." : formatAccountingMoney(summary?.balanceNeto || 0)}
-          detail="Ingresos cobrados menos gastos."
-          tone={netTone}
-          icon={<Landmark size={18} />}
+          label="Esperado cohorte"
+          value={loading ? "..." : formatAccountingMoney(contracts?.totalEsperado || 0)}
+          detail="Valor total de matrículas y obligaciones creadas en el corte."
+          tone="default"
+          icon={<TrendingUp size={18} />}
         />
         <AccountingStatCard
-          eyebrow="Resultado"
-          label="Margen"
-          value={loading ? "..." : formatPercent(summary?.margenPorcentaje || 0)}
-          detail="Rentabilidad del corte actual."
-          tone={netTone}
-          icon={<TrendingUp size={18} />}
+          eyebrow="Cobranza"
+          label="Cobrado cohorte"
+          value={loading ? "..." : formatAccountingMoney(contracts?.totalCobrado || 0)}
+          detail="De esa cohorte, lo que ya quedó cobrado a la fecha."
+          tone="primary"
+          icon={<ArrowDownUp size={18} />}
         />
         <AccountingStatCard
           eyebrow="Cobranza"
           label="Cartera pendiente"
           value={loading ? "..." : formatAccountingMoney(contracts?.totalPendiente || 0)}
-          detail={`${loading ? "..." : formatPercent(collectionRate)} del esperado ya está cobrado.`}
+          detail={`${loading ? "..." : formatPercent(collectionRate)} de la cohorte ya está cobrado.`}
           tone="warning"
           icon={<ArrowDownUp size={18} />}
+        />
+        <AccountingStatCard
+          eyebrow="Resultado"
+          label="Balance neto"
+          value={loading ? "..." : formatAccountingMoney(summary?.balanceNeto || 0)}
+          detail="Ingresos cobrados menos gastos."
+          tone={netTone}
+          icon={<Landmark size={18} />}
         />
         <AccountingStatCard
           eyebrow="Pagos"
@@ -721,13 +726,10 @@ export function InformesStudentsSection({
           students?.rows.length ? (
             <div className="space-y-3">
               {students.rows.map((row) => (
-                <div
-                  key={row.id}
-                  className="apple-panel-muted rounded-[24px] p-4"
-                >
+                <div key={row.id} className="apple-panel-muted rounded-[24px] p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-semibold text-foreground">{row.nombre}</p>
+                      <p className="text-foreground font-semibold">{row.nombre}</p>
                       <p className="text-xs text-[var(--gray-500)]">{row.dni}</p>
                     </div>
                     <span className="rounded-full border border-[var(--surface-border)] bg-[var(--surface-strong)] px-2.5 py-1 text-[10px] font-semibold text-[var(--gray-600)]">
@@ -749,11 +751,11 @@ export function InformesStudentsSection({
                   <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                     <div className="rounded-2xl bg-[var(--surface-strong)] px-3 py-3">
                       <p className="apple-kicker">Fecha</p>
-                      <p className="mt-1 font-medium text-foreground">{row.fecha_inscripcion}</p>
+                      <p className="text-foreground mt-1 font-medium">{row.fecha_inscripcion}</p>
                     </div>
                     <div className="rounded-2xl bg-[var(--surface-strong)] px-3 py-3">
                       <p className="apple-kicker">Total</p>
-                      <p className="mt-1 font-medium text-foreground">
+                      <p className="text-foreground mt-1 font-medium">
                         {formatAccountingMoney(row.valor_total)}
                       </p>
                     </div>
@@ -787,9 +789,15 @@ export function InformesStudentsSection({
                   <th className="px-4 py-3 font-semibold tracking-wider uppercase">Tipo</th>
                   <th className="px-4 py-3 font-semibold tracking-wider uppercase">Categorías</th>
                   <th className="px-4 py-3 font-semibold tracking-wider uppercase">Fecha</th>
-                  <th className="px-4 py-3 text-right font-semibold tracking-wider uppercase">Total</th>
-                  <th className="px-4 py-3 text-right font-semibold tracking-wider uppercase">Pagado</th>
-                  <th className="px-4 py-3 text-right font-semibold tracking-wider uppercase">Pendiente</th>
+                  <th className="px-4 py-3 text-right font-semibold tracking-wider uppercase">
+                    Total
+                  </th>
+                  <th className="px-4 py-3 text-right font-semibold tracking-wider uppercase">
+                    Pagado
+                  </th>
+                  <th className="px-4 py-3 text-right font-semibold tracking-wider uppercase">
+                    Pendiente
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--surface-border)]">
@@ -797,10 +805,10 @@ export function InformesStudentsSection({
                   students.rows.map((row) => (
                     <tr key={row.id} className="hover:bg-[var(--surface-muted)]/70">
                       <td className="px-4 py-3">
-                        <p className="font-semibold text-foreground">{row.nombre}</p>
+                        <p className="text-foreground font-semibold">{row.nombre}</p>
                         <p className="text-xs text-[var(--gray-500)]">{row.dni}</p>
                       </td>
-                      <td className="px-4 py-3 text-foreground">
+                      <td className="text-foreground px-4 py-3">
                         {formatStudentRegisterLabel(row.tipo_registro)}
                       </td>
                       <td className="px-4 py-3">
@@ -815,10 +823,10 @@ export function InformesStudentsSection({
                           ))}
                         </div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-foreground">
+                      <td className="text-foreground px-4 py-3 whitespace-nowrap">
                         {row.fecha_inscripcion}
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-foreground">
+                      <td className="text-foreground px-4 py-3 text-right font-medium">
                         {formatAccountingMoney(row.valor_total)}
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-emerald-600 dark:text-emerald-400">

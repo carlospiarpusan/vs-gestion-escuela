@@ -1,27 +1,29 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import {
-  authorizeApiRequest,
-  buildSupabaseAdminClient,
-  parseJsonBody,
-} from "@/lib/api-auth";
+import { getTodayDateString, getTimeZoneTimeString } from "@/lib/date-utils";
+import { saveCaleAttempt } from "@/lib/cale-attempts";
+import { authorizeApiRequest, buildSupabaseAdminClient, parseJsonBody } from "@/lib/api-auth";
 import {
   buildCaleCategoryTargets,
   buildCaleExamNotes,
   CALE_BANK_SOURCE,
   CALE_EXAM_NOTES_PREFIX,
   CALE_PASSING_PERCENTAGE,
+  CALE_QUESTION_COUNT,
   CALE_RESPONSE_OPTIONS,
   normalizeCaleAnswer,
   type RespuestaCale,
 } from "@/lib/cale";
 
-const MAX_QUESTIONS = 40;
-
 const submitSchema = z.object({
-  questionIds: z.array(z.string().uuid()).min(1).max(MAX_QUESTIONS),
+  questionIds: z.array(z.string().uuid()).length(CALE_QUESTION_COUNT),
   answers: z.record(z.string(), z.string()).default({}),
-  elapsedSeconds: z.number().int().min(0).max(60 * 60 * 3).default(0),
+  elapsedSeconds: z
+    .number()
+    .int()
+    .min(0)
+    .max(60 * 60 * 3)
+    .default(0),
 });
 
 type AdminClient = ReturnType<typeof buildSupabaseAdminClient>;
@@ -53,7 +55,9 @@ function takeIdsForBalancedPractice(
   const targets = buildCaleCategoryTargets(requestedCount);
 
   for (const target of targets) {
-    const categoryEntry = Array.from(categoryNamesById.entries()).find(([, name]) => name === target.nombre);
+    const categoryEntry = Array.from(categoryNamesById.entries()).find(
+      ([, name]) => name === target.nombre
+    );
     if (!categoryEntry) continue;
 
     const [categoryId] = categoryEntry;
@@ -70,7 +74,9 @@ function takeIdsForBalancedPractice(
   }
 
   const overflowPool = shuffleArray(
-    Array.from(idsByCategory.values()).flat().filter((id) => !usedIds.has(id))
+    Array.from(idsByCategory.values())
+      .flat()
+      .filter((id) => !usedIds.has(id))
   );
 
   return selected.concat(overflowPool.slice(0, Math.max(0, requestedCount - selected.length)));
@@ -92,11 +98,8 @@ export async function GET(request: Request) {
   if (!authorization.ok) return authorization.response;
 
   const url = new URL(request.url);
-  const requestedCount = Number(url.searchParams.get("count") || 20);
   const categoryId = url.searchParams.get("categoryId");
-  const count = Number.isFinite(requestedCount)
-    ? Math.max(5, Math.min(MAX_QUESTIONS, Math.floor(requestedCount)))
-    : 20;
+  const count = CALE_QUESTION_COUNT;
 
   try {
     const supabaseAdmin = buildSupabaseAdminClient();
@@ -118,6 +121,15 @@ export async function GET(request: Request) {
       return NextResponse.json(
         { error: "No hay preguntas disponibles para esta práctica." },
         { status: 404 }
+      );
+    }
+    if (ids.length < count) {
+      return NextResponse.json(
+        {
+          error:
+            "Se necesitan 40 preguntas disponibles para iniciar el simulacro. Elige otro núcleo o actualiza el banco CALE.",
+        },
+        { status: 409 }
       );
     }
 
@@ -143,7 +155,11 @@ export async function GET(request: Request) {
         idsByCategory.set(item.categoria_id, current);
       }
 
-      selectedIds = takeIdsForBalancedPractice(idsByCategory, categoryNamesById, Math.min(count, ids.length));
+      selectedIds = takeIdsForBalancedPractice(
+        idsByCategory,
+        categoryNamesById,
+        Math.min(count, ids.length)
+      );
     }
 
     const { data: questions, error: questionsError } = await supabaseAdmin
@@ -169,7 +185,9 @@ export async function GET(request: Request) {
       .map((item) => ({
         id: item.id,
         categoria_id: item.categoria_id,
-        categoria_nombre: item.categoria_id ? categoryMap.get(item.categoria_id) || "General" : "General",
+        categoria_nombre: item.categoria_id
+          ? categoryMap.get(item.categoria_id) || "General"
+          : "General",
         pregunta: item.pregunta,
         imagen_url: item.imagen_url,
         opcion_a: item.opcion_a,
@@ -178,6 +196,13 @@ export async function GET(request: Request) {
         opcion_d: item.opcion_d,
       }));
 
+    if (orderedQuestions.length !== count) {
+      return NextResponse.json(
+        { error: "El banco CALE cambió. Vuelve a iniciar el simulacro." },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json({
       source: CALE_BANK_SOURCE,
       generatedAt: new Date().toISOString(),
@@ -185,10 +210,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("[API CALE GET] Error:", error);
-    return NextResponse.json(
-      { error: "No se pudo preparar la práctica CALE." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "No se pudo preparar la práctica CALE." }, { status: 500 });
   }
 }
 
@@ -200,6 +222,15 @@ export async function POST(request: Request) {
   if (!parsedBody.ok) return parsedBody.response;
 
   const uniqueQuestionIds = Array.from(new Set(parsedBody.data.questionIds));
+  if (
+    uniqueQuestionIds.length !== CALE_QUESTION_COUNT ||
+    uniqueQuestionIds.some((id) => !normalizeCaleAnswer(parsedBody.data.answers[id]))
+  ) {
+    return NextResponse.json(
+      { error: "Responde las 40 preguntas antes de finalizar el simulacro." },
+      { status: 400 }
+    );
+  }
 
   try {
     const supabaseAdmin = buildSupabaseAdminClient();
@@ -247,12 +278,16 @@ export async function POST(request: Request) {
       .map((question) => {
         const selectedAnswer = normalizeCaleAnswer(parsedBody.data.answers[question.id]);
         const correctAnswer = normalizeCaleAnswer(question.respuesta_correcta);
-        const isCorrect = Boolean(selectedAnswer && correctAnswer && selectedAnswer === correctAnswer);
+        const isCorrect = Boolean(
+          selectedAnswer && correctAnswer && selectedAnswer === correctAnswer
+        );
 
         return {
           id: question.id,
           categoria_id: question.categoria_id,
-          categoria_nombre: question.categoria_id ? categoryMap.get(question.categoria_id) || "General" : "General",
+          categoria_nombre: question.categoria_id
+            ? categoryMap.get(question.categoria_id) || "General"
+            : "General",
           pregunta: question.pregunta,
           imagen_url: question.imagen_url,
           opcion_a: question.opcion_a,
@@ -268,10 +303,15 @@ export async function POST(request: Request) {
         };
       });
 
-    const answeredCount = orderedResults.filter((item) => isRespuestaCale(item.selectedAnswer)).length;
-    if (answeredCount === 0) {
+    const answeredCount = orderedResults.filter((item) =>
+      isRespuestaCale(item.selectedAnswer)
+    ).length;
+    if (
+      answeredCount !== CALE_QUESTION_COUNT ||
+      orderedResults.some((item) => !item.selectedAnswer || !item[`opcion_${item.selectedAnswer}`])
+    ) {
       return NextResponse.json(
-        { error: "Debes responder al menos una pregunta antes de enviar." },
+        { error: "Responde las 40 preguntas con una opción disponible antes de finalizar." },
         { status: 400 }
       );
     }
@@ -303,35 +343,29 @@ export async function POST(request: Request) {
       submittedAt: submittedAt.toISOString(),
     });
 
-    const { data: exam, error: examError } = await supabaseAdmin
-      .from("examenes")
-      .insert({
-        escuela_id: alumno.escuela_id,
-        sede_id: alumno.sede_id,
-        user_id: authorization.perfil.id,
-        alumno_id: alumno.id,
-        tipo: "teorico",
-        fecha: submittedAt.toISOString().slice(0, 10),
-        hora: submittedAt.toISOString().slice(11, 19),
-        resultado: result,
-        intentos: (previousAttempts || 0) + 1,
-        modulo_origen: "cale_practica",
-        fuente_banco: CALE_BANK_SOURCE,
-        total_preguntas: orderedResults.length,
-        respuestas_correctas: correctCount,
-        porcentaje: percentage,
-        tiempo_segundos: parsedBody.data.elapsedSeconds,
-        notas: notes,
-      })
-      .select("id")
-      .single();
-    if (examError) throw examError;
+    const attempt = {
+      escuela_id: alumno.escuela_id,
+      sede_id: alumno.sede_id,
+      user_id: authorization.perfil.id,
+      alumno_id: alumno.id,
+      tipo: "teorico",
+      fecha: getTodayDateString(submittedAt),
+      hora: getTimeZoneTimeString(submittedAt),
+      resultado: result,
+      intentos: (previousAttempts || 0) + 1,
+      modulo_origen: "cale_practica",
+      fuente_banco: CALE_BANK_SOURCE,
+      total_preguntas: orderedResults.length,
+      respuestas_correctas: correctCount,
+      porcentaje: percentage,
+      tiempo_segundos: parsedBody.data.elapsedSeconds,
+      notas: notes,
+    };
 
     const detailRows = orderedResults.map((item, index) => ({
       escuela_id: alumno.escuela_id,
       sede_id: alumno.sede_id,
       alumno_id: alumno.id,
-      examen_id: exam.id,
       pregunta_id: item.id,
       categoria_id: item.categoria_id,
       categoria_nombre: item.categoria_nombre,
@@ -340,17 +374,11 @@ export async function POST(request: Request) {
       orden_pregunta: index + 1,
     }));
 
-    const { error: detailsError } = await supabaseAdmin
-      .from("examenes_cale_preguntas")
-      .insert(detailRows);
-    if (detailsError) throw detailsError;
-
     const answerRows = orderedResults
       .map((item, index) => ({
         escuela_id: alumno.escuela_id,
         sede_id: alumno.sede_id,
         alumno_id: alumno.id,
-        examen_id: exam.id,
         pregunta_id: item.id,
         orden_pregunta: index + 1,
         respuesta_alumno: item.selectedAnswer,
@@ -370,12 +398,7 @@ export async function POST(request: Request) {
       }))
       .filter((item) => !item.es_correcta);
 
-    if (answerRows.length > 0) {
-      const { error: answersError } = await supabaseAdmin
-        .from("respuestas_examen")
-        .insert(answerRows);
-      if (answersError) throw answersError;
-    }
+    const exam = await saveCaleAttempt({ attempt, questions: detailRows, answers: answerRows });
 
     return NextResponse.json({
       examId: exam.id,

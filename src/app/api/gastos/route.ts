@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { APP_TIME_ZONE } from "@/lib/date-utils";
+import { authorizeApiRequest, getStaffReadSedeScope } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { createServerTiming } from "@/lib/server-timing";
@@ -43,6 +44,8 @@ export async function GET(request: Request) {
   if (!authz.ok) return authz.response;
 
   const perfil = authz.perfil as AllowedPerfil;
+  const { error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
   const { url, from, to, search, scope } = buildFinanceListContext(request, perfil, {
     defaultPageSize: 20,
   });
@@ -76,7 +79,7 @@ export async function GET(request: Request) {
       "expense_json",
       () =>
         getServerReadCached({
-          key: buildFinanceServerCacheKey("expense", perfil.id, scope, url.searchParams),
+          key: buildFinanceServerCacheKey("expense", perfil.rol, scope, url.searchParams),
           ttlMs: CACHE_TTL_MS,
           tags: buildFinanceCacheTags("expense", scope),
           bypass: cacheBypass,
@@ -176,8 +179,8 @@ export async function GET(request: Request) {
                   ${cte}
                   select
                     case
-                      when fecha_vencimiento < current_date then '${PAYABLE_BUCKET_LABELS.overdue}'
-                      when fecha_vencimiento <= current_date + interval '7 day' then '${PAYABLE_BUCKET_LABELS.dueSoon}'
+                      when fecha_vencimiento < ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) then '${PAYABLE_BUCKET_LABELS.overdue}'
+                      when fecha_vencimiento <= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) + interval '7 day' then '${PAYABLE_BUCKET_LABELS.dueSoon}'
                       else '${PAYABLE_BUCKET_LABELS.current}'
                     end as bucket,
                     count(*)::int as cantidad,
@@ -230,7 +233,7 @@ export async function GET(request: Request) {
                     coalesce(
                       sum(
                         case
-                          when estado = 'pendiente' and fecha_vencimiento < current_date then monto
+                          when estado = 'pendiente' and fecha_vencimiento < ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) then monto
                           else 0
                         end
                       ),
@@ -240,8 +243,8 @@ export async function GET(request: Request) {
                       sum(
                         case
                           when estado = 'pendiente'
-                            and fecha_vencimiento >= current_date
-                            and fecha_vencimiento <= current_date + interval '7 day'
+                            and fecha_vencimiento >= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)
+                            and fecha_vencimiento <= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) + interval '7 day'
                           then monto
                           else 0
                         end

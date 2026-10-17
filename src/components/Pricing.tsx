@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { BadgeCheck, Headphones, Layers3 } from "lucide-react";
 import SectionIntro from "@/components/public/SectionIntro";
-import { SCHOOL_PLAN_ORDER, SCHOOL_PLAN_DESCRIPTORS } from "@/lib/school-plans";
+import { COMMERCIAL_SCHOOL_PLAN_ORDER, SCHOOL_PLAN_DESCRIPTORS } from "@/lib/school-plans";
 
 const planSupportHighlights = [
-  "Definición del plan según el tamaño real de la escuela, no con promesas genéricas.",
+  "Definición del plan según el tamaño real de la escuela.",
   "Acompañamiento inicial para sedes, usuarios, categorías, flota y estructura operativa.",
   "Revisión del punto de partida ideal antes de crecer a más sedes o más equipo interno.",
 ];
@@ -19,22 +19,22 @@ export default function Pricing() {
         <SectionIntro
           badge="Planes para autoescuelas"
           title="Elige el plan según la etapa real de tu escuela"
-          description="Condusoft no se presenta como una tarifa genérica. Ordena la operación de tu escuela según su tamaño, su estructura y el nivel de control que hoy necesita."
+          description="Elige una estructura que corresponda al tamaño de tu escuela, su operación y el nivel de control que hoy necesita."
           aside={
             <div className="apple-panel-muted max-w-sm px-5 py-5">
               <p className="text-[11px] font-semibold tracking-[0.16em] text-[var(--gray-500)] uppercase">
                 Enfoque comercial
               </p>
               <p className="mt-3 text-sm leading-6 text-[var(--gray-700)] dark:text-[var(--gray-500)]">
-                Los planes describen la etapa operativa ideal de la escuela. No venden humo ni
-                inventan módulos que hoy no existen en la plataforma.
+                Los planes describen la etapa operativa ideal de la escuela y el nivel de control
+                que necesita en este momento.
               </p>
             </div>
           }
         />
 
-        <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
-          {SCHOOL_PLAN_ORDER.map((planId) => {
+        <div className="grid gap-5 lg:grid-cols-3">
+          {COMMERCIAL_SCHOOL_PLAN_ORDER.map((planId) => {
             const plan = SCHOOL_PLAN_DESCRIPTORS[planId];
             return (
               <article
@@ -86,6 +86,19 @@ export default function Pricing() {
           })}
         </div>
 
+        <div className="mt-5 rounded-[28px] border border-blue-100 bg-blue-50/80 px-6 py-5 dark:border-blue-900/40 dark:bg-blue-950/20">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[var(--brand-700)] uppercase">
+            Prueba de entrada
+          </p>
+          <p className="text-foreground mt-3 text-lg font-semibold">
+            La prueba dura 3 meses y usa la estructura del plan Profesional.
+          </p>
+          <p className="mt-2 text-sm leading-6 text-[var(--gray-700)] dark:text-[var(--gray-500)]">
+            Después de la prueba, la escuela queda en solo lectura si no activa un plan pago. La
+            validación del pago se mantiene desde el panel autenticado usando Wompi.
+          </p>
+        </div>
+
         <div className="mt-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="apple-panel-muted px-6 py-6">
             <div className="flex items-center gap-3">
@@ -123,15 +136,16 @@ export default function Pricing() {
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/registro"
+                prefetch={false}
                 className="apple-button-primary min-h-[48px] w-full justify-center text-sm font-semibold sm:w-auto"
               >
                 Crear cuenta
               </Link>
               <a
-                href="#contacto"
+                href="#product-tour"
                 className="apple-button-secondary min-h-[48px] w-full justify-center text-sm font-semibold sm:w-auto"
               >
-                Solicitar acompañamiento
+                Explorar la plataforma
               </a>
             </div>
           </div>

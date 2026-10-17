@@ -1,4 +1,11 @@
 import { z } from "zod";
+import { isValidDateOnly } from "@/lib/date-utils";
+
+const optionalDateOnlySchema = z
+  .string()
+  .refine((val) => !val || isValidDateOnly(val), "Selecciona una fecha válida.")
+  .optional();
+const requiredDateOnlySchema = z.string().refine(isValidDateOnly, "Selecciona una fecha válida.");
 
 export const alumnoSchema = z.object({
   nombre: z.string().min(2, "El nombre debe tener al menos 2 caracteres."),
@@ -12,8 +19,15 @@ export const alumnoSchema = z.object({
     .string()
     .trim()
     .min(2, "Debes indicar el lugar de expedición del documento."),
-  email: z.string().email("Correo electrónico inválido.").or(z.literal("")).optional(),
-  fecha_nacimiento: z.string().optional(),
+  email: z
+    .string()
+    .trim()
+    .max(254)
+    .email("Correo electrónico inválido.")
+    .or(z.literal(""))
+    .optional(),
+  fecha_nacimiento: optionalDateOnlySchema,
+  fecha_inscripcion: optionalDateOnlySchema,
   valor_total: z
     .string()
     .refine(
@@ -42,6 +56,7 @@ export const alumnoSchema = z.object({
       "La calificación teórica debe estar entre 0 y 100."
     )
     .optional(),
+  fecha_examen_teorico: optionalDateOnlySchema,
   nota_examen_practico: z
     .string()
     .refine(
@@ -49,6 +64,7 @@ export const alumnoSchema = z.object({
       "La calificación práctica debe estar entre 0 y 100."
     )
     .optional(),
+  fecha_examen_practico: optionalDateOnlySchema,
 });
 
 export const abonoSchema = z.object({
@@ -59,6 +75,7 @@ export const abonoSchema = z.object({
 });
 
 export const matriculaSchema = z.object({
+  fecha_inscripcion: requiredDateOnlySchema,
   valor_total: z
     .string()
     .refine((val) => !val || !Number.isNaN(Number(val)), "El valor total debe ser numérico.")

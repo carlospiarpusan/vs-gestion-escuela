@@ -572,19 +572,19 @@ a {
   position: relative;
   overflow: hidden;
   min-height: 100vh;
-  background: linear-gradient(180deg, #f9fbfd 0%, #f3f7fb 52%, #ffffff 100%);
+  background:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(180deg, #fbfbfd 0%, #f5f7fa 48%, #ffffff 100%);
+  background-size:
+    44px 44px,
+    auto;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
 
 .apple-auth-shell::before,
 .apple-auth-shell::after {
-  content: "";
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(18px);
-  opacity: 0.65;
-  pointer-events: none;
+  display: none;
 }
 
 .apple-auth-shell::before {
@@ -606,11 +606,11 @@ a {
 .apple-auth-card {
   position: relative;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--surface-border-strong) 72%, transparent);
-  border-radius: 28px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.985), rgba(252, 253, 255, 0.97));
+  border: 1px solid color-mix(in srgb, var(--surface-border-strong) 78%, transparent);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
   box-shadow:
-    0 18px 44px rgba(15, 23, 42, 0.08),
+    0 24px 60px rgba(15, 23, 42, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.24);
   backdrop-filter: saturate(135%) blur(14px);
   -webkit-backdrop-filter: saturate(135%) blur(14px);
@@ -633,16 +633,17 @@ a {
 .apple-auth-hero {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 250, 253, 0.98));
-  border: 1px solid color-mix(in srgb, rgba(255, 255, 255, 0.9) 60%, var(--surface-border));
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(245, 249, 255, 0.96)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 250, 253, 0.98));
+  border: 1px solid color-mix(in srgb, rgba(255, 255, 255, 0.9) 54%, var(--surface-border));
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
 }
 
 .apple-auth-hero::before,
 .apple-auth-hero::after {
-  content: "";
-  position: absolute;
-  border-radius: 999px;
-  pointer-events: none;
+  display: none;
 }
 
 .apple-auth-hero::before {
@@ -696,15 +697,33 @@ a {
 }
 
 .apple-auth-switch-link[data-active="true"] {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--surface-strong) 98%, transparent),
-    color-mix(in srgb, var(--surface-soft) 96%, transparent)
-  );
-  color: var(--foreground);
+  background: #111111;
+  color: #ffffff;
   box-shadow:
     0 10px 26px rgba(15, 23, 42, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.apple-auth-back-link {
+  display: inline-flex;
+  min-height: 2.35rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border);
+  background: rgba(255, 255, 255, 0.78);
+  padding: 0.58rem 0.9rem;
+  color: var(--gray-700);
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.apple-auth-back-link:hover {
+  border-color: var(--surface-border-strong);
+  background: #ffffff;
+  color: var(--foreground);
 }
 
 .apple-auth-chip {
@@ -726,6 +745,10 @@ a {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.9rem;
   align-items: start;
+  border: 1px solid var(--surface-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 0.9rem;
 }
 
 .apple-auth-list-dot {
@@ -736,8 +759,8 @@ a {
   justify-content: center;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--brand-400) 16%, var(--surface-border));
-  background: color-mix(in srgb, var(--surface-strong) 96%, transparent);
-  color: #35506c;
+  background: #111111;
+  color: #ffffff;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -801,13 +824,9 @@ a {
   gap: 0.5rem;
   min-height: 44px;
   padding: 0.76rem 0.9rem;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid var(--surface-border);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--surface-strong) 96%, transparent),
-    color-mix(in srgb, var(--surface-soft) 92%, transparent)
-  );
+  background: rgba(255, 255, 255, 0.72);
   color: #31475d;
   font-size: 0.8rem;
   font-weight: 600;

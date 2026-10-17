@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { normalizeStoredCourseCategories } from "@/lib/course-categories";
 
 type ContractPreviewResult = {
   nextNumber: string;
@@ -39,11 +40,14 @@ export function useContractPreview({
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<(() => void) | undefined>(undefined);
 
-  const filteredCategorias = useMemo(() => categorias.filter(Boolean), [categorias]);
+  const filteredCategorias = useMemo(
+    () => normalizeStoredCourseCategories(categorias.filter(Boolean)),
+    [categorias]
+  );
   const hasCategorias = filteredCategorias.length > 0;
 
   // Stable key to avoid re-fetching unless categories actually change
-  const categoriasKey = filteredCategorias.sort().join(",");
+  const categoriasKey = filteredCategorias.join(",");
 
   const fetchPreview = useCallback(async (key: string, signal: AbortSignal) => {
     setLoading(true);

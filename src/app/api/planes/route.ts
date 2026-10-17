@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, parseJsonBody } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached, revalidateServerReadCache } from "@/lib/server-read-cache";
-import type { PlanConfig, PlanEscuela } from "@/types/database";
+import { buildDashboardCacheTags, buildDashboardListCacheTags } from "@/lib/server-cache-tags";
+import { z } from "zod";
+import type { PlanConfig } from "@/types/database";
 
-const VALID_PLAN_IDS: PlanEscuela[] = ["gratuito", "basico", "profesional", "enterprise"];
+const updatePlanSchema = z
+  .object({
+    id: z.enum(["gratuito", "basico", "profesional", "enterprise"]),
+    nombre: z.string().trim().min(2).max(100).optional(),
+    descripcion: z.string().trim().max(5000).nullable().optional(),
+    precio_mensual: z.number().min(0).max(99_999_999).optional(),
+    precio_anual: z.number().min(0).max(999_999_999).optional(),
+    max_alumnos_default: z.number().int().min(1).max(100_000).optional(),
+    max_sedes_default: z.number().int().min(1).max(1000).optional(),
+    caracteristicas: z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+    activo: z.boolean().optional(),
+  })
+  .strict();
 
 const PLANES_CACHE_KEY = "platform:planes-config";
 const PLANES_CACHE_TAGS = ["planes-config"];
@@ -36,6 +50,7 @@ export async function GET() {
         return result.rows.map((r) => ({
           ...r,
           precio_mensual: Number(r.precio_mensual),
+          precio_anual: Number(r.precio_anual),
           caracteristicas:
             typeof r.caracteristicas === "string"
               ? JSON.parse(r.caracteristicas)
@@ -59,12 +74,10 @@ export async function PATCH(request: Request) {
   if (!authz.ok) return authz.response;
 
   try {
-    const body = await request.json();
-    const planId = body.id as string;
-
-    if (!planId || !VALID_PLAN_IDS.includes(planId as PlanEscuela)) {
-      return NextResponse.json({ error: "ID de plan inválido." }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, updatePlanSchema);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.data;
+    const planId = body.id;
 
     // Build dynamic SET clause
     const updates: string[] = [];
@@ -97,6 +110,18 @@ export async function PATCH(request: Request) {
         );
       }
       updates.push(`precio_mensual = $${paramIdx++}`);
+      values.push(precio);
+    }
+
+    if (body.precio_anual !== undefined) {
+      const precio = Number(body.precio_anual);
+      if (!Number.isFinite(precio) || precio < 0 || precio > 999_999_999) {
+        return NextResponse.json(
+          { error: "El precio anual debe ser un número válido entre 0 y 999.999.999." },
+          { status: 400 }
+        );
+      }
+      updates.push(`precio_anual = $${paramIdx++}`);
       values.push(precio);
     }
 
@@ -168,7 +193,11 @@ export async function PATCH(request: Request) {
     }
 
     // Invalidate cache
-    revalidateServerReadCache(PLANES_CACHE_TAGS);
+    revalidateServerReadCache([
+      ...PLANES_CACHE_TAGS,
+      ...buildDashboardCacheTags("superadmin"),
+      ...buildDashboardListCacheTags("subscriptions"),
+    ]);
 
     const updated = result.rows[0];
     return NextResponse.json({
@@ -176,6 +205,7 @@ export async function PATCH(request: Request) {
       plan: {
         ...updated,
         precio_mensual: Number(updated.precio_mensual),
+        precio_anual: Number(updated.precio_anual),
         caracteristicas:
           typeof updated.caracteristicas === "string"
             ? JSON.parse(updated.caracteristicas)

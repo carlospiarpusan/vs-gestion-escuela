@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, getStaffReadSedeScope } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { createServerTiming } from "@/lib/server-timing";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/finance/server/request";
 import { buildFinanceCacheTags } from "@/lib/server-cache-tags";
 import { normalizeDateOnly, toNumber } from "@/lib/finance/server/normalizers";
+import { getCurrentYear } from "@/lib/date-utils";
 
 type DailyCashSqlRow = {
   fecha: string;
@@ -55,10 +56,18 @@ export async function GET(request: Request) {
   if (!authz.ok) return authz.response;
 
   const perfil = authz.perfil as AllowedPerfil;
+  const { error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
   const url = new URL(request.url);
   const scope = buildFinanceScope(request, perfil, url);
-  const year = parseInteger(url.searchParams.get("year"), new Date().getFullYear(), 2023, 2100);
-  const month = (url.searchParams.get("month") || "").trim();
+  const year = parseInteger(url.searchParams.get("year"), getCurrentYear(), 2023, 2100);
+  const requestedMonth = (url.searchParams.get("month") || "").trim();
+  if (
+    requestedMonth &&
+    (!/^\d{1,2}$/.test(requestedMonth) || Number(requestedMonth) < 1 || Number(requestedMonth) > 12)
+  )
+    return NextResponse.json({ error: "Selecciona un mes valido." }, { status: 400 });
+  const month = requestedMonth ? String(Number(requestedMonth)).padStart(2, "0") : "";
   const alumnoId = normalizeUuid(url.searchParams.get("alumno_id"));
   const categoria = (url.searchParams.get("categoria") || "").trim() || null;
   const metodo = (url.searchParams.get("metodo") || "").trim() || null;
@@ -80,7 +89,7 @@ export async function GET(request: Request) {
       "cash_json",
       () =>
         getServerReadCached({
-          key: buildFinanceServerCacheKey("cash", perfil.id, scope, url.searchParams),
+          key: buildFinanceServerCacheKey("cash", perfil.rol, scope, url.searchParams),
           ttlMs: CACHE_TTL_MS,
           tags: buildFinanceCacheTags("cash", scope),
           bypass: cacheBypass,

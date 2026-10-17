@@ -7,26 +7,26 @@ export default function CTA() {
         <div className="apple-panel overflow-hidden p-6 sm:p-10">
           <span className="apple-badge">Listo para ordenar tu operación</span>
           <h2 className="text-foreground mt-5 text-2xl font-semibold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
-            Condusoft puede llevar tu autoescuela de hojas sueltas a una operación clara esta misma
-            semana.
+            Empieza a operar con una base más clara esta misma semana.
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-8 text-[var(--gray-500)] sm:text-xl">
-            Si hoy repartes alumnos, agenda, cartera, caja, gastos y vehículos entre distintas hojas
-            o chats, aquí ya tienes una base mucho más ordenada para trabajar en escritorio y móvil.
+            Crea tu escuela, configura lo esencial y reúne alumnos, agenda, recaudo y flota en una
+            sola plataforma.
           </p>
 
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <Link
               href="/registro"
+              prefetch={false}
               className="apple-button-primary min-h-[48px] w-full justify-center px-6 text-sm font-semibold sm:w-auto"
             >
               Crear cuenta
             </Link>
             <a
-              href="#pricing"
+              href="#product-tour"
               className="apple-button-secondary min-h-[48px] w-full justify-center px-6 text-sm font-semibold sm:w-auto"
             >
-              Solicitar demo
+              Explorar la plataforma
             </a>
           </div>
         </div>

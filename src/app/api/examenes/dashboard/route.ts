@@ -106,7 +106,12 @@ export async function GET(request: Request) {
   };
 
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("examenes-dashboard", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey(
+      "examenes-dashboard",
+      `${perfil.rol}:${perfil.id}`,
+      scope,
+      url.searchParams
+    ),
     ttlMs: CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("examenes-dashboard", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),

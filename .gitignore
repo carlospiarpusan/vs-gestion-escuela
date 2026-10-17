@@ -43,3 +43,12 @@ next-env.d.ts
 .claude/
 find_bad_questions.js
 fix-cale.js
+.env*.local
+
+# Regenerable QA and Android release artifacts (not source or signing keys)
+.playwright-cli/
+output/
+
+
+# Local recovery archives; may contain private configuration
+/.local-backups/

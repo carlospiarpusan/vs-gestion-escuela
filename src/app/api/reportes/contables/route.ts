@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import {
+  authorizeApiRequest,
+  getStaffReadSedeScope,
+  resolveEscuelaIdForRequest,
+} from "@/lib/api-auth";
 import { normalizeUuid } from "@/lib/dashboard-scope";
+import { APP_TIME_ZONE, getTodayDateString, isValidDateOnly } from "@/lib/date-utils";
 import { parseExpenseSearch } from "@/lib/expense-search";
 import {
   EXAMEN_INCOME_CATEGORIES,
@@ -186,6 +191,7 @@ type ContractsSummaryRow = {
   total_esperado: number | string | null;
   total_cobrado: number | string | null;
   total_pendiente: number | string | null;
+  total_recaudado_periodo: number | string | null;
   registros: number | string | null;
 };
 
@@ -295,23 +301,21 @@ const CSV_BATCH_SIZE = 1000;
 
 function parseDateInput(value: string | null, fallback: string) {
   if (!value) return fallback;
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
+  return isValidDateOnly(value) ? value : fallback;
 }
 
 function parseInteger(value: string | null, fallback: number, min: number, max: number) {
+  if (value === null || !value.trim()) return fallback;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.floor(parsed)));
 }
 
 function getCurrentMonthRange() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
+  const today = getTodayDateString();
   return {
-    from: `${year}-${month}-01`,
-    to: `${year}-${month}-${day}`,
+    from: `${today.slice(0, 7)}-01`,
+    to: today,
   };
 }
 
@@ -337,10 +341,6 @@ function parseReportIncludes(value: string | null) {
   return new Set<ReportInclude>(validIncludes.length > 0 ? validIncludes : DEFAULT_REPORT_INCLUDES);
 }
 
-export const __accountingReportRouteInternals = {
-  parseReportIncludes,
-};
-
 function resolveScope(
   request: Request,
   perfil: AllowedPerfil,
@@ -354,7 +354,7 @@ function resolveScope(
     };
   }
 
-  if (perfil.rol === "admin_sede") {
+  if (perfil.rol === "admin_sede" || perfil.rol === "administrativo") {
     return {
       escuelaId: perfil.escuela_id,
       sedeId: perfil.sede_id,
@@ -421,13 +421,17 @@ function buildQueryParts({
   ingresosWhere.push(`i.fecha >= ${fromRef}`);
   gastosWhere.push(`g.fecha >= ${fromRef}`);
   matriculasWhere.push(`m.fecha_inscripcion >= ${fromRef}`);
-  standaloneWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) >= ${fromRef}`);
+  standaloneWhere.push(
+    `coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) >= ${fromRef}`
+  );
 
   const toRef = addValue(to);
   ingresosWhere.push(`i.fecha <= ${toRef}`);
   gastosWhere.push(`g.fecha <= ${toRef}`);
   matriculasWhere.push(`m.fecha_inscripcion <= ${toRef}`);
-  standaloneWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) <= ${toRef}`);
+  standaloneWhere.push(
+    `coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) <= ${toRef}`
+  );
 
   if (alumnoId) {
     const ref = addValue(alumnoId);
@@ -705,8 +709,12 @@ function buildQueryParts({
   }
   matriculaScopeWhere.push(`m.fecha_inscripcion >= ${fromRef}`);
   matriculaScopeWhere.push(`m.fecha_inscripcion <= ${toRef}`);
-  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) >= ${fromRef}`);
-  standaloneScopeWhere.push(`coalesce(a.fecha_inscripcion, a.created_at::date) <= ${toRef}`);
+  standaloneScopeWhere.push(
+    `coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) >= ${fromRef}`
+  );
+  standaloneScopeWhere.push(
+    `coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) <= ${toRef}`
+  );
 
   const matWhere = matriculaScopeWhere.join(" AND ");
   const staWhere = standaloneScopeWhere.join(" AND ");
@@ -797,14 +805,14 @@ function buildQueryParts({
           ('alumno:' || a.id::text) AS obligation_id,
           a.id AS alumno_id,
           a.tipo_registro::text AS tipo_registro,
-          COALESCE(a.fecha_inscripcion, a.created_at::date) AS fecha_registro,
+          COALESCE(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date) AS fecha_registro,
           a.numero_contrato AS referencia,
           COALESCE(NULLIF(TRIM(CONCAT(a.nombre, ' ', a.apellidos)), ''), 'Sin alumno asociado') AS nombre,
           a.dni AS documento,
           COALESCE(a.valor_total, 0)::numeric AS valor_esperado,
           COALESCE(pagos.total_cobrado, 0)::numeric AS valor_cobrado,
           GREATEST(COALESCE(a.valor_total, 0) - COALESCE(pagos.total_cobrado, 0), 0)::numeric AS saldo_pendiente,
-          COALESCE(pagos.oldest_pending_date, COALESCE(a.fecha_inscripcion, a.created_at::date))::date AS fecha_referencia,
+          COALESCE(pagos.oldest_pending_date, COALESCE(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date))::date AS fecha_referencia,
           COALESCE(a.categorias, '{}'::text[]) AS categorias
         FROM alumnos a
         LEFT JOIN LATERAL (
@@ -1023,6 +1031,11 @@ async function getAccessibleOptions(
   perfil: AllowedPerfil,
   scope: ReportScope
 ) {
+  const schoolId = perfil.escuela_id;
+  if (perfil.rol !== "super_admin" && !schoolId) {
+    return { escuelas: [], sedes: [], availableYears: [] };
+  }
+
   const yearValues: string[] = [];
   const ingresosScopeWhere: string[] = [];
   const gastosScopeWhere: string[] = [];
@@ -1075,7 +1088,7 @@ async function getAccessibleOptions(
 
         union
 
-        select extract(year from coalesce(a.fecha_inscripcion, a.created_at::date))::int as year
+        select extract(year from coalesce(a.fecha_inscripcion, (a.created_at AT TIME ZONE '${APP_TIME_ZONE}')::date))::int as year
         from alumnos a
         ${scopeClause(alumnosScopeWhere)}
       )
@@ -1089,68 +1102,43 @@ async function getAccessibleOptions(
   );
 
   if (perfil.rol === "super_admin") {
-    const schoolsRes = await pool.query<SchoolOption>(
-      "select id, nombre from escuelas order by nombre asc"
-    );
-    const yearsRes = await availableYearsPromise;
-    const availableYears = yearsRes.rows
-      .map((row) => Number(row.year || 0))
-      .filter((year) => Number.isFinite(year) && year > 0);
-
-    if (scope.escuelaId) {
-      const sedesRes = await pool.query<SedeOption>(
-        "select id, nombre, escuela_id from sedes where escuela_id = $1 order by nombre asc",
-        [scope.escuelaId]
-      );
-
-      return {
-        escuelas: schoolsRes.rows,
-        sedes: sedesRes.rows,
-        availableYears,
-      };
-    }
-
-    const sedesRes = await pool.query<SedeOption>(
-      "select id, nombre, escuela_id from sedes order by nombre asc limit 500"
-    );
+    const [schoolsRes, yearsRes, sedesRes] = await Promise.all([
+      pool.query<SchoolOption>("select id, nombre from escuelas order by nombre asc"),
+      availableYearsPromise,
+      scope.escuelaId
+        ? pool.query<SedeOption>(
+            "select id, nombre, escuela_id from sedes where escuela_id = $1 order by nombre asc",
+            [scope.escuelaId]
+          )
+        : pool.query<SedeOption>(
+            "select id, nombre, escuela_id from sedes order by nombre asc limit 500"
+          ),
+    ]);
 
     return {
       escuelas: schoolsRes.rows,
       sedes: sedesRes.rows,
-      availableYears,
+      availableYears: yearsRes.rows
+        .map((row) => Number(row.year || 0))
+        .filter((year) => Number.isFinite(year) && year > 0),
     };
   }
 
-  const schoolId = perfil.escuela_id;
-  if (!schoolId) {
-    return { escuelas: [], sedes: [], availableYears: [] };
-  }
-
-  const schoolsRes = await pool.query<SchoolOption>(
-    "select id, nombre from escuelas where id = $1",
-    [schoolId]
-  );
-  const yearsRes = await availableYearsPromise;
+  const [schoolsRes, yearsRes, sedesRes] = await Promise.all([
+    pool.query<SchoolOption>("select id, nombre from escuelas where id = $1", [schoolId]),
+    availableYearsPromise,
+    perfil.rol === "admin_sede" && perfil.sede_id
+      ? pool.query<SedeOption>("select id, nombre, escuela_id from sedes where id = $1", [
+          perfil.sede_id,
+        ])
+      : pool.query<SedeOption>(
+          "select id, nombre, escuela_id from sedes where escuela_id = $1 order by nombre asc",
+          [schoolId]
+        ),
+  ]);
   const availableYears = yearsRes.rows
     .map((row) => Number(row.year || 0))
     .filter((year) => Number.isFinite(year) && year > 0);
-
-  if (perfil.rol === "admin_sede" && perfil.sede_id) {
-    const sedesRes = await pool.query<SedeOption>(
-      "select id, nombre, escuela_id from sedes where id = $1",
-      [perfil.sede_id]
-    );
-    return {
-      escuelas: schoolsRes.rows,
-      sedes: sedesRes.rows,
-      availableYears,
-    };
-  }
-
-  const sedesRes = await pool.query<SedeOption>(
-    "select id, nombre, escuela_id from sedes where escuela_id = $1 order by nombre asc",
-    [schoolId]
-  );
 
   return {
     escuelas: schoolsRes.rows,
@@ -1504,8 +1492,8 @@ async function buildJsonResponse({
             ${cte}
             select
               case
-                when fecha_vencimiento < current_date then '${PAYABLE_BUCKET_LABELS.overdue}'
-                when fecha_vencimiento <= current_date + interval '7 day' then '${PAYABLE_BUCKET_LABELS.dueSoon}'
+                when fecha_vencimiento < ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) then '${PAYABLE_BUCKET_LABELS.overdue}'
+                when fecha_vencimiento <= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) + interval '7 day' then '${PAYABLE_BUCKET_LABELS.dueSoon}'
                 else '${PAYABLE_BUCKET_LABELS.current}'
               end as bucket,
               count(*)::int as cantidad,
@@ -1542,14 +1530,14 @@ async function buildJsonResponse({
             select
               coalesce(sum(monto), 0) as total_pendiente,
               coalesce(
-                sum(case when fecha_vencimiento < current_date then monto else 0 end),
+                sum(case when fecha_vencimiento < ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) then monto else 0 end),
                 0
               ) as vencido,
               coalesce(
                 sum(
                   case
-                    when fecha_vencimiento >= current_date
-                      and fecha_vencimiento <= current_date + interval '7 day'
+                    when fecha_vencimiento >= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)
+                      and fecha_vencimiento <= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) + interval '7 day'
                     then monto
                     else 0
                   end
@@ -1559,7 +1547,7 @@ async function buildJsonResponse({
               coalesce(
                 sum(
                   case
-                    when fecha_vencimiento > current_date + interval '7 day' then monto
+                    when fecha_vencimiento > ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) + interval '7 day' then monto
                     else 0
                   end
                 ),
@@ -1577,8 +1565,8 @@ async function buildJsonResponse({
             ${cte}
             select
               case
-                when fecha_vencimiento < current_date then '${PAYABLE_BUCKET_LABELS.overdue}'
-                when fecha_vencimiento <= current_date + interval '7 day' then '${PAYABLE_BUCKET_LABELS.dueSoon}'
+                when fecha_vencimiento < ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) then '${PAYABLE_BUCKET_LABELS.overdue}'
+                when fecha_vencimiento <= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) + interval '7 day' then '${PAYABLE_BUCKET_LABELS.dueSoon}'
                 else '${PAYABLE_BUCKET_LABELS.current}'
               end as bucket,
               count(*)::int as cantidad,
@@ -1637,7 +1625,7 @@ async function buildJsonResponse({
               coalesce(
                 sum(
                   case
-                    when estado = 'pendiente' and fecha_vencimiento < current_date then monto
+                    when estado = 'pendiente' and fecha_vencimiento < ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) then monto
                     else 0
                   end
                 ),
@@ -1647,8 +1635,8 @@ async function buildJsonResponse({
                 sum(
                   case
                     when estado = 'pendiente'
-                      and fecha_vencimiento >= current_date
-                      and fecha_vencimiento <= current_date + interval '7 day'
+                      and fecha_vencimiento >= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)
+                      and fecha_vencimiento <= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) + interval '7 day'
                     then monto
                     else 0
                   end
@@ -1674,9 +1662,13 @@ async function buildJsonResponse({
               count(*)::int as registros,
               coalesce(sum(valor_esperado), 0) as total_esperado,
               coalesce(sum(valor_cobrado), 0) as total_cobrado,
-              coalesce(sum(saldo_pendiente), 0) as total_pendiente
+              coalesce(sum(saldo_pendiente), 0) as total_pendiente,
+              (
+                select coalesce(sum(monto), 0)
+                from filtered_ingresos
+                where estado = 'cobrado'
+              ) as total_recaudado_periodo
             from filtered_obligations
-            where saldo_pendiente > 0
           `,
           parts.values
         )
@@ -1710,7 +1702,7 @@ async function buildJsonResponse({
               saldo_pendiente,
               fecha_registro,
               fecha_referencia,
-              greatest((current_date - fecha_referencia::date), 0)::int as dias_pendiente
+              greatest((((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) - fecha_referencia::date), 0)::int as dias_pendiente
             from filtered_obligations
             where saldo_pendiente > 0
             order by dias_pendiente desc, saldo_pendiente desc, fecha_referencia asc
@@ -1745,7 +1737,7 @@ async function buildJsonResponse({
               valor_esperado,
               valor_cobrado,
               saldo_pendiente,
-              greatest((current_date - fecha_referencia::date), 0)::int as dias_pendiente
+              greatest((((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) - fecha_referencia::date), 0)::int as dias_pendiente
             from filtered_obligations
             where saldo_pendiente > 0
             order by dias_pendiente desc, saldo_pendiente desc, fecha_referencia asc
@@ -1760,8 +1752,8 @@ async function buildJsonResponse({
             ${cte}
             select
               case
-                when fecha_referencia < current_date - interval '60 day' then '${RECEIVABLE_BUCKET_LABELS.overdueCritical}'
-                when fecha_referencia < current_date - interval '30 day' then '${RECEIVABLE_BUCKET_LABELS.overdueMedium}'
+                when fecha_referencia < ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) - interval '60 day' then '${RECEIVABLE_BUCKET_LABELS.overdueCritical}'
+                when fecha_referencia < ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) - interval '30 day' then '${RECEIVABLE_BUCKET_LABELS.overdueMedium}'
                 else '${RECEIVABLE_BUCKET_LABELS.current}'
               end as bucket,
               count(*)::int as cantidad,
@@ -2042,6 +2034,7 @@ async function buildJsonResponse({
           totalEsperado: toNumber(contractsSummaryRow.total_esperado),
           totalCobrado: toNumber(contractsSummaryRow.total_cobrado),
           totalPendiente: toNumber(contractsSummaryRow.total_pendiente),
+          totalRecaudadoPeriodo: toNumber(contractsSummaryRow.total_recaudado_periodo),
           buckets: needsFullContracts
             ? contractsBucketsRes.rows.map((row: AgingBucketRow) => ({
                 bucket: row.bucket,
@@ -2199,6 +2192,8 @@ export async function GET(request: Request) {
   if (!authz.ok) return authz.response;
 
   const perfil = authz.perfil as AllowedPerfil;
+  const { error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
 
   if (perfil.rol === "super_admin") {
     return timing.apply(
@@ -2265,7 +2260,7 @@ export async function GET(request: Request) {
       "report_json",
       () =>
         getServerReadCached({
-          key: buildFinanceServerCacheKey("reports", perfil.id, scope, url.searchParams),
+          key: buildFinanceServerCacheKey("reports", perfil.rol, scope, url.searchParams),
           ttlMs: REPORT_CACHE_TTL_MS,
           tags: buildFinanceCacheTags("reports", scope),
           bypass: url.searchParams.get("fresh") === "1",

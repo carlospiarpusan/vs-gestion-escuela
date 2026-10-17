@@ -14,9 +14,17 @@ describe("dashboard-server-cache", () => {
     const paramsA = new URLSearchParams("page=1&pageSize=10&q=clase");
     const paramsB = new URLSearchParams("q=clase&pageSize=10&page=1");
 
-    expect(
-      buildDashboardListServerCacheKey("vehiculos", "user-1", scope, paramsA)
-    ).toBe(buildDashboardListServerCacheKey("vehiculos", "user-1", scope, paramsB));
+    expect(buildDashboardListServerCacheKey("vehiculos", "admin_escuela", scope, paramsA)).toBe(
+      buildDashboardListServerCacheKey("vehiculos", "admin_escuela", scope, paramsB)
+    );
+  });
+
+  it("distingue claves cuando cambia la audiencia compartida", () => {
+    const params = new URLSearchParams("page=1");
+
+    expect(buildDashboardListServerCacheKey("vehiculos", "admin_escuela", scope, params)).not.toBe(
+      buildDashboardListServerCacheKey("vehiculos", "admin_sede", scope, params)
+    );
   });
 
   it("detecta cuando se solicita un fetch fresco", () => {

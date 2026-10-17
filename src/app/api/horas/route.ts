@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
+import {
+  authorizeApiRequest,
+  getStaffReadSedeScope,
+  resolveEscuelaIdForRequest,
+} from "@/lib/api-auth";
 import { parseInteger, toNumber } from "@/lib/api-helpers";
 import {
   buildDashboardListServerCacheKey,
@@ -8,6 +12,7 @@ import {
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
+import { getCurrentMonthIndex, getCurrentYear } from "@/lib/date-utils";
 import type { Rol } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = [
@@ -61,10 +66,12 @@ export async function GET(request: Request) {
 
   const { perfil } = auth;
   const url = new URL(request.url);
-  const anio = parseInteger(url.searchParams.get("anio"), new Date().getFullYear(), 2023, 2100);
-  const mes = parseInteger(url.searchParams.get("mes"), new Date().getMonth(), 0, 11);
+  const anio = parseInteger(url.searchParams.get("anio"), getCurrentYear(), 2023, 2100);
+  const mes = parseInteger(url.searchParams.get("mes"), getCurrentMonthIndex(), 0, 11);
   const includeClosures = url.searchParams.get("include_closures") === "1";
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
+  const { sedeId, error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
 
   if (!escuelaId) {
     return NextResponse.json({
@@ -76,13 +83,20 @@ export async function GET(request: Request) {
 
   const scope = {
     escuelaId,
-    sedeId: perfil.sede_id,
+    sedeId,
   };
+  const isInstructor = perfil.rol === "instructor";
+  const cacheAudienceKey = isInstructor ? `${perfil.rol}:${perfil.id}` : perfil.rol;
   const { from, to } = getMonthRange(anio, mes);
   const pool = getServerDbPool();
 
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("horas-dashboard", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey(
+      "horas-dashboard",
+      cacheAudienceKey,
+      scope,
+      url.searchParams
+    ),
     ttlMs: CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("horas-dashboard", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),
@@ -94,20 +108,37 @@ export async function GET(request: Request) {
             from public.instructores
             where escuela_id = $1
               and estado = 'activo'
+              ${sedeId ? "and sede_id = $2" : ""}
+              ${isInstructor ? "and user_id = $2" : ""}
             order by nombre asc, apellidos asc
           `,
-          [escuelaId]
+          isInstructor ? [escuelaId, perfil.id] : sedeId ? [escuelaId, sedeId] : [escuelaId]
         ),
         pool.query<HoraRow>(
           `
-            select instructor_id, fecha, horas
-            from public.horas_trabajo
-            where escuela_id = $1
-              and fecha >= $2
-              and fecha <= $3
+            select ht.instructor_id, ht.fecha, ht.horas
+            from public.horas_trabajo ht
+            where ht.escuela_id = $1
+              and ht.fecha >= $2
+              and ht.fecha <= $3
+              ${sedeId ? "and ht.sede_id = $4" : ""}
+              ${
+                isInstructor
+                  ? `and exists (
+                      select 1
+                      from public.instructores i
+                      where i.id = ht.instructor_id
+                        and i.user_id = $4
+                    )`
+                  : ""
+              }
             order by fecha asc
           `,
-          [escuelaId, from, to]
+          isInstructor
+            ? [escuelaId, from, to, perfil.id]
+            : sedeId
+              ? [escuelaId, from, to, sedeId]
+              : [escuelaId, from, to]
         ),
         includeClosures
           ? pool.query<ClosureRow>(
@@ -123,13 +154,28 @@ export async function GET(request: Request) {
                   valor_hora,
                   monto_total,
                   updated_at
-                from public.cierres_horas_instructores
-                where escuela_id = $1
-                  and periodo_anio = $2
-                  and periodo_mes = $3
+                from public.cierres_horas_instructores c
+                where c.escuela_id = $1
+                  and c.periodo_anio = $2
+                  and c.periodo_mes = $3
+                  ${sedeId ? "and c.sede_id = $4" : ""}
+                  ${
+                    isInstructor
+                      ? `and exists (
+                          select 1
+                          from public.instructores i
+                          where i.id = c.instructor_id
+                            and i.user_id = $4
+                        )`
+                      : ""
+                  }
                 order by monto_total desc, updated_at desc
               `,
-              [escuelaId, anio, mes + 1]
+              isInstructor
+                ? [escuelaId, anio, mes + 1, perfil.id]
+                : sedeId
+                  ? [escuelaId, anio, mes + 1, sedeId]
+                  : [escuelaId, anio, mes + 1]
             )
           : Promise.resolve({ rows: [] as ClosureRow[] }),
       ]);

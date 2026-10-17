@@ -1,11 +1,12 @@
 "use client";
 
+import { APP_TIME_ZONE } from "@/lib/date-utils";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import Modal from "@/components/dashboard/Modal";
 import {
-  CheckCircle,
   Clock,
   FileSearch,
   Loader2,
@@ -221,6 +222,7 @@ export default function ArcoPage() {
               const estadoConf = ESTADO_CONFIG[row.estado];
               const TipoIcon = tipoConf.icon;
               const fechaCreacion = new Date(row.created_at).toLocaleDateString("es-CO", {
+                timeZone: APP_TIME_ZONE,
                 day: "2-digit",
                 month: "short",
                 year: "numeric",

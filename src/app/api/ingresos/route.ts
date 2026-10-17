@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, getStaffReadSedeScope } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { createServerTiming } from "@/lib/server-timing";
@@ -55,6 +55,8 @@ export async function GET(request: Request) {
   if (!authz.ok) return authz.response;
 
   const perfil = authz.perfil as AllowedPerfil;
+  const { error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
   const { url, from, to, page, pageSize, search, scope } = buildFinanceListContext(
     request,
     perfil,
@@ -92,7 +94,7 @@ export async function GET(request: Request) {
       "income_json",
       () =>
         getServerReadCached({
-          key: buildFinanceServerCacheKey("income", perfil.id, scope, url.searchParams),
+          key: buildFinanceServerCacheKey("income", perfil.rol, scope, url.searchParams),
           ttlMs: CACHE_TTL_MS,
           tags: buildFinanceCacheTags("income", scope),
           bypass: cacheBypass,

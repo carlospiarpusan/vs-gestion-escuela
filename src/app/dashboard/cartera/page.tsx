@@ -21,6 +21,7 @@ import {
   getMonthDateRange,
   MONTH_OPTIONS,
 } from "@/lib/accounting-dashboard";
+import { getCurrentMonthNumber } from "@/lib/date-utils";
 import { fetchPortfolioDashboard } from "@/lib/finance/portfolio-service";
 import type { PortfolioDashboardResponse, PortfolioPendingRow } from "@/lib/finance/types";
 import { downloadSpreadsheetWorkbook } from "@/lib/spreadsheet-export";
@@ -39,7 +40,7 @@ const labelCls = "apple-label";
 const PAGE_SIZE = 10;
 
 const currentYear = getCurrentAccountingYear();
-const currentMonth = new Date().getMonth() + 1;
+const currentMonth = getCurrentMonthNumber();
 const years = buildAccountingYears();
 
 const metodos: { value: MetodoPago; label: string }[] = [

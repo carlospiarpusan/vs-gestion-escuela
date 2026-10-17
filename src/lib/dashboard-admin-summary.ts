@@ -1,4 +1,6 @@
 import type { PlatformSchoolOverview } from "@/lib/platform-school-overviews";
+import { getTimeZoneDateParts } from "@/lib/date-utils";
+import { getDateTimeFormatter } from "@/lib/intl-formatters";
 
 export interface AdminDashboardStats {
   alumnos: number;
@@ -104,30 +106,14 @@ export type DashboardMonthRange = {
 
 export const DASHBOARD_TIME_ZONE = "America/Bogota";
 export const DASHBOARD_SUMMARY_CACHE_TTL_MS = 120 * 1000;
-export const DASHBOARD_CATALOG_CACHE_TTL_MS = 120 * 1000;
+export const DASHBOARD_CATALOG_CACHE_TTL_MS = 300 * 1000;
 
 function formatDateOnly(year: number, month: number, day: number) {
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function getTimeZoneDateParts(date: Date, timeZone: string) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-
-  const parts = formatter.formatToParts(date);
-  const year = Number(parts.find((part) => part.type === "year")?.value ?? 0);
-  const month = Number(parts.find((part) => part.type === "month")?.value ?? 0);
-  const day = Number(parts.find((part) => part.type === "day")?.value ?? 0);
-
-  return { year, month, day };
-}
-
 function formatMonthLabel(year: number, month: number, timeZone: string) {
-  return new Intl.DateTimeFormat("es-CO", {
+  return getDateTimeFormatter("es-CO", {
     timeZone,
     month: "long",
     year: "numeric",

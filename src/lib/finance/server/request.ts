@@ -1,5 +1,5 @@
 import { resolveEscuelaIdForRequest } from "@/lib/api-auth";
-import { serializeSearchParams } from "@/lib/dashboard-client-cache";
+import { serializeSearchParams, STAFF_SCOPE_CACHE_VERSION } from "@/lib/dashboard-client-cache";
 import { normalizeUuid } from "@/lib/dashboard-scope";
 import {
   getCurrentMonthRange,
@@ -57,14 +57,15 @@ export function buildFinanceListContext(
 
 export function buildFinanceServerCacheKey(
   kind: string,
-  perfilId: string,
+  audienceKey: string,
   scope: ReportScope,
   params: URLSearchParams
 ) {
   return [
     "finance-route",
+    STAFF_SCOPE_CACHE_VERSION,
     kind,
-    perfilId,
+    audienceKey || "shared",
     scope.escuelaId || "global",
     scope.sedeId || "all",
     serializeSearchParams(params),

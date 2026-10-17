@@ -7,6 +7,13 @@ import {
   ensureSedeScope,
   parseJsonBody,
 } from "@/lib/api-auth";
+import { getCurrentMonthNumber, getCurrentYear, isValidDateOnly } from "@/lib/date-utils";
+import {
+  createPayroll,
+  updatePayroll,
+  deletePayroll,
+  PayrollMutationError,
+} from "@/lib/payroll-mutations";
 import { buildLegacyInstructorPayrollRows } from "@/lib/payroll";
 import type { InstructorPayrollClosure } from "@/lib/payroll";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
@@ -17,16 +24,6 @@ import type { EstadoPagoGasto, Rol } from "@/types/database";
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
 
 // ── Tipo para updates de nómina ──────────────────────────────────────
-type NominaUpdate = {
-  estado?: string;
-  fecha_pago?: string | null;
-  notas?: string | null;
-  salario_base?: number;
-  total_devengado?: number;
-  total_deducciones?: number;
-  neto_pagar?: number;
-};
-
 type GastoLegacyRow = {
   id: string;
   proveedor: string | null;
@@ -38,7 +35,11 @@ type GastoLegacyRow = {
 // ── Helper: invalidar cache de nóminas ───────────────────────────────
 function revalidateNominasCache(escuelaId: string, sedeId?: string | null) {
   const scope = { escuelaId, sedeId };
-  revalidateServerReadCache(buildDashboardListCacheTags("nominas", scope));
+  try {
+    revalidateServerReadCache(buildDashboardListCacheTags("nominas", scope));
+  } catch {
+    console.error("nominas.cache.failed");
+  }
 }
 
 // ── GET: listar nóminas de un periodo ────────────────────────────────
@@ -49,10 +50,21 @@ export async function GET(request: Request) {
   const perfil = authz.perfil;
   const url = new URL(request.url);
   const escuelaId = perfil.escuela_id ?? url.searchParams.get("escuela_id");
-  const selectedSedeId = url.searchParams.get("sede_id") ?? perfil.sede_id;
-  const anio = Number(url.searchParams.get("anio")) || new Date().getFullYear();
-  const mes = Number(url.searchParams.get("mes")) || new Date().getMonth() + 1;
+  const selectedSedeId = url.searchParams.get("sede_id") || perfil.sede_id;
+  const anio = Number(url.searchParams.get("anio")) || getCurrentYear();
+  const mes = Number(url.searchParams.get("mes")) || getCurrentMonthNumber();
   const empleadoTipo = url.searchParams.get("tipo"); // "instructor" | "administrativo" | null
+
+  if (
+    !Number.isInteger(anio) ||
+    anio < 2020 ||
+    anio > 2100 ||
+    !Number.isInteger(mes) ||
+    mes < 1 ||
+    mes > 12
+  ) {
+    return NextResponse.json({ error: "Periodo de nómina inválido." }, { status: 400 });
+  }
 
   if (!escuelaId) {
     return NextResponse.json({ error: "Selecciona una escuela activa." }, { status: 400 });
@@ -63,8 +75,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: scopeErr }, { status: 403 });
   }
 
-  if (selectedSedeId) {
-    const sedeErr = ensureSedeScope(perfil, selectedSedeId);
+  if (selectedSedeId || (perfil.rol !== "super_admin" && perfil.rol !== "admin_escuela")) {
+    const sedeErr = ensureSedeScope(perfil, selectedSedeId || "");
     if (sedeErr) {
       return NextResponse.json({ error: sedeErr }, { status: 403 });
     }
@@ -219,11 +231,12 @@ export async function GET(request: Request) {
 }
 
 // ── Schema de validación para crear/editar nómina ────────────────────
+const payrollAmountSchema = z.number().min(0).max(9_999_999_999.99).multipleOf(0.01);
 const conceptoSchema = z.object({
   tipo: z.enum(["devengo", "deduccion"]),
-  concepto: z.string().min(1).max(100),
+  concepto: z.string().trim().min(1).max(100),
   descripcion: z.string().max(500).nullable().optional(),
-  valor: z.number().min(0),
+  valor: payrollAmountSchema,
 });
 
 const nominaCreateSchema = z.object({
@@ -235,296 +248,74 @@ const nominaCreateSchema = z.object({
   periodo_anio: z.number().int().min(2020).max(2100),
   periodo_mes: z.number().int().min(1).max(12),
   tipo_contrato: z.enum(["prestacion_servicios", "contrato_laboral"]),
-  salario_base: z.number().min(0),
-  conceptos: z.array(conceptoSchema).default([]),
+  salario_base: payrollAmountSchema,
+  conceptos: z.array(conceptoSchema).max(100).default([]),
   notas: z.string().max(500).nullable().optional(),
 });
 
-// ── POST: crear una nómina nueva ─────────────────────────────────────
+function mutationError(error: unknown) {
+  if (error instanceof PayrollMutationError) {
+    return NextResponse.json({ error: error.message }, { status: error.status });
+  }
+  const code = (error as { code?: unknown } | null)?.code;
+  console.error("nominas.mutation.failed", {
+    code: typeof code === "string" && /^[A-Za-z0-9_]{1,64}$/.test(code) ? code : "unknown",
+  });
+  return NextResponse.json(
+    { error: "No se pudo guardar la nómina. No se aplicaron cambios." },
+    { status: 500 }
+  );
+}
+
 export async function POST(request: Request) {
   const authz = await authorizeApiRequest(ALLOWED_ROLES);
   if (!authz.ok) return authz.response;
-
   const parsed = await parseJsonBody(request, nominaCreateSchema);
   if (!parsed.ok) return parsed.response;
-
-  const body = parsed.data;
-  const perfil = authz.perfil;
-
-  const scopeErr = ensureSchoolScope(perfil, body.escuela_id);
-  if (scopeErr) {
-    return NextResponse.json({ error: scopeErr }, { status: 403 });
+  try {
+    const nomina = await createPayroll(parsed.data, authz.perfil);
+    revalidateNominasCache(nomina.escuela_id, nomina.sede_id);
+    return NextResponse.json({ nomina }, { status: 201 });
+  } catch (error) {
+    return mutationError(error);
   }
-
-  const sedeErr = ensureSedeScope(perfil, body.sede_id);
-  if (sedeErr) {
-    return NextResponse.json({ error: sedeErr }, { status: 403 });
-  }
-
-  // Calcular totales
-  const totalDevengado =
-    body.salario_base +
-    body.conceptos.filter((c) => c.tipo === "devengo").reduce((sum, c) => sum + c.valor, 0);
-  const totalDeducciones = body.conceptos
-    .filter((c) => c.tipo === "deduccion")
-    .reduce((sum, c) => sum + c.valor, 0);
-  const netoPagar = totalDevengado - totalDeducciones;
-
-  const supabase = buildSupabaseAdminClient();
-
-  // Verificar que no exista una nómina duplicada
-  const { data: existing } = await supabase
-    .from("nominas")
-    .select("id")
-    .eq("escuela_id", body.escuela_id)
-    .eq("empleado_tipo", body.empleado_tipo)
-    .eq("empleado_id", body.empleado_id)
-    .eq("periodo_anio", body.periodo_anio)
-    .eq("periodo_mes", body.periodo_mes)
-    .maybeSingle();
-
-  if (existing) {
-    return NextResponse.json(
-      { error: "Ya existe una nómina para este empleado en el periodo seleccionado." },
-      { status: 409 }
-    );
-  }
-
-  const { data: nomina, error: insertError } = await supabase
-    .from("nominas")
-    .insert({
-      escuela_id: body.escuela_id,
-      sede_id: body.sede_id,
-      empleado_tipo: body.empleado_tipo,
-      empleado_id: body.empleado_id,
-      empleado_nombre: body.empleado_nombre,
-      periodo_anio: body.periodo_anio,
-      periodo_mes: body.periodo_mes,
-      tipo_contrato: body.tipo_contrato,
-      salario_base: body.salario_base,
-      total_devengado: totalDevengado,
-      total_deducciones: totalDeducciones,
-      neto_pagar: netoPagar,
-      estado: "borrador",
-      notas: body.notas ?? null,
-      created_by: perfil.id,
-    })
-    .select()
-    .single();
-
-  if (insertError || !nomina) {
-    console.error("[API NOMINAS POST]", insertError);
-    return NextResponse.json({ error: "No se pudo crear la nómina." }, { status: 500 });
-  }
-
-  // Insertar salario base como concepto de devengo
-  const conceptos = [
-    {
-      nomina_id: nomina.id,
-      tipo: "devengo" as const,
-      concepto: body.empleado_tipo === "instructor" ? "Honorarios" : "Salario base",
-      descripcion: null,
-      valor: body.salario_base,
-    },
-    ...body.conceptos.map((c) => ({
-      nomina_id: nomina.id,
-      tipo: c.tipo,
-      concepto: c.concepto,
-      descripcion: c.descripcion ?? null,
-      valor: c.valor,
-    })),
-  ];
-
-  if (conceptos.length > 0) {
-    const { error: conceptosError } = await supabase.from("nomina_conceptos").insert(conceptos);
-
-    if (conceptosError) {
-      console.error("[API NOMINAS POST conceptos]", conceptosError);
-    }
-  }
-
-  revalidateNominasCache(body.escuela_id, body.sede_id);
-
-  return NextResponse.json({ nomina }, { status: 201 });
 }
 
-// ── Schema para actualizar estado ────────────────────────────────────
 const nominaUpdateSchema = z.object({
   nomina_id: z.string().uuid(),
   estado: z.enum(["borrador", "aprobada", "pagada", "anulada"]).optional(),
-  fecha_pago: z.string().nullable().optional(),
-  salario_base: z.number().min(0).optional(),
-  conceptos: z.array(conceptoSchema).optional(),
+  fecha_pago: z.string().refine(isValidDateOnly, "Fecha de pago inválida.").nullable().optional(),
+  salario_base: payrollAmountSchema.optional(),
+  conceptos: z.array(conceptoSchema).max(100).optional(),
   notas: z.string().max(500).nullable().optional(),
 });
 
-// ── PATCH: actualizar nómina (estado, pago, conceptos) ───────────────
 export async function PATCH(request: Request) {
   const authz = await authorizeApiRequest(ALLOWED_ROLES);
   if (!authz.ok) return authz.response;
-
   const parsed = await parseJsonBody(request, nominaUpdateSchema);
   if (!parsed.ok) return parsed.response;
-
-  const body = parsed.data;
-  const perfil = authz.perfil;
-  const supabase = buildSupabaseAdminClient();
-
-  // Cargar nómina actual
-  const { data: nomina } = await supabase
-    .from("nominas")
-    .select("*")
-    .eq("id", body.nomina_id)
-    .single();
-
-  if (!nomina) {
-    return NextResponse.json({ error: "Nómina no encontrada." }, { status: 404 });
+  try {
+    const nomina = await updatePayroll(parsed.data, authz.perfil);
+    revalidateNominasCache(nomina.escuela_id, nomina.sede_id);
+    return NextResponse.json({ nomina });
+  } catch (error) {
+    return mutationError(error);
   }
-
-  const scopeErr = ensureSchoolScope(perfil, nomina.escuela_id);
-  if (scopeErr) {
-    return NextResponse.json({ error: scopeErr }, { status: 403 });
-  }
-
-  const updates: NominaUpdate = {};
-
-  if (body.estado !== undefined) {
-    updates.estado = body.estado;
-  }
-  if (body.fecha_pago !== undefined) {
-    updates.fecha_pago = body.fecha_pago;
-  }
-  if (body.notas !== undefined) {
-    updates.notas = body.notas;
-  }
-
-  // Si se actualizan conceptos, recalcular totales
-  if (body.conceptos !== undefined || body.salario_base !== undefined) {
-    const salarioBase = body.salario_base ?? nomina.salario_base;
-    updates.salario_base = salarioBase;
-
-    if (body.conceptos) {
-      // Reemplazar conceptos — verificar que el delete fue exitoso
-      const { error: deleteErr } = await supabase
-        .from("nomina_conceptos")
-        .delete()
-        .eq("nomina_id", body.nomina_id);
-
-      if (deleteErr) {
-        console.error("[API NOMINAS PATCH delete conceptos]", deleteErr);
-        return NextResponse.json(
-          { error: "No se pudieron actualizar los conceptos." },
-          { status: 500 }
-        );
-      }
-
-      const tipoEmpleado = nomina.empleado_tipo;
-      const nuevosConceptos = [
-        {
-          nomina_id: body.nomina_id,
-          tipo: "devengo" as const,
-          concepto: tipoEmpleado === "instructor" ? "Honorarios" : "Salario base",
-          descripcion: null,
-          valor: salarioBase,
-        },
-        ...body.conceptos.map((c) => ({
-          nomina_id: body.nomina_id,
-          tipo: c.tipo,
-          concepto: c.concepto,
-          descripcion: c.descripcion ?? null,
-          valor: c.valor,
-        })),
-      ];
-
-      const { error: insertErr } = await supabase.from("nomina_conceptos").insert(nuevosConceptos);
-
-      if (insertErr) {
-        console.error("[API NOMINAS PATCH insert conceptos]", insertErr);
-        return NextResponse.json(
-          { error: "No se pudieron guardar los nuevos conceptos." },
-          { status: 500 }
-        );
-      }
-
-      const totalDevengado =
-        salarioBase +
-        body.conceptos.filter((c) => c.tipo === "devengo").reduce((sum, c) => sum + c.valor, 0);
-      const totalDeducciones = body.conceptos
-        .filter((c) => c.tipo === "deduccion")
-        .reduce((sum, c) => sum + c.valor, 0);
-
-      updates.total_devengado = totalDevengado;
-      updates.total_deducciones = totalDeducciones;
-      updates.neto_pagar = totalDevengado - totalDeducciones;
-    }
-  }
-
-  if (Object.keys(updates).length === 0) {
-    return NextResponse.json({ error: "No se enviaron cambios." }, { status: 400 });
-  }
-
-  const { data: updated, error: updateError } = await supabase
-    .from("nominas")
-    .update(updates)
-    .eq("id", body.nomina_id)
-    .select("*, nomina_conceptos(*)")
-    .single();
-
-  if (updateError) {
-    console.error("[API NOMINAS PATCH]", updateError);
-    return NextResponse.json({ error: "No se pudo actualizar la nómina." }, { status: 500 });
-  }
-
-  revalidateNominasCache(nomina.escuela_id, nomina.sede_id);
-
-  return NextResponse.json({ nomina: updated });
 }
 
-// ── DELETE: eliminar nómina en borrador ──────────────────────────────
 export async function DELETE(request: Request) {
   const authz = await authorizeApiRequest(ALLOWED_ROLES);
   if (!authz.ok) return authz.response;
-
-  const url = new URL(request.url);
-  const nominaId = url.searchParams.get("id");
-
-  if (!nominaId) {
-    return NextResponse.json({ error: "ID de nómina requerido." }, { status: 400 });
+  const parsed = z.string().uuid().safeParse(new URL(request.url).searchParams.get("id"));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "ID de nómina inválido." }, { status: 400 });
   }
-
-  const perfil = authz.perfil;
-  const supabase = buildSupabaseAdminClient();
-
-  const { data: nomina } = await supabase
-    .from("nominas")
-    .select("id, escuela_id, sede_id, estado")
-    .eq("id", nominaId)
-    .single();
-
-  if (!nomina) {
-    return NextResponse.json({ error: "Nómina no encontrada." }, { status: 404 });
+  try {
+    const nomina = await deletePayroll(parsed.data, authz.perfil);
+    revalidateNominasCache(nomina.escuela_id, nomina.sede_id);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return mutationError(error);
   }
-
-  const scopeErr = ensureSchoolScope(perfil, nomina.escuela_id);
-  if (scopeErr) {
-    return NextResponse.json({ error: scopeErr }, { status: 403 });
-  }
-
-  if (nomina.estado !== "borrador") {
-    return NextResponse.json(
-      { error: "Solo se pueden eliminar nóminas en estado borrador." },
-      { status: 400 }
-    );
-  }
-
-  const { error: deleteError } = await supabase.from("nominas").delete().eq("id", nominaId);
-
-  if (deleteError) {
-    console.error("[API NOMINAS DELETE]", deleteError);
-    return NextResponse.json({ error: "No se pudo eliminar la nómina." }, { status: 500 });
-  }
-
-  revalidateNominasCache(nomina.escuela_id, nomina.sede_id);
-
-  return NextResponse.json({ ok: true });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { buildCaleCategoryTargets, CALE_CATEGORY_BLUEPRINT } from "@/lib/cale";
 import { getServerDbPool } from "@/lib/server-db";
+import { getCurrentYear } from "@/lib/date-utils";
 import type {
   CaleAdminAnalyticsResponse,
   CaleAnalyticsAttemptRow,
@@ -23,9 +24,9 @@ type AllowedPerfil = {
 };
 
 function parseYear(value: string | null) {
-  if (!value || value === "current") return String(new Date().getFullYear());
+  if (!value || value === "current") return String(getCurrentYear());
   if (value === "all") return "all";
-  return /^\d{4}$/.test(value) ? value : String(new Date().getFullYear());
+  return /^\d{4}$/.test(value) ? value : String(getCurrentYear());
 }
 
 function parseMonth(value: string | null) {

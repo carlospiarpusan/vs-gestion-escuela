@@ -114,12 +114,6 @@ export const ROLE_CAPABILITY_MODULES: RoleCapabilityModuleDescriptor[] = [
     visibleInAudit: true,
   },
   {
-    id: "classes",
-    label: "Clases",
-    description: "Programación y operación diaria de clases.",
-    visibleInAudit: true,
-  },
-  {
     id: "vehicles",
     label: "Vehículos",
     description: "Flota, disponibilidad y mantenimientos.",
@@ -233,7 +227,7 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
     ],
     cannot: [
       "No accede a datos financieros, alumnos individuales ni informes operativos de las escuelas.",
-      "No opera el día a día de alumnos, clases, ingresos o personal interno como si fuera una escuela.",
+      "No opera el día a día de alumnos, ingresos o personal interno como si fuera una escuela.",
     ],
   },
   admin_escuela: {
@@ -245,7 +239,7 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
       "Dirige la operación completa de su escuela y el equipo interno, sin alcance global de plataforma.",
     can: [
       "Gestiona sedes y administrativos de su escuela.",
-      "Opera alumnos, clases, flota, ingresos, gastos y automatización dentro de su escuela.",
+      "Opera alumnos, flota, ingresos, gastos y automatización dentro de su escuela.",
       "Mantiene evidencia de cumplimiento interno, RNBD, respaldos, incidentes y retención.",
       "Puede ajustar valor hora y generar cierres mensuales desde Horas.",
     ],
@@ -263,7 +257,7 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
     description:
       "Opera el día a día de su sede con alcance restringido y sin control estructural de escuela.",
     can: [
-      "Gestiona alumnos, clases, vehículos, horas, ingresos, gastos y automatización de su sede.",
+      "Gestiona alumnos, vehículos, horas, ingresos, gastos y automatización de su sede.",
       "Consulta sedes de su escuela y administrativos de su sede.",
       "Puede ajustar valor hora y generar cierres mensuales dentro de su alcance.",
     ],
@@ -281,7 +275,7 @@ export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
     description:
       "Rol operativo para ejecución diaria y finanzas del día a día, sin permisos estructurales.",
     can: [
-      "Gestiona alumnos, clases, ingresos, gastos y bitácora operativa de su sede.",
+      "Gestiona alumnos, ingresos, gastos y bitácora operativa de su sede.",
       "Puede generar cierres mensuales desde Horas, registrar nómina y sincronizar facturas.",
       "Consulta exámenes, cartera, caja diaria e informes para seguimiento operativo.",
     ],
@@ -358,7 +352,12 @@ const AUDITED_ROLE_CAPABILITY_MATRIX: Record<
   admin_escuela: {
     home: { state: "readonly", scope: "school", actions: ["view"] },
     schools: NONE_CAPABILITY,
-    subscriptions: NONE_CAPABILITY,
+    subscriptions: {
+      state: "scoped",
+      scope: "school",
+      actions: ["view", "configure"],
+      note: "Gestiona la suscripción propia, inicia cobros en Wompi y programa cambios para el siguiente ciclo.",
+    },
     branches: {
       state: "full",
       scope: "school",

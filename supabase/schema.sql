@@ -222,6 +222,7 @@ create table public.alumnos (
   dni text not null,
   tipo_documento text check (tipo_documento in ('CC', 'CE', 'TI', 'PAS')),
   email text,
+  datos_facturacion jsonb check (datos_facturacion is null or jsonb_typeof(datos_facturacion) = 'object'),
   telefono text not null,
   lugar_expedicion_documento text,
   fecha_nacimiento date,
@@ -498,8 +499,8 @@ create table public.ingresos (
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
   sede_id uuid references public.sedes(id) on delete cascade not null,
   user_id uuid references public.perfiles(id) on delete cascade not null,
-  alumno_id uuid references public.alumnos(id) on delete set null,
-  matricula_id uuid references public.matriculas_alumno(id) on delete set null,
+  alumno_id uuid references public.alumnos(id) on delete cascade,
+  matricula_id uuid references public.matriculas_alumno(id) on delete cascade,
   categoria text not null check (categoria in (
     'matricula', 'mensualidad', 'clase_suelta', 'examen_teorico',
     'examen_practico', 'examen_aptitud', 'material', 'tasas_dgt', 'otros'
@@ -864,6 +865,8 @@ alter table public.preguntas_examen enable row level security;
 alter table public.respuestas_examen enable row level security;
 alter table public.examenes_cale_preguntas enable row level security;
 alter table public.actividad_log enable row level security;
+alter table public.api_rate_limits enable row level security;
+revoke all on table public.api_rate_limits from anon, authenticated;
 alter table public.mantenimiento_vehiculos enable row level security;
 -- alter table public.cursos enable row level security;
 -- alter table public.sede_cursos enable row level security;

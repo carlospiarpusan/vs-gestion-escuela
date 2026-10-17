@@ -1,26 +1,92 @@
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { getContractTemplateTypeFromCategories } from "@/lib/contracts";
+import type { Perfil, Rol } from "@/types/database";
 import PrintButton from "./PrintButton";
 
-async function getSupabase() {
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  if (serviceKey) {
-    return createClient(url, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-  }
+type ContractPerfil = Pick<Perfil, "id" | "rol" | "escuela_id" | "sede_id" | "activo">;
+
+type ContractScope = {
+  id: string;
+  escuela_id: string;
+  sede_id: string;
+  alumno_id: string;
+};
+
+const CONTRACT_PRINT_ROLES: Rol[] = [
+  "super_admin",
+  "admin_escuela",
+  "admin_sede",
+  "administrativo",
+  "recepcion",
+];
+
+async function getSessionSupabase() {
   const cookieStore = await cookies();
-  return createServerClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll() {},
       },
-      setAll() {},
-    },
+    }
+  );
+}
+
+function getAdminSupabase() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  if (!serviceKey || !url) {
+    throw new Error("Configuración del servidor incompleta.");
+  }
+
+  return createClient(url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
+}
+
+function canPrintContract(perfil: ContractPerfil, scope: ContractScope) {
+  if (!perfil.activo || !CONTRACT_PRINT_ROLES.includes(perfil.rol)) {
+    return false;
+  }
+
+  if (perfil.rol === "super_admin") {
+    return true;
+  }
+
+  if (!perfil.escuela_id || perfil.escuela_id !== scope.escuela_id) {
+    return false;
+  }
+
+  if (perfil.rol === "admin_escuela") {
+    return true;
+  }
+
+  return Boolean(perfil.sede_id && perfil.sede_id === scope.sede_id);
+}
+
+function applyContractScope<T extends { eq: (column: string, value: string) => T }>(
+  query: T,
+  perfil: ContractPerfil
+) {
+  if (perfil.rol === "super_admin") {
+    return query;
+  }
+
+  let scopedQuery = query.eq("escuela_id", perfil.escuela_id!);
+
+  if (perfil.rol !== "admin_escuela") {
+    scopedQuery = scopedQuery.eq("sede_id", perfil.sede_id!);
+  }
+
+  return scopedQuery;
 }
 
 function replaceVariables(text: string, vars: Record<string, string>): string {
@@ -46,19 +112,52 @@ function renderTextToJsx(text: string) {
 
 export default async function PrintContratoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: matriculaId } = await params;
-  const supabase = await getSupabase();
+  const sessionSupabase = await getSessionSupabase();
+  const {
+    data: { user },
+    error: userError,
+  } = await sessionSupabase.auth.getUser();
 
-  const { data: matricula, error } = await supabase
+  if (userError || !user) {
+    redirect("/login");
+  }
+
+  const { data: perfil } = await sessionSupabase
+    .from("perfiles")
+    .select("id, rol, escuela_id, sede_id, activo")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (!perfil) {
+    return notFound();
+  }
+
+  const supabase = getAdminSupabase();
+  const { data: scope, error: scopeError } = await supabase
     .from("matriculas_alumno")
-    .select(
-      `
+    .select("id, escuela_id, sede_id, alumno_id")
+    .eq("id", matriculaId)
+    .maybeSingle();
+
+  if (scopeError || !scope || !canPrintContract(perfil, scope)) {
+    return notFound();
+  }
+
+  const scopedMatriculaQuery = applyContractScope(
+    supabase
+      .from("matriculas_alumno")
+      .select(
+        `
       *,
       alumno:alumnos(nombre, apellidos, dni, tipo_documento, telefono, direccion, email),
       sede:sedes(nombre, direccion, email, telefono, escuela:escuelas(id, nombre, cif, telefono, direccion))
     `
-    )
-    .eq("id", matriculaId)
-    .single();
+      )
+      .eq("id", matriculaId),
+    perfil
+  );
+
+  const { data: matricula, error } = await scopedMatriculaQuery.single();
 
   if (error || !matricula) {
     return notFound();
@@ -69,6 +168,7 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
   const alumno = m.alumno;
   const escuela = m.sede?.escuela;
   const escuelaId = escuela?.id;
+  const contractTemplateType = getContractTemplateTypeFromCategories(m.categorias);
 
   // Load contract config and template from DB
   let dbConfig: Record<string, string | null> | null = null;
@@ -84,15 +184,19 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
         .maybeSingle(),
       supabase
         .from("plantillas_contrato_escuela")
-        .select("html_plantilla")
+        .select("tipo_plantilla, html_plantilla")
         .eq("escuela_id", escuelaId)
-        .eq("tipo_plantilla", "vehiculo")
-        .maybeSingle(),
+        .in("tipo_plantilla", Array.from(new Set([contractTemplateType, "vehiculo"]))),
     ]);
 
     if (configRes.data) dbConfig = configRes.data;
-    if (plantillaRes.data?.html_plantilla) {
-      const parts = plantillaRes.data.html_plantilla.split("\n---PAGE_BREAK---\n");
+    const plantillas = plantillaRes.data ?? [];
+    const selectedTemplate =
+      plantillas.find((plantilla) => plantilla.tipo_plantilla === contractTemplateType) ??
+      plantillas.find((plantilla) => plantilla.tipo_plantilla === "vehiculo");
+
+    if (selectedTemplate?.html_plantilla) {
+      const parts = selectedTemplate.html_plantilla.split("\n---PAGE_BREAK---\n");
       templatePage1 = parts[0] || null;
       templatePage2 = parts[1] || null;
     }

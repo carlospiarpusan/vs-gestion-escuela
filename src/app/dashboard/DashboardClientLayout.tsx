@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import DashboardNavLink from "@/components/dashboard/DashboardNavLink";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -25,6 +25,8 @@ import { getDashboardPageMeta, getDashboardPrimaryMobileModules } from "@/lib/da
 import { renderDashboardIcon } from "@/components/dashboard/dashboard-icons";
 import { getPasswordValidationError } from "@/lib/password-policy";
 import { DEPARTAMENTOS_COLOMBIA } from "@/lib/colombia";
+import { getSchoolSubscriptionStatusLabel } from "@/lib/school-subscription";
+import { canManageVsBilling } from "@/lib/vs-billing/scope";
 import {
   THEME_CHANGE_EVENT,
   applyThemePreference,
@@ -44,9 +46,15 @@ const modalErrorCls =
 const visibilityToggleCls =
   "absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--gray-500)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]";
 
-export default function DashboardClientLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardClientLayout({
+  children,
+  vsBillingEnabled = false,
+}: {
+  children: React.ReactNode;
+  vsBillingEnabled?: boolean;
+}) {
   const isMobile = useIsMobileVariant();
-  const { user, perfil, loading, error, logout } = useAuth();
+  const { user, perfil, activeEscuelaId, subscriptionAccess, loading, error, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -152,6 +160,14 @@ export default function DashboardClientLayout({ children }: { children: React.Re
       router.replace(getDashboardFallbackPath(perfil.rol));
     }
   }, [pathname, perfil?.rol, router]);
+
+  useEffect(() => {
+    if (subscriptionAccess?.status !== "suspended") return;
+    if (pathname === "/dashboard/suscripciones" || pathname.startsWith("/dashboard/mi-cuenta")) {
+      return;
+    }
+    router.replace("/dashboard/suscripciones?blocked=1");
+  }, [pathname, router, subscriptionAccess?.status]);
 
   const abrirCompletarPerfil = async () => {
     if (!user) return;
@@ -285,6 +301,31 @@ export default function DashboardClientLayout({ children }: { children: React.Re
   const nombre = perfil?.nombre || user.user_metadata?.nombre || "Usuario";
   const currentPageMeta = getDashboardPageMeta(pathname);
   const mobilePrimaryNav = getDashboardPrimaryMobileModules(perfil?.rol);
+  const commercialBanner =
+    subscriptionAccess && subscriptionAccess.status !== "active"
+      ? {
+          title: getSchoolSubscriptionStatusLabel(subscriptionAccess.status),
+          description:
+            subscriptionAccess.status === "trialing"
+              ? "La escuela está en prueba. Conviene activar el plan antes de que venza para evitar el modo solo lectura."
+              : subscriptionAccess.status === "grace"
+                ? "El pago del ciclo ya venció. La escuela sigue operando durante la gracia, pero debe pagar antes del corte."
+                : subscriptionAccess.status === "pending_payment"
+                  ? "Hay un pago de Wompi en validación. La activación definitiva depende de la confirmación del evento."
+                  : subscriptionAccess.status === "read_only"
+                    ? "La escuela puede consultar información, pero no crear ni editar registros hasta reactivar el plan."
+                    : "La escuela quedó suspendida por falta de pago. Solo se mantiene acceso al estado comercial y a la cuenta.",
+          classes:
+            subscriptionAccess.status === "trialing"
+              ? "border-blue-200 bg-blue-50/90 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300"
+              : subscriptionAccess.status === "grace" ||
+                  subscriptionAccess.status === "pending_payment"
+                ? "border-amber-200 bg-amber-50/90 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
+                : subscriptionAccess.status === "read_only"
+                  ? "border-zinc-200 bg-zinc-50/90 text-zinc-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-200"
+                  : "border-rose-200 bg-rose-50/90 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300",
+        }
+      : null;
 
   return (
     <div
@@ -293,6 +334,9 @@ export default function DashboardClientLayout({ children }: { children: React.Re
       }`}
     >
       <Sidebar
+        vsBillingEnabled={Boolean(
+          perfil && canManageVsBilling(vsBillingEnabled, perfil, activeEscuelaId)
+        )}
         rol={perfil?.rol}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -314,7 +358,11 @@ export default function DashboardClientLayout({ children }: { children: React.Re
           isMobile
             ? "h-[100dvh] min-h-[100dvh] overflow-y-auto"
             : "min-h-screen lg:h-dvh lg:overflow-y-auto"
-        } ${isMobile ? "pb-[calc(5.5rem+env(safe-area-inset-bottom))]" : ""}`}
+        } ${
+          isMobile
+            ? "pb-[calc(var(--dashboard-mobile-tabbar-height)+var(--dashboard-mobile-browser-bar-offset)+env(safe-area-inset-bottom)+1rem)]"
+            : ""
+        }`}
       >
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute top-[-8rem] left-[-10rem] h-72 w-72 rounded-full bg-[color-mix(in_srgb,var(--blue-apple)_12%,transparent)] blur-3xl" />
@@ -342,6 +390,19 @@ export default function DashboardClientLayout({ children }: { children: React.Re
           </div>
         )}
 
+        {commercialBanner && (
+          <div className={`relative z-20 ${isMobile ? "px-3 pt-3" : "px-3 pt-4 sm:px-6 sm:pt-5"}`}>
+            <div
+              className={`mx-auto w-full max-w-[1520px] border px-4 py-3 shadow-sm ${
+                isMobile ? "rounded-[20px]" : "rounded-[24px]"
+              } ${commercialBanner.classes}`}
+            >
+              <p className="text-sm font-semibold">{commercialBanner.title}</p>
+              <p className="mt-1 text-sm">{commercialBanner.description}</p>
+            </div>
+          </div>
+        )}
+
         <main
           className={`relative z-10 flex-1 ${
             isMobile ? "px-3 pt-3.5" : "px-3 pt-5 pb-6 sm:px-6 sm:pb-8"
@@ -353,13 +414,13 @@ export default function DashboardClientLayout({ children }: { children: React.Re
         </main>
 
         {isMobile && (
-          <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <div className="fixed inset-x-0 [bottom:var(--dashboard-mobile-browser-bar-offset)] z-40 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
             <nav className="apple-toolbar mx-auto flex max-w-[560px] items-center gap-1 overflow-x-auto rounded-[26px] px-2 py-2 shadow-[0_22px_44px_rgba(15,23,42,0.18)] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {mobilePrimaryNav.map((item) => {
                 const active = currentPageMeta.module?.id === item.id;
 
                 return (
-                  <Link
+                  <DashboardNavLink
                     key={item.id}
                     href={item.href}
                     className={`flex min-w-[4.45rem] shrink-0 flex-col items-center gap-1 rounded-[18px] px-2 py-2 text-[11px] font-semibold transition-colors ${
@@ -370,7 +431,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
                   >
                     {renderDashboardIcon(item.icon, 18)}
                     <span className="truncate">{item.shortLabel}</span>
-                  </Link>
+                  </DashboardNavLink>
                 );
               })}
 

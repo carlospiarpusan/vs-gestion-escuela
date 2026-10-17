@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
@@ -11,6 +12,16 @@ import PageScaffold from "@/components/dashboard/PageScaffold";
 import SummaryRow from "@/components/dashboard/SummaryRow";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import {
+  normalizeStoredCourseCategories,
+  toggleCourseCategorySelection,
+} from "@/lib/course-categories";
+import {
+  APP_TIME_ZONE,
+  formatDateOnlyForDisplay,
+  getCurrentYear,
+  getTodayDateString,
+} from "@/lib/date-utils";
+import {
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
@@ -18,18 +29,25 @@ import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
 import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type { Ingreso, MetodoPago, TipoRegistroAlumno } from "@/types/database";
-import { BookOpen, DollarSign, Plus, Printer, UserRound, CalendarDays, X } from "lucide-react";
+import {
+  BookOpen,
+  DollarSign,
+  Plus,
+  Printer,
+  UserRound,
+  CalendarDays,
+  X,
+  ReceiptText,
+} from "lucide-react";
+import { VS_BILLING_SCHOOL, INVOICE_STAFF_ROLES } from "@/lib/vs-billing/scope";
 import { toast } from "sonner";
-import AlumnoModal from "./AlumnoModal";
-import MatriculaModal from "./MatriculaModal";
-import AbonoModal from "./AbonoModal";
-import { alumnoSchema, abonoSchema, matriculaSchema } from "./schemas";
 import {
   PAGE_SIZE,
   MONTH_OPTIONS,
   YEAR_OPTIONS,
   tiposRegistroAlumno,
   emptyForm,
+  applyAlumnoBillingDefaults,
   emptyMatriculaForm,
   formatTipoRegistroLabel,
   formatNotaExamen,
@@ -40,11 +58,28 @@ import {
   type MatriculaResumen,
 } from "./constants";
 
+const AlumnoModal = dynamic(() => import("./AlumnoModal"), { ssr: false });
+const MatriculaModal = dynamic(() => import("./MatriculaModal"), { ssr: false });
+const AbonoModal = dynamic(() => import("./AbonoModal"), { ssr: false });
+const FacturaElectronicaModal = dynamic(() => import("./FacturaElectronicaModal"), { ssr: false });
+
 type AlumnosCatalogosResponse = {
   categoriasEscuela: string[];
   tramitadorOptions: string[];
   defaultSedeId: string | null;
 };
+
+function alumnoTieneContratoAsignado(alumno: AlumnoRow) {
+  if (alumno.tipo_registro !== "regular") return false;
+  if (alumno.numero_contrato?.trim()) return true;
+  return (alumno.matriculas ?? []).some((matricula) =>
+    Boolean(
+      matricula.numero_contrato?.trim() ||
+      matricula.prefijo_contrato ||
+      (matricula.consecutivo_contrato != null && Number(matricula.consecutivo_contrato) > 0)
+    )
+  );
+}
 
 export default function AlumnosPage() {
   const { perfil } = useAuth();
@@ -65,6 +100,11 @@ export default function AlumnosPage() {
   // --- Paginación server-side ---
   const [alumnos, setAlumnos] = useState<AlumnoRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [summaryCounts, setSummaryCounts] = useState({
+    regularCount: 0,
+    specialCount: 0,
+    periodStudentCount: 0,
+  });
   const [currentPage, setCurrentPage] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
@@ -74,9 +114,11 @@ export default function AlumnosPage() {
   const [filtrosTipo, setFiltrosTipo] = useState<TipoRegistroAlumno[]>([]);
   const [filtrosCat, setFiltrosCat] = useState<string[]>([]);
   const [filtroMes, setFiltroMes] = useState<string>("");
+  const [filtroFecha, setFiltroFecha] = useState<string>("");
   const [filtroFactura, setFiltroFactura] = useState<"" | "sin_factura" | "facturado">("");
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [facturaAlumno, setFacturaAlumno] = useState<AlumnoRow | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState<AlumnoRow | null>(null);
   const [deleting, setDeleting] = useState<AlumnoRow | null>(null);
@@ -111,7 +153,7 @@ export default function AlumnosPage() {
   const [abonoMonto, setAbonoMonto] = useState("");
   const [abonoMetodo, setAbonoMetodo] = useState<MetodoPago>("efectivo");
   const [abonoConcepto, setAbonoConcepto] = useState("");
-  const [abonoFecha, setAbonoFecha] = useState(new Date().toISOString().split("T")[0]);
+  const [abonoFecha, setAbonoFecha] = useState(getTodayDateString());
   const [abonoSaving, setAbonoSaving] = useState(false);
 
   const fetchIdRef = useRef(0);
@@ -126,6 +168,7 @@ export default function AlumnosPage() {
       catFilters: string[] = [],
       typeFilters: TipoRegistroAlumno[] = [],
       mesFilter: string = "",
+      fechaFilter: string = "",
       forceFresh = false,
       facturaFilter: "" | "sin_factura" | "facturado" = ""
     ) => {
@@ -142,6 +185,7 @@ export default function AlumnosPage() {
       if (catFilters.length > 0) params.set("categorias", catFilters.join(","));
       if (typeFilters.length > 0) params.set("tipos", typeFilters.join(","));
       if (mesFilter) params.set("mes", mesFilter);
+      if (fechaFilter) params.set("fecha", fechaFilter);
       if (facturaFilter) params.set("factura", facturaFilter);
 
       // En la primera carga incluimos catálogos para ahorrar 1 HTTP request
@@ -152,7 +196,7 @@ export default function AlumnosPage() {
         const payload = await getDashboardListCached<
           AlumnosListResponse & { _catalogs?: AlumnosCatalogosResponse }
         >({
-          name: needCatalogs ? "alumnos-table-with-catalogs" : "alumnos-table",
+          name: "alumnos-table",
           scope: {
             id: perfil?.id,
             rol: perfil?.rol,
@@ -161,15 +205,23 @@ export default function AlumnosPage() {
           },
           params,
           forceFresh,
-          loader: () =>
-            fetchJsonWithRetry<AlumnosListResponse & { _catalogs?: AlumnosCatalogosResponse }>(
-              `/api/alumnos?${params.toString()}`
-            ),
+          loader: () => {
+            const requestParams = new URLSearchParams(params);
+            if (forceFresh) requestParams.set("fresh", "1");
+            return fetchJsonWithRetry<
+              AlumnosListResponse & { _catalogs?: AlumnosCatalogosResponse }
+            >(`/api/alumnos?${requestParams.toString()}`);
+          },
         });
         if (fetchId !== fetchIdRef.current) return;
 
         setAlumnos(payload.rows || []);
         setTotalCount(payload.totalCount || 0);
+        setSummaryCounts({
+          regularCount: payload.summary?.regularCount || 0,
+          specialCount: payload.summary?.specialCount || 0,
+          periodStudentCount: payload.summary?.periodStudentCount || 0,
+        });
 
         // Hidratar catálogos desde la respuesta combinada
         if (payload._catalogs && !catalogsLoadedRef.current) {
@@ -183,6 +235,7 @@ export default function AlumnosPage() {
         console.error("[AlumnosPage] Error cargando alumnos:", fetchError);
         setAlumnos([]);
         setTotalCount(0);
+        setSummaryCounts({ regularCount: 0, specialCount: 0, periodStudentCount: 0 });
       } finally {
         if (fetchId === fetchIdRef.current) {
           setLoading(false);
@@ -193,16 +246,26 @@ export default function AlumnosPage() {
   );
 
   useEffect(() => {
-    if (!perfil) return;
-    fetchAlumnos(currentPage, searchTerm, filtrosCat, filtrosTipo, filtroMes, false, filtroFactura);
+    if (!perfil?.escuela_id) return;
+    fetchAlumnos(
+      currentPage,
+      searchTerm,
+      filtrosCat,
+      filtrosTipo,
+      filtroMes,
+      filtroFecha,
+      false,
+      filtroFactura
+    );
   }, [
     fetchAlumnos,
-    perfil,
+    perfil?.escuela_id,
     currentPage,
     searchTerm,
     filtrosCat,
     filtrosTipo,
     filtroMes,
+    filtroFecha,
     filtroFactura,
   ]);
 
@@ -234,7 +297,10 @@ export default function AlumnosPage() {
   );
 
   useEffect(() => {
-    setFiltrosCat((prev) => prev.filter((cat) => categoriasFiltroDisponibles.includes(cat)));
+    setFiltrosCat((prev) => {
+      const next = prev.filter((cat) => categoriasFiltroDisponibles.includes(cat));
+      return next.length === prev.length ? prev : next;
+    });
   }, [categoriasFiltroDisponibles]);
 
   const editingHasMultipleMatriculas = Boolean(
@@ -257,6 +323,7 @@ export default function AlumnosPage() {
         : abonoIngresos,
     [abonoIngresos, abonoMatriculaActual]
   );
+  const deletingTieneContrato = deleting ? alumnoTieneContratoAsignado(deleting) : false;
 
   // ─── Filter toggles ─────────────────────────────────────────────────
 
@@ -272,7 +339,10 @@ export default function AlumnosPage() {
     setFiltrosTipo((prev) => {
       const next = prev.includes(tipo) ? prev.filter((value) => value !== tipo) : [...prev, tipo];
       const categoriasDisponibles = getCategoriasDisponiblesParaTipos(next, categoriasEscuela);
-      setFiltrosCat((current) => current.filter((cat) => categoriasDisponibles.includes(cat)));
+      setFiltrosCat((current) => {
+        const filtered = current.filter((cat) => categoriasDisponibles.includes(cat));
+        return filtered.length === current.length ? current : filtered;
+      });
       setCurrentPage(0);
       return next;
     });
@@ -286,18 +356,14 @@ export default function AlumnosPage() {
           ? prev.categorias[0] === cat
             ? []
             : [cat]
-          : prev.categorias.includes(cat)
-            ? prev.categorias.filter((value) => value !== cat)
-            : [...prev.categorias, cat],
+          : toggleCourseCategorySelection(prev.categorias, cat),
     }));
   };
 
   const toggleMatriculaCategoria = (cat: string) => {
     setMatriculaForm((prev) => ({
       ...prev,
-      categorias: prev.categorias.includes(cat)
-        ? prev.categorias.filter((value) => value !== cat)
-        : [...prev.categorias, cat],
+      categorias: toggleCourseCategorySelection(prev.categorias, cat),
     }));
   };
 
@@ -307,6 +373,10 @@ export default function AlumnosPage() {
     if (!canCreateStudent) return;
     setEditing(null);
     restoreAlumnoDraft(emptyForm);
+    setForm((current) => {
+      const restored = applyAlumnoBillingDefaults({ ...emptyForm, ...current });
+      return { ...restored, categorias: normalizeStoredCourseCategories(restored.categorias) };
+    });
     setModalOpen(true);
   };
 
@@ -327,8 +397,14 @@ export default function AlumnosPage() {
       direccion: alumno.direccion || "",
       ciudad: alumno.ciudad || "",
       departamento: alumno.departamento || "",
+      pais: alumno.datos_facturacion?.country || "CO",
+      municipio_codigo: alumno.datos_facturacion?.cityCode || "",
+      regimen_fiscal: alumno.datos_facturacion?.taxRegime || "",
+      responsabilidad_fiscal: alumno.datos_facturacion?.responsibilities || "R-99-PN",
       tipo_permiso: alumno.tipo_permiso,
-      categorias: matricula?.categorias || alumno.categorias_resumen,
+      categorias: normalizeStoredCourseCategories(
+        (matricula?.categorias as string[] | undefined) || alumno.categorias_resumen
+      ),
       estado: alumno.estado,
       empresa_convenio: alumno.empresa_convenio || "",
       nota_examen_teorico:
@@ -340,9 +416,7 @@ export default function AlumnosPage() {
       notas: alumno.notas || "",
       numero_contrato: matricula?.numero_contrato || alumno.numero_contrato || "",
       fecha_inscripcion:
-        matricula?.fecha_inscripcion ||
-        alumno.fecha_inscripcion ||
-        new Date().toISOString().split("T")[0],
+        matricula?.fecha_inscripcion || alumno.fecha_inscripcion || getTodayDateString(),
       valor_total: matricula?.valor_total
         ? String(matricula.valor_total)
         : alumno.valor_total
@@ -371,8 +445,12 @@ export default function AlumnosPage() {
     setMatriculaAlumno(alumno);
     restoreMatriculaDraft({
       ...emptyMatriculaForm,
-      fecha_inscripcion: new Date().toISOString().split("T")[0],
+      fecha_inscripcion: getTodayDateString(),
     });
+    setMatriculaForm((current) => ({
+      ...current,
+      categorias: normalizeStoredCourseCategories(current.categorias),
+    }));
     setMatriculaOpen(true);
   };
 
@@ -385,7 +463,7 @@ export default function AlumnosPage() {
       setAbonoMonto("");
       setAbonoMetodo("efectivo");
       setAbonoConcepto("");
-      setAbonoFecha(new Date().toISOString().split("T")[0]);
+      setAbonoFecha(getTodayDateString());
       setAbonoIngresos([]);
       setAbonoOpen(true);
       setLoadingIngresos(true);
@@ -408,56 +486,73 @@ export default function AlumnosPage() {
 
   const handleSave = async () => {
     if (editing ? !canEditStudent : !canCreateStudent) return;
-    const result = alumnoSchema.safeParse(form);
-    if (!result.success) {
-      toast.error(result.error.issues[0]?.message || "Error de validación.");
-      return;
-    }
-
-    const isAptitud = form.tipo_registro === "aptitud_conductor";
-    const isPractice = form.tipo_registro === "practica_adicional";
-
-    if (!isPractice && form.categorias.length === 0) {
-      toast.error(
-        isAptitud
-          ? "Debes seleccionar la categoría evaluada."
-          : "Debes seleccionar al menos una categoría de curso."
-      );
-      return;
-    }
-
-    const abonoNum = parseFloat(String(form.abono)) || 0;
-    const valorTotalNum = parseFloat(String(form.valor_total)) || 0;
-    const notaTeoricaNum =
-      form.nota_examen_teorico === "" ? null : parseFloat(String(form.nota_examen_teorico));
-    const notaPracticaNum =
-      form.nota_examen_practico === "" ? null : parseFloat(String(form.nota_examen_practico));
-
-    if (!editing && abonoNum > 0 && valorTotalNum > 0 && abonoNum > valorTotalNum) {
-      toast.error(
-        isAptitud
-          ? "El pago inicial no puede ser mayor al valor del servicio."
-          : "El abono no puede ser mayor al valor total del curso."
-      );
-      return;
-    }
-
-    const tramitadorValidationMessage = getTramitadorValidationMessage(
-      form.tiene_tramitador,
-      form.tramitador_nombre
-    );
-    if (tramitadorValidationMessage) {
-      toast.error(tramitadorValidationMessage);
-      return;
-    }
-
-    if (!perfil?.escuela_id) {
-      toast.error("Tu usuario no tiene escuela asignada. Contacta al administrador.");
-      return;
-    }
-
+    if (saving) return;
     setSaving(true);
     try {
+      const { alumnoSchema } = await import("./schemas");
+      const { studentBillingContactSchema, studentBillingProfileFromForm } =
+        await import("@/lib/student-billing-contact");
+      const result = alumnoSchema.safeParse(form);
+      if (!result.success) {
+        toast.error(result.error.issues[0]?.message || "Error de validación.");
+        return;
+      }
+      const billingProfile = studentBillingProfileFromForm(form);
+      if (!editing) {
+        const contact = studentBillingContactSchema.safeParse({
+          ...form,
+          datos_facturacion: billingProfile,
+        });
+        if (!contact.success) {
+          toast.error(
+            contact.error.issues[0]?.message || "Completa los datos obligatorios de facturación."
+          );
+          return;
+        }
+      }
+
+      const isAptitud = form.tipo_registro === "aptitud_conductor";
+      const isPractice = form.tipo_registro === "practica_adicional";
+
+      if (!isPractice && form.categorias.length === 0) {
+        toast.error(
+          isAptitud
+            ? "Debes seleccionar la categoría evaluada."
+            : "Debes seleccionar al menos una categoría de curso."
+        );
+        return;
+      }
+
+      const abonoNum = parseFloat(String(form.abono)) || 0;
+      const valorTotalNum = parseFloat(String(form.valor_total)) || 0;
+      const notaTeoricaNum =
+        form.nota_examen_teorico === "" ? null : parseFloat(String(form.nota_examen_teorico));
+      const notaPracticaNum =
+        form.nota_examen_practico === "" ? null : parseFloat(String(form.nota_examen_practico));
+
+      if (!editing && abonoNum > 0 && valorTotalNum > 0 && abonoNum > valorTotalNum) {
+        toast.error(
+          isAptitud
+            ? "El pago inicial no puede ser mayor al valor del servicio."
+            : "El abono no puede ser mayor al valor total del curso."
+        );
+        return;
+      }
+
+      const tramitadorValidationMessage = getTramitadorValidationMessage(
+        form.tiene_tramitador,
+        form.tramitador_nombre
+      );
+      if (tramitadorValidationMessage) {
+        toast.error(tramitadorValidationMessage);
+        return;
+      }
+
+      if (!perfil?.escuela_id) {
+        toast.error("Tu usuario no tiene escuela asignada. Contacta al administrador.");
+        return;
+      }
+
       const sedeId = defaultSedeId || (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
       if (!sedeId) {
         toast.error("No se encontró una sede para esta escuela. Crea una sede primero.");
@@ -483,6 +578,8 @@ export default function AlumnosPage() {
           direccion: form.direccion.trim() || null,
           ciudad: form.ciudad.trim() || null,
           departamento: form.departamento.trim() || null,
+          datos_facturacion:
+            form.municipio_codigo && form.regimen_fiscal ? billingProfile : undefined,
           categorias: form.categorias,
           estado: form.estado,
           empresa_convenio: form.empresa_convenio.trim() || null,
@@ -522,6 +619,7 @@ export default function AlumnosPage() {
         filtrosCat,
         filtrosTipo,
         filtroMes,
+        filtroFecha,
         true,
         filtroFactura
       );
@@ -538,36 +636,38 @@ export default function AlumnosPage() {
 
   const handleSaveMatricula = async () => {
     if (!canEditStudent) return;
+    if (matriculaSaving) return;
     if (!matriculaAlumno || !perfil?.escuela_id) return;
     if (matriculaAlumno.tipo_registro !== "regular") {
       toast.error("Solo los alumnos regulares pueden tener matrículas.");
       return;
     }
 
-    const result = matriculaSchema.safeParse(matriculaForm);
-    if (!result.success) {
-      toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
-      return;
-    }
-
-    const valorTotalNum = parseFloat(String(matriculaForm.valor_total)) || 0;
-    const abonoNum = parseFloat(String(matriculaForm.abono)) || 0;
-    if (abonoNum > 0 && valorTotalNum > 0 && abonoNum > valorTotalNum) {
-      toast.error("El abono no puede ser mayor al valor total del curso.");
-      return;
-    }
-
-    const tramitadorValidationMessage = getTramitadorValidationMessage(
-      matriculaForm.tiene_tramitador,
-      matriculaForm.tramitador_nombre
-    );
-    if (tramitadorValidationMessage) {
-      toast.error(tramitadorValidationMessage);
-      return;
-    }
-
     setMatriculaSaving(true);
     try {
+      const { matriculaSchema } = await import("./schemas");
+      const result = matriculaSchema.safeParse(matriculaForm);
+      if (!result.success) {
+        toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
+        return;
+      }
+
+      const valorTotalNum = parseFloat(String(matriculaForm.valor_total)) || 0;
+      const abonoNum = parseFloat(String(matriculaForm.abono)) || 0;
+      if (abonoNum > 0 && valorTotalNum > 0 && abonoNum > valorTotalNum) {
+        toast.error("El abono no puede ser mayor al valor total del curso.");
+        return;
+      }
+
+      const tramitadorValidationMessage = getTramitadorValidationMessage(
+        matriculaForm.tiene_tramitador,
+        matriculaForm.tramitador_nombre
+      );
+      if (tramitadorValidationMessage) {
+        toast.error(tramitadorValidationMessage);
+        return;
+      }
+
       const sedeId =
         matriculaAlumno.sede_id ||
         defaultSedeId ||
@@ -615,6 +715,7 @@ export default function AlumnosPage() {
         filtrosCat,
         filtrosTipo,
         filtroMes,
+        filtroFecha,
         true,
         filtroFactura
       );
@@ -631,27 +732,29 @@ export default function AlumnosPage() {
 
   const handleSaveAbono = async () => {
     if (!canCreateIncome) return;
+    if (abonoSaving) return;
     if (!abonoAlumno || !perfil?.escuela_id) return;
-
-    const result = abonoSchema.safeParse({ monto: abonoMonto });
-    if (!result.success) {
-      toast.error(result.error.issues[0]?.message);
-      return;
-    }
-    const monto = parseFloat(abonoMonto);
-
-    if (!abonoFecha) {
-      toast.error("Debes seleccionar una fecha para el abono.");
-      return;
-    }
-
-    if (abonoMatriculas.length > 0 && !abonoMatriculaActual) {
-      toast.error("Selecciona la matrícula a la que corresponde este abono.");
-      return;
-    }
 
     setAbonoSaving(true);
     try {
+      const { abonoSchema } = await import("./schemas");
+      const result = abonoSchema.safeParse({ monto: abonoMonto });
+      if (!result.success) {
+        toast.error(result.error.issues[0]?.message);
+        return;
+      }
+      const monto = parseFloat(abonoMonto);
+
+      if (!abonoFecha) {
+        toast.error("Debes seleccionar una fecha para el abono.");
+        return;
+      }
+
+      if (abonoMatriculas.length > 0 && !abonoMatriculaActual) {
+        toast.error("Selecciona la matrícula a la que corresponde este abono.");
+        return;
+      }
+
       await fetchJsonWithRetry("/api/alumnos/abonos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -677,7 +780,7 @@ export default function AlumnosPage() {
       setAbonoIngresos((data as Ingreso[]) || []);
       setAbonoMonto("");
       setAbonoConcepto("");
-      setAbonoFecha(new Date().toISOString().split("T")[0]);
+      setAbonoFecha(getTodayDateString());
       toast.success("Abono registrado con éxito");
       await revalidateTaggedServerCaches(
         buildScopedMutationRevalidationTags({
@@ -693,6 +796,7 @@ export default function AlumnosPage() {
         filtrosCat,
         filtrosTipo,
         filtroMes,
+        filtroFecha,
         true,
         filtroFactura
       );
@@ -713,13 +817,17 @@ export default function AlumnosPage() {
 
     setSaving(true);
     try {
-      const supabase = createClient();
-      const { error: alumnoError } = await supabase.from("alumnos").delete().eq("id", deleting.id);
-      if (alumnoError) throw alumnoError;
+      const tieneContrato = alumnoTieneContratoAsignado(deleting);
+
+      await fetchJsonWithRetry(tieneContrato ? "/api/alumnos/cancelar" : "/api/alumnos/manage", {
+        method: tieneContrato ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alumno_id: deleting.id }),
+      });
 
       setDeleteOpen(false);
       setDeleting(null);
-      toast.success("Alumno eliminado");
+      toast.success(tieneContrato ? "Alumno cancelado" : "Alumno eliminado");
       await revalidateTaggedServerCaches(
         buildScopedMutationRevalidationTags({
           scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
@@ -734,6 +842,7 @@ export default function AlumnosPage() {
         filtrosCat,
         filtrosTipo,
         filtroMes,
+        filtroFecha,
         true,
         filtroFactura
       );
@@ -765,13 +874,16 @@ export default function AlumnosPage() {
         return (
           <div>
             <span className="text-sm font-medium">
-              {fecha
-                ? new Date(fecha).toLocaleDateString("es-CO", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  })
-                : "—"}
+              {matriculaReciente?.fecha_inscripcion || row.fecha_inscripcion
+                ? formatDateOnlyForDisplay(fecha)
+                : row.created_at
+                  ? new Intl.DateTimeFormat("es-CO", {
+                      timeZone: APP_TIME_ZONE,
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    }).format(new Date(row.created_at))
+                  : "—"}
             </span>
             {contratoList.length > 0 && (
               <div className="mt-0.5 space-y-0.5">
@@ -864,6 +976,30 @@ export default function AlumnosPage() {
       key: "facturado" as keyof AlumnoRow,
       label: "Factura",
       render: (row: AlumnoRow) => {
+        const invoices = row.matriculas.filter((m) => m.facturax_invoice);
+        if (invoices.length) {
+          return (
+            <div className="space-y-1 text-xs">
+              {invoices.map((m) => (
+                <div key={m.id}>
+                  <span
+                    className={
+                      m.facturax_invoice?.state === "accepted"
+                        ? "font-medium text-green-700 dark:text-green-400"
+                        : "font-medium text-amber-700 dark:text-amber-400"
+                    }
+                  >
+                    {m.facturax_invoice?.number || "Pendiente"}
+                    {m.facturax_invoice?.state === "accepted" ? "" : " · Sin validar"}
+                  </span>
+                  <p className="text-[10px] text-[#86868b]">
+                    Contrato {m.numero_contrato || "sin numero"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          );
+        }
         if (row.facturado) {
           return (
             <div>
@@ -940,27 +1076,42 @@ export default function AlumnosPage() {
     .reduce((sum, ingreso) => sum + Number(ingreso.monto), 0);
   const saldoPendienteAbono = valorTotalAbono - totalPagadoAbono;
   const summaryItems = useMemo(() => {
-    const regulares = alumnos.filter((row) => row.tipo_registro === "regular").length;
-    const servicios = alumnos.filter((row) => row.tipo_registro !== "regular").length;
+    const hasPeriodFilter = Boolean(filtroFecha || filtroMes);
+    const primaryValue = hasPeriodFilter
+      ? summaryCounts.periodStudentCount
+      : totalCount || alumnos.length;
+    const primaryLabel = hasPeriodFilter ? "Alumnos del periodo" : "Registros filtrados";
+    const primaryDetail = hasPeriodFilter
+      ? `${summaryCounts.periodStudentCount} alumnos regulares con fecha propia dentro del periodo seleccionado en horario de Bogotá.`
+      : `${totalCount || alumnos.length} registros totales · ${summaryCounts.regularCount} regulares y ${summaryCounts.specialCount} especiales.`;
+
     return [
       {
         id: "total",
-        label: "Registros filtrados",
-        value: String(totalCount || alumnos.length),
-        detail: `${alumnos.length} en esta página · ${regulares} regulares y ${servicios} especiales.`,
+        label: primaryLabel,
+        value: String(primaryValue),
+        detail: primaryDetail,
         icon: <UserRound size={18} />,
         tone: "primary" as const,
       },
       {
         id: "periodo",
         label: "Periodo activo",
-        value: filtroMes || "Todos",
+        value: filtroFecha || filtroMes || "Todos",
         detail: "Usa filtros para separar cohortes, cursos y servicios.",
         icon: <CalendarDays size={18} />,
         tone: "default" as const,
       },
     ];
-  }, [alumnos, filtroMes, totalCount]);
+  }, [
+    alumnos.length,
+    filtroFecha,
+    filtroMes,
+    summaryCounts.periodStudentCount,
+    summaryCounts.regularCount,
+    summaryCounts.specialCount,
+    totalCount,
+  ]);
 
   // ─── Render ─────────────────────────────────────────────────────────
 
@@ -986,6 +1137,7 @@ export default function AlumnosPage() {
           filtrosTipo.length > 0 ||
           filtrosCat.length > 0 ||
           filtroMes !== "" ||
+          filtroFecha !== "" ||
           filtroFactura !== "";
         return (
           <FilterPanel
@@ -998,6 +1150,7 @@ export default function AlumnosPage() {
                     setFiltrosTipo([]);
                     setFiltrosCat([]);
                     setFiltroMes("");
+                    setFiltroFecha("");
                     setFiltroFactura("");
                     setCurrentPage(0);
                   }}
@@ -1036,7 +1189,7 @@ export default function AlumnosPage() {
                   value={filtroMes.split("-")[1] || ""}
                   onChange={(e) => {
                     const newMonth = e.target.value;
-                    const currentYear = filtroMes.split("-")[0] || String(new Date().getFullYear());
+                    const currentYear = filtroMes.split("-")[0] || String(getCurrentYear());
                     setFiltroMes(newMonth ? `${currentYear}-${newMonth}` : currentYear);
                     setCurrentPage(0);
                   }}
@@ -1050,6 +1203,19 @@ export default function AlumnosPage() {
                   ))}
                 </select>
               </div>
+            </div>
+
+            <div className="md:col-span-2 xl:col-span-2">
+              <span className="mb-2 block text-xs font-medium text-[#86868b]">Fecha exacta</span>
+              <input
+                type="date"
+                value={filtroFecha}
+                onChange={(e) => {
+                  setFiltroFecha(e.target.value);
+                  setCurrentPage(0);
+                }}
+                className="apple-input"
+              />
             </div>
 
             <div className="md:col-span-2 xl:col-span-2">
@@ -1204,6 +1370,18 @@ export default function AlumnosPage() {
           )}
           extraActions={(row) => (
             <>
+              {row.escuela_id === VS_BILLING_SCHOOL.id &&
+                perfil &&
+                INVOICE_STAFF_ROLES.includes(perfil.rol) && (
+                  <button
+                    onClick={() => setFacturaAlumno(row)}
+                    className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-blue-50 hover:text-[#0071e3] dark:hover:bg-blue-900/20"
+                    title="Factura electronica por contrato"
+                    aria-label="Factura electronica por contrato"
+                  >
+                    <ReceiptText size={14} />
+                  </button>
+                )}
               {canEditStudent && row.tipo_registro === "regular" && (
                 <button
                   onClick={() => openNewMatricula(row)}
@@ -1248,66 +1426,130 @@ export default function AlumnosPage() {
       </div>
 
       {/* ========== Modals ========== */}
-      <AlumnoModal
-        modalOpen={modalOpen}
-        setModalOpen={setModalOpen}
-        editing={editing}
-        editingHasMultipleMatriculas={editingHasMultipleMatriculas}
-        editingMatricula={editingMatricula}
-        isAptitudForm={isAptitudForm}
-        isPracticeForm={isPracticeForm}
-        form={form}
-        setForm={setForm}
-        saving={saving}
-        handleSave={handleSave}
-        toggleCategoria={toggleCategoria}
-        openNewMatricula={openNewMatricula}
-        categoriasEscuela={categoriasEscuela}
-        tramitadorOptions={tramitadorOptions}
-      />
+      {facturaAlumno && (
+        <FacturaElectronicaModal
+          userId={perfil?.id}
+          alumno={facturaAlumno}
+          onEditStudent={
+            canEditStudent
+              ? () => {
+                  setFacturaAlumno(null);
+                  openEdit(facturaAlumno);
+                }
+              : undefined
+          }
+          onClose={() => {
+            setFacturaAlumno(null);
+            invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+            void fetchAlumnos(
+              currentPage,
+              searchTerm,
+              filtrosCat,
+              filtrosTipo,
+              filtroMes,
+              filtroFecha,
+              true,
+              filtroFactura
+            );
+          }}
+        />
+      )}
+      {modalOpen && (
+        <AlumnoModal
+          modalOpen={modalOpen}
+          setModalOpen={setModalOpen}
+          editing={editing}
+          editingHasMultipleMatriculas={editingHasMultipleMatriculas}
+          editingMatricula={editingMatricula}
+          isAptitudForm={isAptitudForm}
+          isPracticeForm={isPracticeForm}
+          form={form}
+          setForm={setForm}
+          saving={saving}
+          handleSave={handleSave}
+          toggleCategoria={toggleCategoria}
+          openNewMatricula={openNewMatricula}
+          categoriasEscuela={categoriasEscuela}
+          tramitadorOptions={tramitadorOptions}
+        />
+      )}
 
-      <MatriculaModal
-        matriculaOpen={matriculaOpen}
-        setMatriculaOpen={setMatriculaOpen}
-        matriculaAlumno={matriculaAlumno}
-        matriculaForm={matriculaForm}
-        setMatriculaForm={setMatriculaForm}
-        matriculaSaving={matriculaSaving}
-        handleSaveMatricula={handleSaveMatricula}
-        toggleMatriculaCategoria={toggleMatriculaCategoria}
-        categoriasEscuela={categoriasEscuela}
-        tramitadorOptions={tramitadorOptions}
-      />
+      {matriculaOpen && (
+        <MatriculaModal
+          matriculaOpen={matriculaOpen}
+          setMatriculaOpen={setMatriculaOpen}
+          matriculaAlumno={matriculaAlumno}
+          matriculaForm={matriculaForm}
+          setMatriculaForm={setMatriculaForm}
+          matriculaSaving={matriculaSaving}
+          handleSaveMatricula={handleSaveMatricula}
+          toggleMatriculaCategoria={toggleMatriculaCategoria}
+          categoriasEscuela={categoriasEscuela}
+          tramitadorOptions={tramitadorOptions}
+        />
+      )}
 
-      <AbonoModal
-        abonoOpen={abonoOpen}
-        setAbonoOpen={setAbonoOpen}
-        abonoAlumno={abonoAlumno}
-        abonoMatriculas={abonoMatriculas}
-        abonoMatriculaId={abonoMatriculaId}
-        setAbonoMatriculaId={setAbonoMatriculaId}
-        abonoIngresosFiltrados={abonoIngresosFiltrados}
-        loadingIngresos={loadingIngresos}
-        valorTotalAbono={valorTotalAbono}
-        totalPagadoAbono={totalPagadoAbono}
-        saldoPendienteAbono={saldoPendienteAbono}
-        abonoMonto={abonoMonto}
-        setAbonoMonto={setAbonoMonto}
-        abonoMetodo={abonoMetodo}
-        setAbonoMetodo={setAbonoMetodo}
-        abonoConcepto={abonoConcepto}
-        setAbonoConcepto={setAbonoConcepto}
-        abonoFecha={abonoFecha}
-        setAbonoFecha={setAbonoFecha}
-        abonoSaving={abonoSaving}
-        handleSaveAbono={handleSaveAbono}
-      />
+      {abonoOpen && (
+        <AbonoModal
+          abonoOpen={abonoOpen}
+          setAbonoOpen={setAbonoOpen}
+          abonoAlumno={abonoAlumno}
+          abonoMatriculas={abonoMatriculas}
+          abonoMatriculaId={abonoMatriculaId}
+          setAbonoMatriculaId={setAbonoMatriculaId}
+          abonoIngresosFiltrados={abonoIngresosFiltrados}
+          loadingIngresos={loadingIngresos}
+          valorTotalAbono={valorTotalAbono}
+          totalPagadoAbono={totalPagadoAbono}
+          saldoPendienteAbono={saldoPendienteAbono}
+          abonoMonto={abonoMonto}
+          setAbonoMonto={setAbonoMonto}
+          abonoMetodo={abonoMetodo}
+          setAbonoMetodo={setAbonoMetodo}
+          abonoConcepto={abonoConcepto}
+          setAbonoConcepto={setAbonoConcepto}
+          abonoFecha={abonoFecha}
+          setAbonoFecha={setAbonoFecha}
+          abonoSaving={abonoSaving}
+          handleSaveAbono={handleSaveAbono}
+        />
+      )}
 
       <DeleteConfirm
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
         loading={saving}
+        title={deletingTieneContrato ? "Cancelar alumno" : "Eliminar alumno"}
+        description={
+          deleting ? (
+            deletingTieneContrato ? (
+              <div className="space-y-2">
+                <p>
+                  Vas a cancelar a{" "}
+                  <strong>
+                    {deleting.nombre} {deleting.apellidos}
+                  </strong>
+                  .
+                </p>
+                <p>
+                  El contrato y sus matrículas se conservan, el consecutivo no se reutiliza y el
+                  alumno quedará inactivo.
+                </p>
+              </div>
+            ) : (
+              <p>
+                ¿Estás seguro de que quieres eliminar a{" "}
+                <strong>
+                  {deleting.nombre} {deleting.apellidos}
+                </strong>
+                ? Esta acción no se puede deshacer.
+              </p>
+            )
+          ) : undefined
+        }
+        confirmLabel={deletingTieneContrato ? "Cancelar alumno" : "Eliminar"}
+        loadingLabel={deletingTieneContrato ? "Cancelando..." : "Eliminando..."}
       />
     </PageScaffold>
   );

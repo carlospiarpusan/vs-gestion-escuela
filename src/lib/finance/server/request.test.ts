@@ -40,18 +40,21 @@ describe("finance/server/request", () => {
     });
   });
 
-  it("respeta el alcance bloqueado de admin_sede aunque la URL intente cambiarlo", () => {
-    const request = new Request(
-      "https://example.com/api/gastos?escuela_id=dddddddd-dddd-4ddd-8ddd-dddddddddddd&sede_id=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
-    );
+  it.each(["admin_sede", "administrativo"] as const)(
+    "respeta el alcance bloqueado de %s aunque la URL intente cambiarlo",
+    (rol) => {
+      const request = new Request(
+        "https://example.com/api/gastos?escuela_id=dddddddd-dddd-4ddd-8ddd-dddddddddddd&sede_id=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+      );
 
-    const scope = buildFinanceScope(request, ADMIN_SEDE, new URL(request.url));
+      const scope = buildFinanceScope(request, { ...ADMIN_SEDE, rol }, new URL(request.url));
 
-    expect(scope).toEqual({
-      escuelaId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      sedeId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-    });
-  });
+      expect(scope).toEqual({
+        escuelaId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        sedeId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      });
+    }
+  );
 
   it("genera claves de cache estables aunque cambie el orden de los params", () => {
     const paramsA = new URLSearchParams("to=2026-03-31&from=2026-03-01&page=1");
@@ -61,8 +64,20 @@ describe("finance/server/request", () => {
       sedeId: null,
     };
 
-    expect(buildFinanceServerCacheKey("income", SUPER_ADMIN.id, scope, paramsA)).toBe(
-      buildFinanceServerCacheKey("income", SUPER_ADMIN.id, scope, paramsB)
+    expect(buildFinanceServerCacheKey("income", SUPER_ADMIN.rol, scope, paramsA)).toBe(
+      buildFinanceServerCacheKey("income", SUPER_ADMIN.rol, scope, paramsB)
+    );
+  });
+
+  it("separa claves cuando cambia el rol que consume la misma consulta", () => {
+    const params = new URLSearchParams("from=2026-03-01&to=2026-03-31");
+    const scope = {
+      escuelaId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      sedeId: null,
+    };
+
+    expect(buildFinanceServerCacheKey("income", "super_admin", scope, params)).not.toBe(
+      buildFinanceServerCacheKey("income", "admin_escuela", scope, params)
     );
   });
 

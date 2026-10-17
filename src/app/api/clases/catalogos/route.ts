@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
-import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import {
+  authorizeApiRequest,
+  getStaffReadSedeScope,
+  resolveEscuelaIdForRequest,
+} from "@/lib/api-auth";
+import {
+  buildDashboardListServerCacheKey,
+  isFreshDashboardDataRequested,
+} from "@/lib/dashboard-server-cache";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
-const CACHE_TTL_MS = 60 * 1000;
+const CACHE_TTL_MS = 300 * 1000;
 
 type AlumnoCatalogRow = {
   id: string;
@@ -35,6 +42,8 @@ export async function GET(request: Request) {
   const { perfil } = auth;
   const url = new URL(request.url);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
+  const { sedeId, error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
 
   if (!escuelaId) {
     return NextResponse.json({
@@ -46,12 +55,12 @@ export async function GET(request: Request) {
 
   const scope = {
     escuelaId,
-    sedeId: perfil.sede_id,
+    sedeId,
   };
 
   const pool = getServerDbPool();
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("clases-catalogos", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey("clases-catalogos", perfil.rol, scope, url.searchParams),
     ttlMs: CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("clases-catalogos", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),
@@ -62,30 +71,33 @@ export async function GET(request: Request) {
             select id, nombre, apellidos
             from public.alumnos
             where escuela_id = $1
+              ${sedeId ? "and sede_id = $2" : ""}
               and estado = 'activo'
             order by nombre asc, apellidos asc
           `,
-          [escuelaId]
+          sedeId ? [escuelaId, sedeId] : [escuelaId]
         ),
         pool.query<InstructorCatalogRow>(
           `
             select id, nombre, apellidos
             from public.instructores
             where escuela_id = $1
+              ${sedeId ? "and sede_id = $2" : ""}
               and estado = 'activo'
             order by nombre asc, apellidos asc
           `,
-          [escuelaId]
+          sedeId ? [escuelaId, sedeId] : [escuelaId]
         ),
         pool.query<VehiculoCatalogRow>(
           `
             select id, marca, modelo, matricula
             from public.vehiculos
             where escuela_id = $1
+              ${sedeId ? "and sede_id = $2" : ""}
               and estado <> 'baja'
             order by created_at desc
           `,
-          [escuelaId]
+          sedeId ? [escuelaId, sedeId] : [escuelaId]
         ),
       ]);
 

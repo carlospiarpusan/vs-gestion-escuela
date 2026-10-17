@@ -1,10 +1,17 @@
 "use client";
+import { formatDateOnlyForDisplay } from "@/lib/date-utils";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
 import { clearSchoolCategoriesCache } from "@/lib/school-categories";
+import {
+  normalizeStoredCourseCategories,
+  SELECTABLE_COURSE_CATEGORIES,
+  toggleCourseCategorySelection,
+} from "@/lib/course-categories";
 import {
   SCHOOL_PLAN_ORDER,
   SCHOOL_PLAN_DESCRIPTORS,
@@ -32,8 +39,6 @@ import {
   Settings2,
   ChevronDown,
   ChevronUp,
-  Save,
-  X,
   Clock,
   TrendingUp,
   ShieldCheck,
@@ -79,19 +84,7 @@ type TabId = "escuelas" | "planes";
 const planes: PlanEscuela[] = SCHOOL_PLAN_ORDER;
 const estados: EstadoEscuela[] = ["activa", "inactiva", "suspendida"];
 
-const CATEGORIAS_INDIVIDUALES = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
-const CATEGORIAS_COMBO = [
-  "A2 y B1",
-  "A2 y C1",
-  "A2 y RC1",
-  "A2 y C2",
-  "A2 y C3",
-  "A1 y B1",
-  "A1 y C1",
-  "A1 y RC1",
-  "A1 y C2",
-  "A1 y C3",
-];
+const CATEGORIAS_INDIVIDUALES = [...SELECTABLE_COURSE_CATEGORIES];
 
 const emptyEscuelaForm = {
   nombre: "",
@@ -223,7 +216,14 @@ function ExpandedRow({ school }: { school: EscuelaEnriquecida }) {
               {school.email && <p>Email: {school.email}</p>}
               {school.direccion && <p>Dir: {school.direccion}</p>}
               {school.fecha_alta && (
-                <p>Alta: {new Date(school.fecha_alta).toLocaleDateString("es-CO")}</p>
+                <p>
+                  Alta:{" "}
+                  {formatDateOnlyForDisplay(school.fecha_alta, "es-CO", {
+                    year: "numeric",
+                    month: "numeric",
+                    day: "numeric",
+                  })}
+                </p>
               )}
             </div>
           </div>
@@ -296,249 +296,6 @@ function ExpandedRow({ school }: { school: EscuelaEnriquecida }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Plan Editor Card                                                   */
-/* ------------------------------------------------------------------ */
-
-function PlanEditorCard({
-  plan,
-  onSave,
-  saving,
-}: {
-  plan: PlanConfig;
-  onSave: (updated: Partial<PlanConfig> & { id: string }) => Promise<void>;
-  saving: boolean;
-}) {
-  const desc = getSchoolPlanDescriptor(plan.id);
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({
-    nombre: plan.nombre,
-    descripcion: plan.descripcion ?? "",
-    precio_mensual: plan.precio_mensual,
-    max_alumnos_default: plan.max_alumnos_default,
-    max_sedes_default: plan.max_sedes_default,
-    caracteristicas: plan.caracteristicas,
-    activo: plan.activo,
-  });
-  const [newFeature, setNewFeature] = useState("");
-
-  const handleSave = async () => {
-    await onSave({ id: plan.id, ...form });
-    setEditing(false);
-  };
-
-  const addFeature = () => {
-    const trimmed = newFeature.trim();
-    if (trimmed && !form.caracteristicas.includes(trimmed)) {
-      setForm((f) => ({
-        ...f,
-        caracteristicas: [...f.caracteristicas, trimmed],
-      }));
-      setNewFeature("");
-    }
-  };
-
-  const removeFeature = (idx: number) => {
-    setForm((f) => ({
-      ...f,
-      caracteristicas: f.caracteristicas.filter((_, i) => i !== idx),
-    }));
-  };
-
-  if (!desc) return null;
-
-  return (
-    <div
-      className={`overflow-hidden rounded-2xl border transition-all ${desc.panelClassName} ${!plan.activo ? "opacity-60" : ""}`}
-    >
-      <div className="p-5">
-        <div className="flex items-center justify-between">
-          <span
-            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${desc.badgeClassName}`}
-          >
-            {desc.badge}
-          </span>
-          <button
-            type="button"
-            onClick={() => setEditing(!editing)}
-            className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-200/50 hover:text-zinc-900 dark:hover:bg-zinc-700/50 dark:hover:text-white"
-          >
-            {editing ? <X size={14} /> : <Pencil size={14} />}
-          </button>
-        </div>
-
-        {!editing ? (
-          <>
-            <h3 className={`mt-3 text-lg font-bold ${desc.accentClassName}`}>{plan.nombre}</h3>
-            <p className="mt-1 text-2xl font-black text-zinc-900 dark:text-white">
-              {plan.precio_mensual === 0 ? "Gratis" : formatCOP(plan.precio_mensual)}
-              {plan.precio_mensual > 0 && (
-                <span className="text-xs font-normal text-zinc-500">/mes</span>
-              )}
-            </p>
-            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{plan.descripcion}</p>
-
-            <div className="mt-4 space-y-1.5 border-t border-zinc-200/50 pt-3 dark:border-white/5">
-              <div className="flex justify-between text-xs text-zinc-600 dark:text-zinc-400">
-                <span>Alumnos por defecto</span>
-                <span className="font-semibold">
-                  {plan.max_alumnos_default.toLocaleString("es-CO")}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs text-zinc-600 dark:text-zinc-400">
-                <span>Sedes por defecto</span>
-                <span className="font-semibold">{plan.max_sedes_default}</span>
-              </div>
-            </div>
-
-            <div className="mt-3 space-y-1">
-              {plan.caracteristicas.map((feat, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400"
-                >
-                  <ShieldCheck size={11} className={desc.accentClassName} />
-                  {feat}
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="mt-3 space-y-3">
-            <div>
-              <label className="apple-label">Nombre</label>
-              <input
-                type="text"
-                value={form.nombre}
-                onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-                className="apple-input"
-              />
-            </div>
-            <div>
-              <label className="apple-label">Descripción</label>
-              <textarea
-                rows={2}
-                value={form.descripcion}
-                onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
-                className="apple-input resize-none"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="apple-label">Precio/mes (COP)</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={form.precio_mensual}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      precio_mensual: Number(e.target.value) || 0,
-                    }))
-                  }
-                  className="apple-input"
-                />
-              </div>
-              <div>
-                <label className="apple-label">
-                  <input
-                    type="checkbox"
-                    checked={form.activo}
-                    onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))}
-                    className="mr-1.5 accent-blue-600"
-                  />
-                  Activo
-                </label>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="apple-label">Máx. alumnos</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={form.max_alumnos_default}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      max_alumnos_default: Number(e.target.value) || 1,
-                    }))
-                  }
-                  className="apple-input"
-                />
-              </div>
-              <div>
-                <label className="apple-label">Máx. sedes</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={form.max_sedes_default}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      max_sedes_default: Number(e.target.value) || 1,
-                    }))
-                  }
-                  className="apple-input"
-                />
-              </div>
-            </div>
-
-            {/* Features editor */}
-            <div>
-              <label className="apple-label">Características</label>
-              <div className="space-y-1">
-                {form.caracteristicas.map((feat, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-1.5 rounded-lg bg-white/60 px-2 py-1 text-xs dark:bg-zinc-900/40"
-                  >
-                    <span className="flex-1 text-zinc-700 dark:text-zinc-300">{feat}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeFeature(i)}
-                      className="text-zinc-400 hover:text-red-500"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-1 flex gap-1">
-                <input
-                  type="text"
-                  value={newFeature}
-                  onChange={(e) => setNewFeature(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addFeature())}
-                  placeholder="Nueva característica..."
-                  className="apple-input flex-1 text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={addFeature}
-                  className="rounded-lg bg-zinc-200 px-2 text-xs font-medium text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-300"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0071e3] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
-            >
-              <Save size={14} />
-              {saving ? "Guardando..." : "Guardar"}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /*  Main Page                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -566,7 +323,6 @@ export default function EscuelasPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [deleteError, setDeleteError] = useState("");
-  const [planSaving, setPlanSaving] = useState(false);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -723,15 +479,17 @@ export default function EscuelasPage() {
   const toggleCategoria = (cat: string) => {
     setEscuelaForm((prev) => ({
       ...prev,
-      categorias: prev.categorias.includes(cat)
-        ? prev.categorias.filter((c) => c !== cat)
-        : [...prev.categorias, cat],
+      categorias: toggleCourseCategorySelection(prev.categorias, cat),
     }));
   };
 
   const openCreate = () => {
     setEditing(null);
     restoreEscuelaDraft(emptyEscuelaForm);
+    setEscuelaForm((current) => ({
+      ...current,
+      categorias: normalizeStoredCourseCategories(current.categorias),
+    }));
     restoreAdminDraft(emptyAdminForm);
     setCrearAdmin(true);
     setShowPassword(false);
@@ -751,7 +509,7 @@ export default function EscuelasPage() {
       estado: e.estado,
       max_alumnos: e.max_alumnos,
       max_sedes: e.max_sedes,
-      categorias: e.categorias || [],
+      categorias: normalizeStoredCourseCategories(e.categorias || []),
     });
     setAdminForm(emptyAdminForm);
     setCrearAdmin(false);
@@ -858,18 +616,22 @@ export default function EscuelasPage() {
 
   const handleDelete = async () => {
     if (!deleting) return;
+    const deletingSchool = deleting;
     setSaving(true);
     setDeleteError("");
     try {
       await fetchJsonWithRetry("/api/escuelas/eliminar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ escuela_id: deleting.id }),
+        body: JSON.stringify({ escuela_id: deletingSchool.id }),
       });
-      clearSchoolCategoriesCache(deleting.id);
+      clearSchoolCategoriesCache(deletingSchool.id);
+      setEscuelas((prev) => prev.filter((school) => school.id !== deletingSchool.id));
+      setExpandedId((prev) => (prev === deletingSchool.id ? null : prev));
       setDeleteOpen(false);
       setDeleting(null);
-      fetchEscuelas();
+      toast.success(`Escuela "${deletingSchool.nombre}" eliminada correctamente.`);
+      await fetchEscuelas();
     } catch (err: unknown) {
       const msg =
         err instanceof Error
@@ -878,22 +640,6 @@ export default function EscuelasPage() {
       setDeleteError(msg);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handlePlanSave = async (updated: Partial<PlanConfig> & { id: string }) => {
-    setPlanSaving(true);
-    try {
-      await fetchJsonWithRetry("/api/planes", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updated),
-      });
-      fetchPlanes();
-    } catch (err) {
-      console.error("Error al guardar plan:", err);
-    } finally {
-      setPlanSaving(false);
     }
   };
 
@@ -1397,33 +1143,56 @@ export default function EscuelasPage() {
           <div className="mt-6">
             <div className="mb-5">
               <h2 className="text-lg font-bold text-zinc-900 dark:text-white">
-                Configuración de planes
+                Catálogo comercial
               </h2>
               <p className="mt-1 text-sm text-zinc-500">
-                Edita precios, límites por defecto y características de cada plan de suscripción.
+                La edición de precios, capacidades y ciclos comerciales ahora vive en el Centro de
+                Suscripciones para evitar duplicidad entre módulos.
               </p>
             </div>
-            {planesLoading ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <div
-                    key={i}
-                    className="h-72 animate-pulse rounded-2xl bg-zinc-200/60 dark:bg-zinc-800/60"
-                  />
-                ))}
+            <div className="rounded-3xl border border-zinc-200 bg-white/85 p-6 dark:border-white/10 dark:bg-zinc-900/60">
+              <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                Desde allí el super admin puede editar el catálogo mensual/anual, operar
+                suscripciones por escuela y ejecutar acciones comerciales con auditoría.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link
+                  href="/dashboard/suscripciones"
+                  className="inline-flex min-h-[44px] items-center rounded-2xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#1d4ed8]"
+                >
+                  Ir al Centro de Suscripciones
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void fetchPlanes()}
+                  className="inline-flex min-h-[44px] items-center rounded-2xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 dark:border-white/10 dark:text-zinc-200"
+                >
+                  Refrescar catálogo
+                </button>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {planesConfig.map((plan) => (
-                  <PlanEditorCard
-                    key={plan.id}
-                    plan={plan}
-                    onSave={handlePlanSave}
-                    saving={planSaving}
-                  />
-                ))}
-              </div>
-            )}
+              {planesLoading ? (
+                <div className="mt-5 h-24 animate-pulse rounded-2xl bg-zinc-200/60 dark:bg-zinc-800/60" />
+              ) : planesConfig.length > 0 ? (
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {planesConfig.map((plan) => (
+                    <div
+                      key={plan.id}
+                      className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-white/10 dark:bg-white/5"
+                    >
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-white">
+                        {plan.nombre}
+                      </p>
+                      <p className="mt-2 text-xs text-zinc-500">
+                        {plan.precio_mensual.toLocaleString("es-CO")} / mes
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        {plan.precio_anual.toLocaleString("es-CO")} / año
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
       </div>
@@ -1527,49 +1296,27 @@ export default function EscuelasPage() {
                   </span>
                 </label>
                 <div className="mt-1 space-y-2">
-                  <div>
-                    <p className="mb-1.5 text-[10px] text-[#86868b]">Individuales</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {CATEGORIAS_INDIVIDUALES.map((cat) => {
-                        const sel = escuelaForm.categorias.includes(cat);
-                        return (
-                          <button
-                            key={cat}
-                            type="button"
-                            onClick={() => toggleCategoria(cat)}
-                            className={`rounded-lg border-2 px-3 py-1 text-xs font-semibold transition-colors ${
-                              sel
-                                ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                                : "border-gray-200 text-[#86868b] hover:border-gray-300 dark:border-gray-700"
-                            }`}
-                          >
-                            {cat}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="mb-1.5 text-[10px] text-[#86868b]">Combos</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {CATEGORIAS_COMBO.map((cat) => {
-                        const sel = escuelaForm.categorias.includes(cat);
-                        return (
-                          <button
-                            key={cat}
-                            type="button"
-                            onClick={() => toggleCategoria(cat)}
-                            className={`rounded-lg border-2 px-3 py-1 text-xs font-semibold transition-colors ${
-                              sel
-                                ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
-                                : "border-gray-200 text-[#86868b] hover:border-gray-300 dark:border-gray-700"
-                            }`}
-                          >
-                            {cat}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <p className="text-[11px] text-[#86868b]">
+                    Los combos se forman seleccionando moto y carro por separado en la matrícula.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {CATEGORIAS_INDIVIDUALES.map((cat) => {
+                      const sel = escuelaForm.categorias.includes(cat);
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => toggleCategoria(cat)}
+                          className={`rounded-lg border-2 px-3 py-1 text-xs font-semibold transition-colors ${
+                            sel
+                              ? "border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]"
+                              : "border-gray-200 text-[#86868b] hover:border-gray-300 dark:border-gray-700"
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

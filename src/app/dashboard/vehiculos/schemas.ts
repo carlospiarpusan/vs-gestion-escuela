@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { getCurrentYear } from "@/lib/date-utils";
+
 export const vehiculoSchema = z.object({
   marca: z.string().min(2, "La marca debe tener al menos 2 caracteres."),
   modelo: z.string().min(1, "El modelo es obligatorio."),
@@ -9,9 +11,7 @@ export const vehiculoSchema = z.object({
     .refine(
       (val) =>
         !val ||
-        (!Number.isNaN(Number(val)) &&
-          Number(val) > 1900 &&
-          Number(val) <= new Date().getFullYear() + 1),
+        (!Number.isNaN(Number(val)) && Number(val) > 1900 && Number(val) <= getCurrentYear() + 1),
       "El año no es válido."
     )
     .optional(),

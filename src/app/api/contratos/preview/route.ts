@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/api-auth";
+import { normalizeStoredCourseCategories } from "@/lib/course-categories";
+import { previewNextContractNumber } from "@/lib/contracts-server";
 import { getServerDbPool } from "@/lib/server-db";
-import { derivePrefixFromCategories, type ContractSequencePrefix } from "@/lib/contracts";
 
 /**
  * GET /api/contratos/preview?categorias=B,C
@@ -24,37 +25,25 @@ export async function GET(request: NextRequest) {
   }
 
   const categoriasParam = request.nextUrl.searchParams.get("categorias") || "";
-  const categorias = categoriasParam
-    .split(",")
-    .map((c) => c.trim())
-    .filter(Boolean);
+  const categorias = normalizeStoredCourseCategories(
+    categoriasParam
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean)
+  );
 
   if (categorias.length === 0) {
     return NextResponse.json({ error: "Debe indicar al menos una categoría." }, { status: 400 });
   }
 
-  const prefix = derivePrefixFromCategories(categorias);
-  const columnMap: Record<ContractSequencePrefix, string> = {
-    MOT: "siguiente_consecutivo_mot",
-    CAR: "siguiente_consecutivo_car",
-    COM: "siguiente_consecutivo_com",
-  };
-  const col = columnMap[prefix];
-
   try {
     const pool = getServerDbPool();
-    const res = await pool.query<Record<string, string>>(
-      `SELECT coalesce(${col}, 1)::text AS next_val
-       FROM configuracion_contratos_escuela
-       WHERE escuela_id = $1`,
-      [escuelaId]
-    );
+    const preview = await previewNextContractNumber(pool, {
+      escuelaId,
+      categorias,
+    });
 
-    const nextSequence = parseInt(res.rows[0]?.next_val ?? "1", 10);
-    const paddedSeq = String(nextSequence).padStart(4, "0");
-    const nextNumber = `${prefix}-${paddedSeq}`;
-
-    return NextResponse.json({ nextNumber, prefix, nextSequence });
+    return NextResponse.json(preview);
   } catch (error) {
     console.error("[API contratos/preview]", error);
     return NextResponse.json(

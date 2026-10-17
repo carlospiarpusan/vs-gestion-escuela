@@ -14,6 +14,7 @@ import {
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
+import { formatDateOnlyForDisplay, getTodayDateString } from "@/lib/date-utils";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type {
   Vehiculo,
@@ -25,7 +26,6 @@ import type {
 } from "@/types/database";
 import { Plus, Car, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
-import { vehiculoSchema, mantenimientoSchema } from "./schemas";
 
 // ── Vehículos ──────────────────────────────────────────
 const tipos: TipoVehiculo[] = ["coche", "moto", "camion", "autobus"];
@@ -68,7 +68,7 @@ const emptyMForm = {
   precio_por_litro: "",
   proveedor: "",
   numero_factura: "",
-  fecha: new Date().toISOString().split("T")[0],
+  fecha: getTodayDateString(),
   notas: "",
 };
 
@@ -129,11 +129,7 @@ function formatTipoMantenimiento(tipo: string) {
 
 function formatFecha(fecha: string | null) {
   if (!fecha) return "Sin fecha";
-  return new Date(`${fecha}T00:00:00`).toLocaleDateString("es-CO", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDateOnlyForDisplay(fecha);
 }
 
 function formatCop(valor: number | null) {
@@ -273,7 +269,7 @@ export default function VehiculosPage() {
         const payload = await getDashboardListCached<
           VehiculosListResponse & { _catalogs?: VehiculosCatalogs }
         >({
-          name: needCatalogs ? "vehiculos-table-with-catalogs" : "vehiculos-table",
+          name: "vehiculos-table",
           scope: {
             id: perfil?.id,
             rol: perfil?.rol,
@@ -310,7 +306,7 @@ export default function VehiculosPage() {
         }
       }
     },
-    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
+    [isInstructor, perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
   );
 
   const fetchBitacoraTable = useCallback(
@@ -438,13 +434,15 @@ export default function VehiculosPage() {
 
   const handleSaveV = async () => {
     if (editingV ? !canEditVehicle : !canCreateVehicle) return;
-    const result = vehiculoSchema.safeParse(formV);
-    if (!result.success) {
-      toast.error(result.error.issues[0]?.message || "Error en el formulario del vehículo.");
-      return;
-    }
+    if (savingV) return;
     setSavingV(true);
     try {
+      const { vehiculoSchema } = await import("./schemas");
+      const result = vehiculoSchema.safeParse(formV);
+      if (!result.success) {
+        toast.error(result.error.issues[0]?.message || "Error en el formulario del vehículo.");
+        return;
+      }
       const supabase = createClient();
       const payload = {
         marca: formV.marca,
@@ -501,6 +499,7 @@ export default function VehiculosPage() {
       void fetchVehiculosTable(0, "");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Error al guardar");
+    } finally {
       setSavingV(false);
     }
   };
@@ -584,13 +583,15 @@ export default function VehiculosPage() {
 
   const handleSaveM = async () => {
     if (editingM ? !canEditLogbook : !canCreateLogbook) return;
-    const result = mantenimientoSchema.safeParse(formM);
-    if (!result.success) {
-      toast.error(result.error.issues[0]?.message || "Error en el registro de mantenimiento.");
-      return;
-    }
+    if (savingM) return;
     setSavingM(true);
     try {
+      const { mantenimientoSchema } = await import("./schemas");
+      const result = mantenimientoSchema.safeParse(formM);
+      if (!result.success) {
+        toast.error(result.error.issues[0]?.message || "Error en el registro de mantenimiento.");
+        return;
+      }
       const supabase = createClient();
       let instructorId = isInstructor ? currentInstructorId : formM.instructor_id || null;
       if (isInstructor && !instructorId) {
@@ -675,6 +676,7 @@ export default function VehiculosPage() {
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Error al guardar");
+    } finally {
       setSavingM(false);
     }
   };

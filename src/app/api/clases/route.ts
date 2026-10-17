@@ -34,6 +34,7 @@ type CountRow = {
 const DASHBOARD_LIST_CACHE_TTL_MS = 120 * 1000;
 
 import { parseInteger } from "@/lib/api-helpers";
+import { getStaffReadSedeScope } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
@@ -45,6 +46,8 @@ export async function GET(request: Request) {
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
+  const { sedeId, error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
@@ -52,7 +55,7 @@ export async function GET(request: Request) {
 
   const scope = {
     escuelaId,
-    sedeId: perfil.sede_id,
+    sedeId,
   };
 
   const values: Array<string | number> = [];
@@ -64,8 +67,8 @@ export async function GET(request: Request) {
   const where: string[] = [];
   where.push(`c.escuela_id = ${addValue(escuelaId)}`);
 
-  if (perfil.rol === "admin_sede" && perfil.sede_id) {
-    where.push(`c.sede_id = ${addValue(perfil.sede_id)}`);
+  if (sedeId) {
+    where.push(`c.sede_id = ${addValue(sedeId)}`);
   }
 
   if (search) {
@@ -89,7 +92,7 @@ export async function GET(request: Request) {
   const offsetRef = `$${values.length + 2}`;
 
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("clases", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey("clases", perfil.rol, scope, url.searchParams),
     ttlMs: DASHBOARD_LIST_CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("clases", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),
@@ -149,16 +152,16 @@ export async function GET(request: Request) {
   if (includeCatalogs) {
     const [alumnosRes, instructoresRes, vehiculosRes] = await Promise.all([
       pool.query<{ id: string; nombre: string; apellidos: string }>(
-        `select id, nombre, apellidos from public.alumnos where escuela_id = $1 and estado = 'activo' order by nombre, apellidos`,
-        [escuelaId]
+        `select id, nombre, apellidos from public.alumnos where escuela_id = $1 ${sedeId ? "and sede_id = $2" : ""} and estado = 'activo' order by nombre, apellidos`,
+        sedeId ? [escuelaId, sedeId] : [escuelaId]
       ),
       pool.query<{ id: string; nombre: string; apellidos: string }>(
-        `select id, nombre, apellidos from public.instructores where escuela_id = $1 and estado = 'activo' order by nombre, apellidos`,
-        [escuelaId]
+        `select id, nombre, apellidos from public.instructores where escuela_id = $1 ${sedeId ? "and sede_id = $2" : ""} and estado = 'activo' order by nombre, apellidos`,
+        sedeId ? [escuelaId, sedeId] : [escuelaId]
       ),
       pool.query<{ id: string; marca: string; modelo: string; matricula: string }>(
-        `select id, marca, modelo, matricula from public.vehiculos where escuela_id = $1 and estado <> 'baja' order by created_at desc`,
-        [escuelaId]
+        `select id, marca, modelo, matricula from public.vehiculos where escuela_id = $1 ${sedeId ? "and sede_id = $2" : ""} and estado <> 'baja' order by created_at desc`,
+        sedeId ? [escuelaId, sedeId] : [escuelaId]
       ),
     ]);
 

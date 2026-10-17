@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canAuditedRolePerformAction,
   getAuditedRoleCapability,
+  getAuditedVisibleModules,
   getAuditedRolesForCapabilityAction,
   getDashboardRolesForCapabilityModule,
 } from "./role-capabilities";
@@ -15,6 +16,7 @@ describe("role capabilities", () => {
   });
 
   it("keeps super_admin focused on global modules instead of daily school operation", () => {
+    expect(getAuditedVisibleModules().map((module) => module.id)).not.toContain("classes");
     expect(canAuditedRolePerformAction("super_admin", "students", "view")).toBe(false);
     expect(canAuditedRolePerformAction("super_admin", "income", "view")).toBe(false);
     expect(canAuditedRolePerformAction("super_admin", "reports", "view")).toBe(false);
@@ -22,7 +24,7 @@ describe("role capabilities", () => {
     expect(canAuditedRolePerformAction("super_admin", "subscriptions", "view")).toBe(true);
     expect(canAuditedRolePerformAction("super_admin", "compliance", "view")).toBe(true);
     expect(canAuditedRolePerformAction("super_admin", "compliance", "edit")).toBe(false);
-    expect(canAuditedRolePerformAction("admin_escuela", "subscriptions", "view")).toBe(false);
+    expect(canAuditedRolePerformAction("admin_escuela", "subscriptions", "view")).toBe(true);
   });
 
   it("lets admin_escuela govern compliance for its school only", () => {

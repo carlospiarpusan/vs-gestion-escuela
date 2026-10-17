@@ -5,6 +5,7 @@ import {
   buildSupabaseAdminClient,
   ensureSchoolScope,
   ensureSedeScope,
+  getStaffReadSedeScope,
   parseJsonBody,
   resolveEscuelaIdForRequest,
 } from "@/lib/api-auth";
@@ -116,13 +117,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ totalCount: 0, rows: [] });
   }
 
-  const scope = { escuelaId, sedeId: perfil.sede_id };
+  const { sedeId, error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
+  const scope = { escuelaId, sedeId };
   const wb = createWhereBuilder();
   wb.where.push(`p.rol = 'administrativo'`);
   wb.where.push(`p.escuela_id = ${wb.addValue(escuelaId)}`);
 
-  if (perfil.rol === "admin_sede" && perfil.sede_id) {
-    wb.where.push(`p.sede_id = ${wb.addValue(perfil.sede_id)}`);
+  if (sedeId) {
+    wb.where.push(`p.sede_id = ${wb.addValue(sedeId)}`);
   }
 
   if (search) {
@@ -139,7 +142,7 @@ export async function GET(request: Request) {
   const pg = buildPaginationRefs(page, pageSize, wb.values.length);
 
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("administrativos", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey("administrativos", perfil.rol, scope, url.searchParams),
     ttlMs: DASHBOARD_LIST_CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("administrativos", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),

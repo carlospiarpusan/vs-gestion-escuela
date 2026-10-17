@@ -16,12 +16,14 @@
 import type { NextConfig } from "next";
 import { CONTENT_SECURITY_POLICY } from "./src/lib/security-headers";
 
+const isVercelBuild = process.env.VERCEL === "1";
+
 const nextConfig: NextConfig = {
   /**
    * Optimización de compilación y despliegue.
    * "standalone" reduce drásticamente el tamaño del bundle para Vercel o contenedores Docker.
    */
-  output: "standalone",
+  output: isVercelBuild ? undefined : "standalone",
   /**
    * Compresión gzip/brotli de respuestas HTTP.
    * Reduce el tamaño de transferencia ~70% en HTML, CSS, JS y JSON.
@@ -57,17 +59,6 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value: CONTENT_SECURITY_POLICY,
-          },
-        ],
-      },
-      // Cache agresivo para assets estáticos (JS, CSS, fuentes, imágenes).
-      // Next.js genera hashes en los nombres de archivo, así que immutable es seguro.
-      {
-        source: "/_next/static/(.*)",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
           },
         ],
       },

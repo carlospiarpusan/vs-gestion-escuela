@@ -25,7 +25,12 @@ async function ensureRateLimitStore() {
         create index if not exists api_rate_limits_reset_at_idx
           on public.api_rate_limits (reset_at)
       `);
-    })();
+      await pool.query("alter table public.api_rate_limits enable row level security");
+      await pool.query("revoke all on table public.api_rate_limits from anon, authenticated");
+    })().catch((error) => {
+      global.__autoescuelaRateLimitStoreReady = undefined;
+      throw error;
+    });
   }
 
   return global.__autoescuelaRateLimitStoreReady;

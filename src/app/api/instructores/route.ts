@@ -9,6 +9,7 @@ import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 import { parseInteger } from "@/lib/api-helpers";
+import { getStaffReadSedeScope } from "@/lib/api-auth";
 
 const ALLOWED_ROLES: Rol[] = ["super_admin", "admin_escuela", "admin_sede", "administrativo"];
 
@@ -43,6 +44,8 @@ export async function GET(request: Request) {
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 50);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
+  const { sedeId, error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
@@ -50,7 +53,7 @@ export async function GET(request: Request) {
 
   const scope = {
     escuelaId,
-    sedeId: perfil.sede_id,
+    sedeId,
   };
 
   const values: Array<string | number> = [];
@@ -61,6 +64,7 @@ export async function GET(request: Request) {
 
   const where: string[] = [];
   where.push(`i.escuela_id = ${addValue(escuelaId)}`);
+  if (sedeId) where.push(`i.sede_id = ${addValue(sedeId)}`);
 
   if (search) {
     const ref = addValue(`%${search}%`);
@@ -81,7 +85,7 @@ export async function GET(request: Request) {
   const offsetRef = `$${values.length + 2}`;
 
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("instructores", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey("instructores", perfil.rol, scope, url.searchParams),
     ttlMs: DASHBOARD_LIST_CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("instructores", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),

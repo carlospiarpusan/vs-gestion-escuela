@@ -16,7 +16,7 @@ export const CALE_BANK_SOURCE = "cale_editorial_v1";
 export const CALE_BANK_LABEL = "CALE editorial v1";
 export const CALE_EXAM_NOTES_PREFIX = "CALEJSON:";
 export const CALE_PASSING_PERCENTAGE = 80;
-export const CALE_QUESTION_COUNT_OPTIONS = [10, 20, 40] as const;
+export const CALE_QUESTION_COUNT = 40;
 export const CALE_RESPONSE_OPTIONS: RespuestaCale[] = ["a", "b", "c", "d"];
 
 export const CALE_CATEGORY_BLUEPRINT = [
@@ -89,7 +89,8 @@ export function parseCaleExamNotes(notes: string | null | undefined): CaleExamNo
 }
 
 export function formatElapsedTime(totalSeconds: number) {
-  const safeSeconds = Number.isFinite(totalSeconds) && totalSeconds > 0 ? Math.floor(totalSeconds) : 0;
+  const safeSeconds =
+    Number.isFinite(totalSeconds) && totalSeconds > 0 ? Math.floor(totalSeconds) : 0;
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   const seconds = safeSeconds % 60;

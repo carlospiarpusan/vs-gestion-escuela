@@ -12,6 +12,23 @@ const overviews: PlatformSchoolOverview[] = [
     nombre: "Escuela Alfa",
     estado: "activa",
     plan: "basico",
+    commercialPlan: "basico",
+    subscriptionStatus: "active",
+    subscriptionActualStatus: "active",
+    billingInterval: "monthly",
+    canWrite: true,
+    currentPeriodEnd: "2026-02-10T10:00:00.000Z",
+    trialEndsAt: null,
+    graceEndsAt: null,
+    scheduledPlanId: null,
+    scheduledBillingInterval: null,
+    scheduledEffectiveAt: null,
+    pendingPaymentReference: null,
+    requiresReview: false,
+    currentAmount: 89000,
+    nextAmount: 89000,
+    latestPaymentStatus: "approved",
+    latestPaymentReference: "PAY-ALFA-1",
     max_alumnos: 100,
     max_sedes: 2,
     created_at: "2026-01-10T10:00:00.000Z",
@@ -27,6 +44,23 @@ const overviews: PlatformSchoolOverview[] = [
     nombre: "Escuela Beta",
     estado: "suspendida",
     plan: "gratuito",
+    commercialPlan: "profesional",
+    subscriptionStatus: "read_only",
+    subscriptionActualStatus: "read_only",
+    billingInterval: "trial",
+    canWrite: false,
+    currentPeriodEnd: "2026-05-05T10:00:00.000Z",
+    trialEndsAt: "2026-05-05T10:00:00.000Z",
+    graceEndsAt: null,
+    scheduledPlanId: null,
+    scheduledBillingInterval: null,
+    scheduledEffectiveAt: null,
+    pendingPaymentReference: null,
+    requiresReview: false,
+    currentAmount: 0,
+    nextAmount: 179000,
+    latestPaymentStatus: null,
+    latestPaymentReference: null,
     max_alumnos: 30,
     max_sedes: 1,
     created_at: "2026-02-05T10:00:00.000Z",
@@ -42,6 +76,23 @@ const overviews: PlatformSchoolOverview[] = [
     nombre: "Escuela Gamma",
     estado: "activa",
     plan: "enterprise",
+    commercialPlan: "enterprise",
+    subscriptionStatus: "grace",
+    subscriptionActualStatus: "grace",
+    billingInterval: "annual",
+    canWrite: true,
+    currentPeriodEnd: "2026-03-01T10:00:00.000Z",
+    trialEndsAt: null,
+    graceEndsAt: "2026-03-08T10:00:00.000Z",
+    scheduledPlanId: null,
+    scheduledBillingInterval: null,
+    scheduledEffectiveAt: null,
+    pendingPaymentReference: "CLO-DEMO",
+    requiresReview: true,
+    currentAmount: 3490000,
+    nextAmount: 3490000,
+    latestPaymentStatus: "pending",
+    latestPaymentReference: "CLO-DEMO",
     max_alumnos: 200,
     max_sedes: 5,
     created_at: "2026-03-01T10:00:00.000Z",
@@ -61,12 +112,14 @@ describe("platform subscriptions helpers", () => {
     expect(schools[0]).toMatchObject({
       id: "2",
       health: "risk",
-      paidPlan: false,
+      paidPlan: true,
+      subscriptionStatus: "read_only",
     });
     expect(schools[1]).toMatchObject({
-      id: "1",
+      id: "3",
       health: "attention",
       paidPlan: true,
+      requiresReview: true,
     });
   });
 
@@ -77,10 +130,15 @@ describe("platform subscriptions helpers", () => {
     expect(stats).toMatchObject({
       totalSchools: 3,
       activeSchools: 2,
-      paidSchools: 2,
+      paidSchools: 3,
       suspendedSchools: 1,
       riskSchools: 1,
       enterpriseSchools: 1,
+      trialingSchools: 0,
+      graceSchools: 1,
+      readOnlySchools: 1,
+      pendingPaymentSchools: 0,
+      reviewSchools: 1,
     });
   });
 
@@ -88,15 +146,14 @@ describe("platform subscriptions helpers", () => {
     const schools = buildPlatformSubscriptionSchools(overviews);
     const breakdown = buildPlatformSubscriptionPlanBreakdown(schools);
 
-    expect(breakdown.map((item) => item.plan)).toEqual([
-      "gratuito",
-      "basico",
-      "profesional",
-      "enterprise",
-    ]);
+    expect(breakdown.map((item) => item.plan)).toEqual(["basico", "profesional", "enterprise"]);
     expect(breakdown.find((item) => item.plan === "basico")).toMatchObject({
       schoolCount: 1,
       activeCount: 1,
+    });
+    expect(breakdown.find((item) => item.plan === "profesional")).toMatchObject({
+      schoolCount: 1,
+      suspendedCount: 0,
     });
   });
 });

@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
-import { buildDashboardListServerCacheKey, isFreshDashboardDataRequested } from "@/lib/dashboard-server-cache";
+import {
+  authorizeApiRequest,
+  getStaffReadSedeScope,
+  resolveEscuelaIdForRequest,
+} from "@/lib/api-auth";
+import {
+  buildDashboardListServerCacheKey,
+  isFreshDashboardDataRequested,
+} from "@/lib/dashboard-server-cache";
 import { getServerReadCached } from "@/lib/server-read-cache";
 import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
@@ -38,7 +45,7 @@ type InstructorCatalogRow = {
   apellidos: string;
 };
 
-const CACHE_TTL_MS = 60 * 1000;
+const CACHE_TTL_MS = 300 * 1000;
 
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
@@ -47,6 +54,8 @@ export async function GET(request: Request) {
   const { perfil } = auth;
   const url = new URL(request.url);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
+  const { sedeId, error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
 
   if (!escuelaId) {
     return NextResponse.json({
@@ -58,12 +67,18 @@ export async function GET(request: Request) {
 
   const scope = {
     escuelaId,
-    sedeId: perfil.sede_id,
+    sedeId,
   };
+  const cacheAudienceKey = perfil.rol === "instructor" ? `${perfil.rol}:${perfil.id}` : perfil.rol;
 
   const pool = getServerDbPool();
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("vehiculos-catalogos", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey(
+      "vehiculos-catalogos",
+      cacheAudienceKey,
+      scope,
+      url.searchParams
+    ),
     ttlMs: CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("vehiculos-catalogos", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),
@@ -89,18 +104,20 @@ export async function GET(request: Request) {
               created_at
             from public.vehiculos
             where escuela_id = $1
+              ${sedeId ? "and sede_id = $2" : ""}
             order by created_at desc
           `,
-          [escuelaId]
+          sedeId ? [escuelaId, sedeId] : [escuelaId]
         ),
         pool.query<InstructorCatalogRow>(
           `
             select id, nombre, apellidos
             from public.instructores
             where escuela_id = $1
+              ${sedeId ? "and sede_id = $2" : ""}
             order by nombre asc, apellidos asc
           `,
-          [escuelaId]
+          sedeId ? [escuelaId, sedeId] : [escuelaId]
         ),
         perfil.rol === "instructor"
           ? pool.query<{ id: string }>(
@@ -108,9 +125,10 @@ export async function GET(request: Request) {
                 select id
                 from public.instructores
                 where user_id = $1
+                  and escuela_id = $2
                 limit 1
               `,
-              [perfil.id]
+              [perfil.id, escuelaId]
             )
           : Promise.resolve({ rows: [] as Array<{ id: string }> }),
       ]);

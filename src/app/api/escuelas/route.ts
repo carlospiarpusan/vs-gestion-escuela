@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { APP_TIME_ZONE } from "@/lib/date-utils";
 import {
   authorizeApiRequest,
   buildSupabaseAdminClient,
@@ -9,6 +10,7 @@ import {
   parseJsonBody,
 } from "@/lib/api-auth";
 import { createEscuelaSchema } from "@/lib/schemas";
+import { normalizeStoredCourseCategories } from "@/lib/course-categories";
 import { getServerDbPool } from "@/lib/server-db";
 import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
 import { getServerReadCached, revalidateServerReadCache } from "@/lib/server-read-cache";
@@ -52,7 +54,7 @@ export async function GET() {
 
     const escuelas = await getServerReadCached<EscuelaEnriquecida[]>({
       key: cacheKey,
-      ttlMs: 60_000,
+      ttlMs: 300_000,
       tags: [...buildDashboardListCacheTags("escuelas"), "superadmin"],
       loader: async () => {
         const result = await pool.query<EscuelaEnriquecida>(
@@ -98,8 +100,8 @@ export async function GET() {
               coalesce(sum(monto), 0)::numeric as ingresos_mes
             from public.ingresos
             where estado = 'cobrado'
-              and fecha >= date_trunc('month', current_date)
-              and fecha < date_trunc('month', current_date) + interval '1 month'
+              and fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
+              and fecha < date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) + interval '1 month'
             group by escuela_id
           ),
           clases_agg as (
@@ -107,8 +109,8 @@ export async function GET() {
               escuela_id,
               count(*)::int as clases_mes
             from public.clases
-            where fecha >= date_trunc('month', current_date)
-              and fecha < date_trunc('month', current_date) + interval '1 month'
+            where fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
+              and fecha < date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) + interval '1 month'
             group by escuela_id
           )
           select
@@ -146,6 +148,7 @@ export async function GET() {
         );
         return result.rows.map((r) => ({
           ...r,
+          categorias: normalizeStoredCourseCategories(r.categorias || []),
           max_alumnos: Number(r.max_alumnos),
           max_sedes: Number(r.max_sedes),
           alumnos_activos: Number(r.alumnos_activos),
@@ -194,7 +197,7 @@ export async function PATCH(request: Request) {
       estado: (v) => String(v),
       max_alumnos: (v) => Math.max(1, Math.round(Number(v))),
       max_sedes: (v) => Math.max(1, Math.round(Number(v))),
-      categorias: (v) => (Array.isArray(v) ? v : []),
+      categorias: (v) => normalizeStoredCourseCategories(Array.isArray(v) ? v : []),
     };
 
     for (const [field, transform] of Object.entries(allowedFields)) {
@@ -313,7 +316,7 @@ export async function POST(request: Request) {
           insert into public.escuelas (
             nombre, cif, telefono, email, direccion, plan, estado, max_alumnos, max_sedes, categorias, fecha_alta
           )
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, current_date)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
           returning id
         `,
         [
@@ -326,7 +329,7 @@ export async function POST(request: Request) {
           payload.estado,
           payload.max_alumnos,
           payload.max_sedes,
-          payload.categorias,
+          normalizeStoredCourseCategories(payload.categorias),
         ]
       );
 

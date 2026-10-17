@@ -1,5 +1,7 @@
 "use client";
 
+import { APP_TIME_ZONE } from "@/lib/date-utils";
+
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useDraftForm } from "@/hooks/useDraftForm";
@@ -252,7 +254,7 @@ export default function AdministrativosPage() {
         label: "Alta",
         render: (row: AdminRow) => (
           <span className="text-sm text-[#86868b]">
-            {new Date(row.created_at).toLocaleDateString("es-CO")}
+            {new Date(row.created_at).toLocaleDateString("es-CO", { timeZone: APP_TIME_ZONE })}
           </span>
         ),
       },

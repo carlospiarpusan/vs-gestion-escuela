@@ -38,10 +38,11 @@ import {
   IDLE_LOGOUT_STORAGE_KEY,
 } from "@/lib/session-timeout";
 import { createClient } from "@/lib/supabase";
+import { invalidateClientResourceCache } from "@/lib/client-resource-cache";
 import type { Session } from "@supabase/supabase-js";
-import type { Perfil } from "@/types/database";
+import type { Perfil, SchoolSubscriptionAccess } from "@/types/database";
 
-const APP_TITLE = "Condusoft";
+const APP_TITLE = "ConduSoft";
 const DASHBOARD_SCHOOL_STORAGE_KEY = "dashboard:selected-school-id";
 
 function persistDashboardSchoolSelection(schoolId: string | null) {
@@ -50,12 +51,20 @@ function persistDashboardSchoolSelection(schoolId: string | null) {
   const normalizedSchoolId = normalizeUuid(schoolId);
 
   if (normalizedSchoolId) {
-    window.localStorage.setItem(DASHBOARD_SCHOOL_STORAGE_KEY, normalizedSchoolId);
+    try {
+      window.localStorage.setItem(DASHBOARD_SCHOOL_STORAGE_KEY, normalizedSchoolId);
+    } catch {
+      // The cookie remains the source used by server-side requests.
+    }
     document.cookie = `${DASHBOARD_SCHOOL_COOKIE}=${encodeURIComponent(normalizedSchoolId)}; path=/; max-age=31536000; samesite=lax`;
     return;
   }
 
-  window.localStorage.removeItem(DASHBOARD_SCHOOL_STORAGE_KEY);
+  try {
+    window.localStorage.removeItem(DASHBOARD_SCHOOL_STORAGE_KEY);
+  } catch {
+    // Browser storage restrictions must not prevent clearing the server scope.
+  }
   document.cookie = `${DASHBOARD_SCHOOL_COOKIE}=; path=/; max-age=0; samesite=lax`;
 }
 
@@ -65,6 +74,7 @@ interface AuthContextValue {
   perfil: Perfil | null;
   escuelaNombre: string | null;
   sedeNombre: string | null;
+  subscriptionAccess: SchoolSubscriptionAccess | null;
   schoolOptions: DashboardSchoolOption[];
   activeEscuelaId: string | null;
   setActiveEscuelaId: (escuelaId: string) => Promise<void>;
@@ -81,6 +91,7 @@ const FALLBACK_AUTH_CONTEXT: AuthContextValue = {
   perfil: null,
   escuelaNombre: null,
   sedeNombre: null,
+  subscriptionAccess: null,
   schoolOptions: [],
   activeEscuelaId: null,
   setActiveEscuelaId: noopAsync,
@@ -107,6 +118,10 @@ export function AuthProvider({
   const signOutRedirectRef = useRef<string | null>(null);
   const idleLogoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivityAtRef = useRef(0);
+  const idleLogoutDeadlineRef = useRef<number | null>(null);
+  const authLoadVersionRef = useRef(0);
+  const userIdRef = useRef<string | null>(initialState?.user?.id ?? null);
+  const perfilIdRef = useRef<string | null>(initialState?.perfil?.id ?? null);
 
   const [user, setUser] = useState<AuthUserSnapshot | null>(initialState?.user ?? null);
   const [perfil, setPerfil] = useState<Perfil | null>(initialState?.perfil ?? null);
@@ -114,6 +129,9 @@ export function AuthProvider({
     initialState?.escuelaNombre ?? null
   );
   const [sedeNombre, setSedeNombre] = useState<string | null>(initialState?.sedeNombre ?? null);
+  const [subscriptionAccess, setSubscriptionAccess] = useState<SchoolSubscriptionAccess | null>(
+    initialState?.subscriptionAccess ?? null
+  );
   const [schoolOptions, setSchoolOptions] = useState<DashboardSchoolOption[]>(
     initialState?.schoolOptions ?? []
   );
@@ -124,10 +142,13 @@ export function AuthProvider({
   const [error, setError] = useState<string | null>(null);
 
   const resetAuthState = useCallback(() => {
+    authLoadVersionRef.current += 1;
+    invalidateClientResourceCache("");
     setUser(null);
     setPerfil(null);
     setEscuelaNombre(null);
     setSedeNombre(null);
+    setSubscriptionAccess(null);
     setSchoolOptions([]);
     setActiveEscuelaIdState(null);
     setError(null);
@@ -143,15 +164,21 @@ export function AuthProvider({
       return;
     }
 
-    window.localStorage.removeItem(IDLE_LOGOUT_STORAGE_KEY);
-    window.localStorage.removeItem(IDLE_LOGOUT_LAST_ACTIVITY_KEY);
+    idleLogoutDeadlineRef.current = null;
+    try {
+      window.localStorage.removeItem(IDLE_LOGOUT_STORAGE_KEY);
+      window.localStorage.removeItem(IDLE_LOGOUT_LAST_ACTIVITY_KEY);
+    } catch {
+      // Keep the session lifecycle functional without optional browser storage.
+    }
   }, []);
 
   const applySuperAdminGlobalScope = useCallback(
     async (
       supabase: ReturnType<typeof createClient>,
       perfilData: Perfil,
-      options?: DashboardSchoolOption[]
+      options?: DashboardSchoolOption[],
+      isCurrent: () => boolean = () => true
     ) => {
       const nextOptions =
         options ??
@@ -164,12 +191,14 @@ export function AuthProvider({
         ).data as DashboardSchoolOption[] | null) ||
           []);
 
+      if (!isCurrent()) return;
       setSchoolOptions(nextOptions);
       setActiveEscuelaIdState(null);
       persistDashboardSchoolSelection(null);
       setPerfil({ ...perfilData, escuela_id: null, sede_id: null });
       setEscuelaNombre(null);
       setSedeNombre(null);
+      setSubscriptionAccess(null);
     },
     []
   );
@@ -180,6 +209,8 @@ export function AuthProvider({
       sessionOverride?: Session | null,
       options?: { redirectIfMissing?: boolean; showLoading?: boolean }
     ) => {
+      const loadVersion = ++authLoadVersionRef.current;
+      const isCurrent = () => loadVersion === authLoadVersionRef.current;
       if (options?.showLoading !== false) {
         setLoading(true);
       }
@@ -187,6 +218,7 @@ export function AuthProvider({
 
       try {
         const session = sessionOverride ?? (await supabase.auth.getSession()).data.session;
+        if (!isCurrent()) return;
 
         if (!session?.user) {
           resetAuthState();
@@ -198,6 +230,16 @@ export function AuthProvider({
         }
 
         const currentUser = session.user;
+        if (userIdRef.current && userIdRef.current !== currentUser.id) {
+          invalidateClientResourceCache("");
+          setPerfil(null);
+          setEscuelaNombre(null);
+          setSedeNombre(null);
+          setSubscriptionAccess(null);
+          setSchoolOptions([]);
+          setActiveEscuelaIdState(null);
+          perfilIdRef.current = null;
+        }
         setUser(currentUser);
 
         const { data: perfilData, error: perfilError } = await supabase
@@ -208,6 +250,7 @@ export function AuthProvider({
           .eq("id", currentUser.id)
           .single();
 
+        if (!isCurrent()) return;
         if (perfilError || !perfilData) {
           setError("No se pudo cargar tu perfil. Contacta al administrador.");
           setLoading(false);
@@ -217,7 +260,8 @@ export function AuthProvider({
         const typedPerfil = perfilData as Perfil;
 
         if (typedPerfil.rol === "super_admin") {
-          await applySuperAdminGlobalScope(supabase, typedPerfil);
+          await applySuperAdminGlobalScope(supabase, typedPerfil, undefined, isCurrent);
+          if (!isCurrent()) return;
           setLoading(false);
           return;
         }
@@ -228,13 +272,15 @@ export function AuthProvider({
 
         let nextEscuelaNombre: string | null = null;
         let nextSedeNombre: string | null = null;
+        let nextSubscriptionAccess: SchoolSubscriptionAccess | null = null;
 
         if (typedPerfil.escuela_id) {
-          const [escuelaRes, sedeRes] = await Promise.all([
+          const [escuelaRes, sedeRes, subscriptionRes] = await Promise.all([
             supabase.from("escuelas").select("nombre").eq("id", typedPerfil.escuela_id).single(),
             typedPerfil.sede_id
               ? supabase.from("sedes").select("nombre").eq("id", typedPerfil.sede_id).single()
               : Promise.resolve({ data: null }),
+            supabase.rpc("my_school_subscription_access"),
           ]);
 
           if (escuelaRes.data) {
@@ -243,12 +289,17 @@ export function AuthProvider({
           if (sedeRes.data) {
             nextSedeNombre = sedeRes.data.nombre;
           }
+          nextSubscriptionAccess = (subscriptionRes.data ??
+            null) as SchoolSubscriptionAccess | null;
         }
 
+        if (!isCurrent()) return;
         setEscuelaNombre(nextEscuelaNombre);
         setSedeNombre(nextSedeNombre);
+        setSubscriptionAccess(nextSubscriptionAccess);
         setLoading(false);
       } catch (err) {
+        if (!isCurrent()) return;
         console.error("[AuthContext] Error inesperado:", err);
         setError("Error de conexión. Verifica tu red e intenta de nuevo.");
         setLoading(false);
@@ -264,7 +315,8 @@ export function AuthProvider({
 
       try {
         const supabase = createClient();
-        await supabase.auth.signOut();
+        const { error: signOutError } = await supabase.auth.signOut();
+        if (signOutError) throw signOutError;
       } catch (err) {
         console.error("[AuthContext] Error al cerrar sesión:", err);
         signOutRedirectRef.current = null;
@@ -279,11 +331,20 @@ export function AuthProvider({
   }, [escuelaNombre]);
 
   useEffect(() => {
+    userIdRef.current = user?.id ?? null;
+  }, [user]);
+
+  useEffect(() => {
+    perfilIdRef.current = perfil?.id ?? null;
+  }, [perfil]);
+
+  useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
 
+    let hydrateTimer: ReturnType<typeof setTimeout> | undefined;
     if (!hasInitialStateRef.current) {
-      setTimeout(() => {
+      hydrateTimer = setTimeout(() => {
         void hydrateAuth(supabase, undefined, { redirectIfMissing: true, showLoading: true });
       }, 0);
     }
@@ -302,11 +363,21 @@ export function AuthProvider({
         return;
       }
 
+      const isSameAuthenticatedUser =
+        session.user.id === userIdRef.current && Boolean(perfilIdRef.current);
+      if ((event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") && isSameAuthenticatedUser) {
+        hasInitialStateRef.current = false;
+        return;
+      }
+
+      hasInitialStateRef.current = false;
       void hydrateAuth(supabase, session, { redirectIfMissing: false, showLoading: false });
     });
 
     return () => {
       cancelled = true;
+      authLoadVersionRef.current += 1;
+      clearTimeout(hydrateTimer);
       subscription.unsubscribe();
     };
   }, [clearIdleLogoutState, hydrateAuth, resetAuthState, router]);
@@ -340,21 +411,37 @@ export function AuthProvider({
 
       lastActivityAtRef.current = now;
       const deadline = getIdleLogoutDeadline(now);
-      window.localStorage.setItem(IDLE_LOGOUT_LAST_ACTIVITY_KEY, String(now));
-      window.localStorage.setItem(IDLE_LOGOUT_STORAGE_KEY, String(deadline));
+      idleLogoutDeadlineRef.current = deadline;
+      try {
+        window.localStorage.setItem(IDLE_LOGOUT_LAST_ACTIVITY_KEY, String(now));
+        window.localStorage.setItem(IDLE_LOGOUT_STORAGE_KEY, String(deadline));
+      } catch {
+        // Keep the in-memory timeout when cross-tab storage is unavailable.
+      }
       scheduleIdleLogout(deadline);
     };
 
     const syncFromStorage = () => {
       if (typeof window === "undefined") return;
 
-      const storedDeadline = Number(window.localStorage.getItem(IDLE_LOGOUT_STORAGE_KEY));
+      let storedDeadline = idleLogoutDeadlineRef.current;
+      try {
+        const stored = window.localStorage.getItem(IDLE_LOGOUT_STORAGE_KEY);
+        if (stored !== null) storedDeadline = Number(stored);
+      } catch {
+        // Fall back to this tab's deadline without extending it.
+      }
 
-      if (!Number.isFinite(storedDeadline) || storedDeadline <= Date.now()) {
+      if (
+        storedDeadline === null ||
+        !Number.isFinite(storedDeadline) ||
+        storedDeadline <= Date.now()
+      ) {
         void performSignOut(buildIdleLogoutHref());
         return false;
       }
 
+      idleLogoutDeadlineRef.current = storedDeadline;
       scheduleIdleLogout(storedDeadline);
       return true;
     };
@@ -429,6 +516,7 @@ export function AuthProvider({
         perfil,
         escuelaNombre,
         sedeNombre,
+        subscriptionAccess,
         schoolOptions,
         activeEscuelaId,
         setActiveEscuelaId,

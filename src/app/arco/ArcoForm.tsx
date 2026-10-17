@@ -33,8 +33,20 @@ const TIPOS = [
 
 type TipoArco = (typeof TIPOS)[number]["value"];
 
-export default function ArcoForm() {
-  const [tipo, setTipo] = useState<TipoArco | "">("");
+type ArcoFormProps = {
+  initialTipo?: TipoArco | "";
+  badge?: string;
+  title?: string;
+  description?: string;
+};
+
+export default function ArcoForm({
+  initialTipo = "",
+  badge = "Derechos ARCO",
+  title = "Proteccion de datos personales",
+  description = "Conforme a la Ley 1581 de 2012, puedes ejercer tus derechos de Acceso, Rectificacion, Cancelacion u Oposicion sobre tus datos personales registrados en nuestra plataforma.",
+}: ArcoFormProps = {}) {
+  const [tipo, setTipo] = useState<TipoArco | "">(initialTipo);
   const [nombre, setNombre] = useState("");
   const [dni, setDni] = useState("");
   const [email, setEmail] = useState("");
@@ -138,14 +150,11 @@ export default function ArcoForm() {
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="apple-auth-card px-6 py-8 sm:px-8 sm:py-10">
-            <span className="apple-badge">Derechos ARCO</span>
+            <span className="apple-badge">{badge}</span>
             <h1 className="text-foreground mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
-              Proteccion de datos personales
+              {title}
             </h1>
-            <p className="apple-copy mt-3 text-sm leading-7">
-              Conforme a la Ley 1581 de 2012, puedes ejercer tus derechos de Acceso, Rectificacion,
-              Cancelacion u Oposicion sobre tus datos personales registrados en nuestra plataforma.
-            </p>
+            <p className="apple-copy mt-3 text-sm leading-7">{description}</p>
 
             {/* Tipo de solicitud */}
             <div className="mt-6">

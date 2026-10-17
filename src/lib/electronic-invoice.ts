@@ -1,4 +1,5 @@
 import { DOMParser as XmlDomParser } from "@xmldom/xmldom";
+import type { Element as XmlDomElement } from "@xmldom/xmldom";
 import JSZip from "jszip";
 import { isTramitadorExpenseText } from "@/lib/expense-category";
 import type { CategoriaGasto, MetodoPagoGasto } from "@/types/database";
@@ -41,21 +42,24 @@ function normalizeLocalNames(step: PathStep) {
   return items.map((item) => item.toLowerCase());
 }
 
-function getElementChildren(parent: Element) {
-  return Array.from(parent.childNodes || []).filter((node): node is Element => node.nodeType === 1);
-}
-
-function findDirectChild(parent: Element, step: PathStep) {
-  const names = normalizeLocalNames(step);
-  return (
-    getElementChildren(parent).find((child) => names.includes(child.localName.toLowerCase())) ||
-    null
+function getElementChildren(parent: XmlDomElement) {
+  return Array.from(parent.childNodes || []).filter(
+    (node): node is XmlDomElement => node.nodeType === 1
   );
 }
 
-function findTextByPaths(root: Element, paths: PathDefinition[]) {
+function findDirectChild(parent: XmlDomElement, step: PathStep) {
+  const names = normalizeLocalNames(step);
+  return (
+    getElementChildren(parent).find((child) =>
+      names.includes(normalizeText(child.localName).toLowerCase())
+    ) || null
+  );
+}
+
+function findTextByPaths(root: XmlDomElement, paths: PathDefinition[]) {
   for (const path of paths) {
-    let current: Element | null = root;
+    let current: XmlDomElement | null = root;
     for (const step of path) {
       current = current ? findDirectChild(current, step) : null;
       if (!current) break;
@@ -68,9 +72,9 @@ function findTextByPaths(root: Element, paths: PathDefinition[]) {
   return null;
 }
 
-function findAttributeByPaths(root: Element, paths: PathDefinition[], attributeName: string) {
+function findAttributeByPaths(root: XmlDomElement, paths: PathDefinition[], attributeName: string) {
   for (const path of paths) {
-    let current: Element | null = root;
+    let current: XmlDomElement | null = root;
     for (const step of path) {
       current = current ? findDirectChild(current, step) : null;
       if (!current) break;
@@ -83,7 +87,7 @@ function findAttributeByPaths(root: Element, paths: PathDefinition[], attributeN
   return null;
 }
 
-function findDescendantText(root: Element, localNames: string[]) {
+function findDescendantText(root: XmlDomElement, localNames: string[]) {
   for (const localName of localNames) {
     const nodes = root.getElementsByTagNameNS("*", localName);
     for (const node of Array.from(nodes)) {
@@ -97,10 +101,10 @@ function findDescendantText(root: Element, localNames: string[]) {
 
 type DescendantTextIndex = Map<string, string>;
 
-function buildDescendantTextIndex(root: Element) {
+function buildDescendantTextIndex(root: XmlDomElement) {
   const index: DescendantTextIndex = new Map();
 
-  const visit = (node: Element) => {
+  const visit = (node: XmlDomElement) => {
     const localName = normalizeText(node.localName).toLowerCase();
     if (localName && !index.has(localName)) {
       const value = normalizeText(node.textContent);
@@ -154,19 +158,20 @@ function assertXmlLooksLikeInvoice(xmlContent: string) {
   }
 }
 
-function parseXmlDocument(xmlContent: string) {
+function parseXmlRoot(xmlContent: string) {
   const parser = typeof DOMParser !== "undefined" ? new DOMParser() : new XmlDomParser();
   const document = parser.parseFromString(xmlContent, "application/xml");
   const parseError = document.getElementsByTagName("parsererror")[0];
+  const root = document.documentElement;
 
-  if (parseError || !document.documentElement) {
+  if (parseError || !root) {
     throw new Error("El archivo XML no se pudo leer como factura electronica valida.");
   }
 
-  return document;
+  return root as XmlDomElement;
 }
 
-function extractEmbeddedInvoiceXml(root: Element) {
+function extractEmbeddedInvoiceXml(root: XmlDomElement) {
   const descriptions = Array.from(root.getElementsByTagNameNS("*", "Description"));
 
   for (const description of descriptions) {
@@ -175,9 +180,8 @@ function extractEmbeddedInvoiceXml(root: Element) {
     if (!/<(Invoice|CreditNote)\b/i.test(raw)) continue;
 
     try {
-      const embeddedDocument = parseXmlDocument(raw);
-      const embeddedRoot = embeddedDocument.documentElement;
-      if (/(invoice|creditnote)/i.test(embeddedRoot.localName)) {
+      const embeddedRoot = parseXmlRoot(raw);
+      if (/(invoice|creditnote)/i.test(normalizeText(embeddedRoot.localName))) {
         return embeddedRoot;
       }
     } catch {
@@ -218,7 +222,7 @@ function uniqueItems(items: string[]) {
   return Array.from(new Set(items.map((item) => normalizeText(item)).filter(Boolean)));
 }
 
-function extractLineItems(root: Element) {
+function extractLineItems(root: XmlDomElement) {
   const invoiceLines = [
     ...Array.from(root.getElementsByTagNameNS("*", "InvoiceLine")),
     ...Array.from(root.getElementsByTagNameNS("*", "CreditNoteLine")),
@@ -368,9 +372,10 @@ function parseElectronicInvoiceXmlContent(
   );
   assertXmlLooksLikeInvoice(xmlContent);
 
-  const document = parseXmlDocument(xmlContent);
-  const root = document.documentElement;
-  const effectiveRoot = /^(AttachedDocument|ApplicationResponse)$/i.test(root.localName)
+  const root = parseXmlRoot(xmlContent);
+  const effectiveRoot = /^(AttachedDocument|ApplicationResponse)$/i.test(
+    normalizeText(root.localName)
+  )
     ? extractEmbeddedInvoiceXml(root) || root
     : root;
   const effectiveRootName = normalizeText(effectiveRoot.localName).toLowerCase();

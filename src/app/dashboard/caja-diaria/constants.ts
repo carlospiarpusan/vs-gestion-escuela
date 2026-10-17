@@ -1,5 +1,6 @@
 import type { Alumno, CategoriaIngreso, EstadoIngreso, MetodoPago } from "@/types/database";
 import { buildAccountingYears, getCurrentAccountingYear } from "@/lib/accounting-dashboard";
+import { getCurrentDayOfMonth, getCurrentMonthNumber } from "@/lib/date-utils";
 import type { DailyCashStats } from "@/lib/finance/types";
 
 export type AlumnoOption = Pick<Alumno, "id" | "nombre" | "apellidos">;
@@ -32,11 +33,11 @@ function formatDateOnly(year: number, month: number, day: number) {
 const currentDateParts = getTimeZoneDateParts(new Date(), CASH_DASHBOARD_TIME_ZONE);
 
 export const currentYear = currentDateParts.year || getCurrentAccountingYear();
-export const currentMonth = currentDateParts.month || new Date().getMonth() + 1;
+export const currentMonth = currentDateParts.month || getCurrentMonthNumber();
 export const currentDate = formatDateOnly(
   currentYear,
   currentMonth,
-  currentDateParts.day || new Date().getDate()
+  currentDateParts.day || getCurrentDayOfMonth()
 );
 export const years = buildAccountingYears();
 

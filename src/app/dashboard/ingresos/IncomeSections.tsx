@@ -15,6 +15,7 @@ import type { IncomeView } from "@/lib/income-view";
 import {
   AlumnoOption,
   categorias,
+  formatAlumnoOptionLabel,
   estadosIngreso,
   formatIncomeText,
   getIncomeStatusClasses,
@@ -91,7 +92,6 @@ function renderIncomeLedgerMobileCard(
           </p>
           <p className="mt-2 text-xs text-[#66707a] dark:text-[#aeb6bf]">
             {formatCompactDate(row.fecha)}
-            {row.contraparte ? ` • ${row.contraparte}` : ""}
           </p>
         </div>
         <div className="text-right">
@@ -109,6 +109,14 @@ function renderIncomeLedgerMobileCard(
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div>
           <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
+            Alumno
+          </p>
+          <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">
+            {row.contraparte || "Sin alumno asociado"}
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Método
           </p>
           <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">
@@ -123,14 +131,16 @@ function renderIncomeLedgerMobileCard(
             {row.numero_factura || "Sin soporte"}
           </p>
         </div>
-        <div>
-          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
-            Contrato
-          </p>
-          <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">
-            {row.contrato || "Sin contrato"}
-          </p>
-        </div>
+        {row.categoria !== "examen_aptitud" ? (
+          <div>
+            <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
+              Contrato
+            </p>
+            <p className="mt-1 text-sm text-[#111214] dark:text-[#f5f5f7]">
+              {row.contrato || "Sin contrato"}
+            </p>
+          </div>
+        ) : null}
         <div>
           <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Documento
@@ -248,7 +258,7 @@ export function IncomeFiltersSection({
             <option value="">Todos</option>
             {alumnos.map((alumno) => (
               <option key={alumno.id} value={alumno.id}>
-                {alumno.nombre} {alumno.apellidos}
+                {formatAlumnoOptionLabel(alumno)}
               </option>
             ))}
           </select>
@@ -410,14 +420,29 @@ export function IncomeLedgerSection({
         key: "concepto" as keyof IncomeLedgerRow,
         label: "Concepto",
         render: (row: IncomeLedgerRow) => (
-          <div className="max-w-[200px]">
+          <div className="max-w-[220px]">
             <p className="truncate font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
               {row.concepto}
             </p>
-            {row.contraparte ? (
-              <p className="truncate text-xs text-[#86868b]">{row.contraparte}</p>
-            ) : null}
           </div>
+        ),
+      },
+      {
+        key: "contraparte" as keyof IncomeLedgerRow,
+        label: "Alumno",
+        render: (row: IncomeLedgerRow) => (
+          <div className="max-w-[180px]">
+            <p className="truncate text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {row.contraparte || "Sin alumno asociado"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        key: "documento" as keyof IncomeLedgerRow,
+        label: "Cédula",
+        render: (row: IncomeLedgerRow) => (
+          <span className="text-sm text-[#86868b]">{row.documento || "Sin documento"}</span>
         ),
       },
       {
@@ -470,7 +495,7 @@ export function IncomeLedgerSection({
         columns={columns}
         data={rows}
         loading={loading}
-        searchPlaceholder="Buscar por concepto, alumno, factura o contrato..."
+        searchPlaceholder="Buscar por concepto, alumno, cédula, factura o contrato..."
         searchTerm={searchTerm}
         serverSide
         totalCount={totalCount}

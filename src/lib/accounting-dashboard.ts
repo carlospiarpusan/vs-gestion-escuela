@@ -129,6 +129,7 @@ export type AccountingContractsSummary = {
   totalEsperado: number;
   totalCobrado: number;
   totalPendiente: number;
+  totalRecaudadoPeriodo: number;
   buckets: AccountingAgingBucketRow[];
   topDeudores: AccountingCounterpartyRow[];
   monthly: AccountingContractMonthlyRow[];
@@ -218,6 +219,9 @@ export type AccountingReportResponse = {
   students?: AccountingStudentsSummary;
 };
 
+import { formatDateOnlyForDisplay, getCurrentYear } from "@/lib/date-utils";
+import { formatCop } from "@/lib/intl-formatters";
+
 export const HISTORICAL_START_YEAR = 2023;
 export const MONTH_OPTIONS = [
   { value: "", label: "Todos" },
@@ -236,15 +240,11 @@ export const MONTH_OPTIONS = [
 ];
 
 export function formatAccountingMoney(value: number) {
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+  return formatCop(value || 0);
 }
 
 export function formatCompactDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("es-CO", {
+  return formatDateOnlyForDisplay(value, "es-CO", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -252,7 +252,7 @@ export function formatCompactDate(value: string) {
 }
 
 export function getCurrentAccountingYear() {
-  return new Date().getFullYear();
+  return getCurrentYear();
 }
 
 export function getMonthDateRange(year: number, month: string) {

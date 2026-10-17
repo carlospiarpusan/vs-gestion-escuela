@@ -8,7 +8,6 @@ import {
   Building2,
   CalendarRange,
   Car,
-  Clock,
   CreditCard,
   DollarSign,
   FileText,
@@ -33,8 +32,6 @@ export function renderDashboardIcon(icon: DashboardIconKey, size = 18): ReactNod
       return <Home size={size} />;
     case "students":
       return <Users size={size} />;
-    case "classes":
-      return <Clock size={size} />;
     case "vehicles":
       return <Car size={size} />;
     case "hours":

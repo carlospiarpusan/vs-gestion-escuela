@@ -21,6 +21,7 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -99,7 +100,7 @@ export default function RootLayout({
   const enableVercelObservability = process.env.VERCEL === "1";
 
   return (
-    <html lang="es" data-device-variant="desktop">
+    <html lang="es-CO" data-device-variant="desktop" data-scroll-behavior="smooth">
       <head>
         {enableVercelObservability ? (
           <>

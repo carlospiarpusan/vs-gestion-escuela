@@ -22,6 +22,19 @@ describe("dashboard-scope", () => {
       "a5320c4a-3bf6-4da5-b365-da17d7001d4f"
     );
   });
+  it.each(["%", "%GG", "%E0%A4%A"])(
+    "ignora cookies malformados sin romper el dashboard: %s",
+    (value) => {
+      expect(readCookieValue(`dashboard_school_id=${value}`, DASHBOARD_SCHOOL_COOKIE)).toBeNull();
+      expect(
+        getDashboardSchoolIdFromRequest(
+          new Request("https://example.com", {
+            headers: { cookie: `dashboard_school_id=${value}` },
+          })
+        )
+      ).toBeNull();
+    }
+  );
 
   it("ignora cookies de escuela inválidos en requests", () => {
     const validRequest = new Request("https://example.com", {

@@ -20,7 +20,16 @@ import {
   type ContractSequencePrefix,
 } from "@/lib/contracts";
 import { getContractSchemaCapabilities, reserveNextContractNumber } from "@/lib/contracts-server";
+import {
+  inferTipoPermisoFromCategories,
+  normalizeStoredCourseCategories,
+} from "@/lib/course-categories";
+import { getTodayDateString, isValidDateOnly } from "@/lib/date-utils";
 import { getServerDbPool } from "@/lib/server-db";
+import {
+  studentBillingProfileSchema,
+  studentBillingContactSchema,
+} from "@/lib/student-billing-contact";
 import type { MetodoPago, Rol, TipoRegistroAlumno } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = [
@@ -43,36 +52,29 @@ const manageAlumnoSchema = z
     email: z.string().email().optional().nullable(),
     telefono: z.string().trim().min(1).max(80),
     lugar_expedicion_documento: z.string().trim().min(1).max(160),
-    fecha_nacimiento: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional()
-      .nullable(),
+    fecha_nacimiento: z.string().refine(isValidDateOnly, "Fecha inválida.").optional().nullable(),
     direccion: z.string().trim().max(500).optional().nullable(),
     ciudad: z.string().trim().max(160).optional().nullable(),
     departamento: z.string().trim().max(160).optional().nullable(),
+    datos_facturacion: studentBillingProfileSchema.optional().nullable(),
     categorias: z.array(z.string().trim().min(1)).max(20),
     estado: z.enum(["activo", "inactivo", "graduado", "pre_registrado"]),
     empresa_convenio: z.string().trim().max(200).optional().nullable(),
     nota_examen_teorico: z.number().min(0).max(100).optional().nullable(),
     fecha_examen_teorico: z
       .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .refine(isValidDateOnly, "Fecha inválida.")
       .optional()
       .nullable(),
     nota_examen_practico: z.number().min(0).max(100).optional().nullable(),
     fecha_examen_practico: z
       .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .refine(isValidDateOnly, "Fecha inválida.")
       .optional()
       .nullable(),
     notas: z.string().trim().max(10_000).optional().nullable(),
     numero_contrato: z.string().trim().max(120).optional().nullable(),
-    fecha_inscripcion: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional()
-      .nullable(),
+    fecha_inscripcion: z.string().refine(isValidDateOnly, "Fecha inválida.").optional().nullable(),
     valor_total: z.number().min(0).optional().nullable(),
     abono: z.number().min(0).default(0),
     metodo_pago_abono: z
@@ -126,22 +128,13 @@ type ExistingMatriculaRow = {
   numero_contrato: string | null;
   prefijo_contrato: ContractSequencePrefix | null;
   consecutivo_contrato: number | string | null;
+  estado: string;
   tiene_tramitador: boolean | null;
   tramitador_valor: number | string | null;
 };
 
 function getToday() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function mapTipoPermiso(categorias: string[]) {
-  const first = categorias[0] ? categorias[0].toUpperCase() : "";
-  if (first.startsWith("AM")) return "AM";
-  if (first.startsWith("A1")) return "A1";
-  if (first.startsWith("A2")) return "A2";
-  if (first.startsWith("A")) return "A";
-  if (first.startsWith("RC") || first.startsWith("C")) return "C";
-  return "B";
+  return getTodayDateString();
 }
 
 function buildAptitudReference() {
@@ -152,8 +145,34 @@ function buildPracticeReference() {
   return `PRA-${Date.now()}`;
 }
 
+function buildAlumnoAuthMetadata(nombreCompleto: string) {
+  return {
+    nombre: nombreCompleto,
+    rol: "alumno",
+    debe_cambiar_password: true,
+    debe_completar_perfil: true,
+  };
+}
+
 function toNumber(value: number | string | null | undefined) {
   return Number(value || 0);
+}
+
+function matriculaHasAssignedContract(matricula: ExistingMatriculaRow) {
+  return Boolean(
+    matricula.numero_contrato?.trim() ||
+    normalizeContractSequencePrefix(matricula.prefijo_contrato) ||
+    (matricula.consecutivo_contrato != null && Number(matricula.consecutivo_contrato) > 0)
+  );
+}
+
+function alumnoHasProtectedContract(existing: {
+  alumno: ExistingAlumnoRow;
+  matriculas: ExistingMatriculaRow[];
+}) {
+  if (existing.alumno.tipo_registro !== "regular") return false;
+  if (existing.alumno.numero_contrato?.trim()) return true;
+  return existing.matriculas.some(matriculaHasAssignedContract);
 }
 
 async function ensureSedeBelongsToSchool(schoolId: string, sedeId: string) {
@@ -173,7 +192,13 @@ async function ensureSedeBelongsToSchool(schoolId: string, sedeId: string) {
 }
 
 async function provisionAlumnoAuthUser(input: {
-  actor: { id: string; rol: Rol; escuela_id: string | null; sede_id: string | null };
+  actor: {
+    id: string;
+    rol: Rol;
+    escuela_id: string | null;
+    sede_id: string | null;
+    activo: boolean;
+  };
   schoolId: string;
   sedeId: string;
   nombreCompleto: string;
@@ -186,14 +211,68 @@ async function provisionAlumnoAuthUser(input: {
   }
 
   const supabaseAdmin = buildSupabaseAdminClient();
-  const { data: perfilConCedula } = await supabaseAdmin
-    .from("perfiles")
-    .select("id")
-    .eq("cedula", input.dni)
-    .maybeSingle();
+  const pool = getServerDbPool();
+  const perfilConCedulaRes = await pool.query<{
+    id: string;
+    rol: Rol;
+    email: string | null;
+    escuela_id: string | null;
+    sede_id: string | null;
+  }>(
+    `
+      select id, rol, email, escuela_id, sede_id
+      from public.perfiles
+      where cedula = $1
+      limit 1
+    `,
+    [input.dni]
+  );
+  const perfilConCedula = perfilConCedulaRes.rows[0] ?? null;
 
   if (perfilConCedula) {
-    throw new Error("La cédula o correo ya tiene una cuenta registrada.");
+    const linkedStudentsRes = await pool.query<{ total: number | string | null }>(
+      `
+        select count(*)::int as total
+        from public.alumnos
+        where user_id = $1
+      `,
+      [perfilConCedula.id]
+    );
+    const linkedStudents = Number(linkedStudentsRes.rows[0]?.total || 0);
+    const canReuseExistingAlumnoAccount =
+      perfilConCedula.rol === "alumno" &&
+      linkedStudents === 0 &&
+      perfilConCedula.escuela_id === input.schoolId &&
+      !ensureSchoolScope(input.actor, perfilConCedula.escuela_id) &&
+      !ensureSedeScope(input.actor, perfilConCedula.sede_id || "");
+
+    if (!canReuseExistingAlumnoAccount) {
+      throw new Error("La cédula o correo ya tiene una cuenta registrada.");
+    }
+
+    const reusableEmail = input.email || perfilConCedula.email || `${input.dni}@alumno.local`;
+    const { error: reuseError } = await supabaseAdmin.auth.admin.updateUserById(
+      perfilConCedula.id,
+      {
+        email: reusableEmail,
+        password: input.dni,
+        email_confirm: true,
+        user_metadata: buildAlumnoAuthMetadata(input.nombreCompleto),
+      }
+    );
+
+    if (reuseError) {
+      if (isAuthUserAlreadyRegisteredError(reuseError.message)) {
+        throw new Error("La cédula o correo ya tiene una cuenta registrada.");
+      }
+
+      throw new Error("No se pudo reutilizar la cuenta existente del alumno.");
+    }
+
+    return {
+      userId: perfilConCedula.id,
+      cleanup: async () => undefined,
+    };
   }
 
   const authEmail = input.email || `${input.dni}@alumno.local`;
@@ -204,14 +283,10 @@ async function provisionAlumnoAuthUser(input: {
       email: authEmail,
       password: authPassword,
       email_confirm: true,
-      user_metadata: {
-        nombre: input.nombreCompleto,
-        rol: "alumno",
-        debe_cambiar_password: true,
-        debe_completar_perfil: true,
-      },
+      user_metadata: buildAlumnoAuthMetadata(input.nombreCompleto),
     },
-    { allowOrphanCleanup: !input.email }
+    // Safe orphan cleanup only removes auth users that no longer have a perfil.
+    { allowOrphanCleanup: true }
   );
 
   if (authError || !authData?.user) {
@@ -275,6 +350,7 @@ async function loadExistingAlumno(alumnoId: string) {
             numero_contrato,
             ${contractCapabilities.matriculaPrefix ? "prefijo_contrato" : "null::text as prefijo_contrato"},
             ${contractCapabilities.matriculaConsecutive ? "consecutivo_contrato" : "null::bigint as consecutivo_contrato"},
+            estado,
             tiene_tramitador,
             tramitador_valor
           from public.matriculas_alumno
@@ -288,6 +364,7 @@ async function loadExistingAlumno(alumnoId: string) {
             numero_contrato,
             null::text as prefijo_contrato,
             null as consecutivo_contrato,
+            estado,
             tiene_tramitador,
             tramitador_valor
           from public.matriculas_alumno
@@ -310,9 +387,28 @@ async function handleMutation(request: Request, mode: "create" | "update") {
   const parsed = await parseJsonBody(request, manageAlumnoSchema);
   if (!parsed.ok) return parsed.response;
 
-  const payload = parsed.data;
+  const payload = {
+    ...parsed.data,
+    categorias: normalizeStoredCourseCategories(parsed.data.categorias),
+  };
   const dni = normalizeCedula(payload.dni);
   const email = normalizeEmail(payload.email ?? null);
+  if (mode === "create") {
+    const contact = studentBillingContactSchema.safeParse(payload);
+    if (!contact.success)
+      return NextResponse.json(
+        { error: contact.error.issues[0]?.message || "Completa los datos de facturación." },
+        { status: 400 }
+      );
+  }
+  if (mode === "update" && payload.datos_facturacion) {
+    const contact = studentBillingContactSchema.safeParse(payload);
+    if (!contact.success)
+      return NextResponse.json(
+        { error: contact.error.issues[0]?.message || "Revisa los datos de facturación." },
+        { status: 400 }
+      );
+  }
 
   if (!dni) {
     return NextResponse.json({ error: "La cédula del alumno es inválida." }, { status: 400 });
@@ -405,6 +501,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
 
   let createdAuthUser: Awaited<ReturnType<typeof provisionAlumnoAuthUser>> | null = null;
   let alumnoUserId = existing?.alumno.user_id ?? authz.perfil.id;
+  let failureStage = "cuenta";
 
   try {
     const isPreRegistrado = payload.estado === "pre_registrado";
@@ -454,7 +551,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
 
     const tipoPermiso =
       gestionaMatricula || isAptitud
-        ? mapTipoPermiso(payload.categorias)
+        ? inferTipoPermisoFromCategories(payload.categorias)
         : existing?.alumno.tipo_permiso || "B";
     const categoriasAlumno = isAptitud
       ? categoriaPrincipal
@@ -474,6 +571,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
       ? payload.tramitador_nombre?.trim() || null
       : null;
 
+    failureStage = "base_de_datos";
     const pool = getServerDbPool();
     const client = await pool.connect();
 
@@ -482,6 +580,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
       const contractCapabilities = await getContractSchemaCapabilities(client);
 
       let alumnoId = payload.alumno_id ?? null;
+      failureStage = "alumno";
 
       if (mode === "update" && existing) {
         const updateRes = await client.query<{ id: string }>(
@@ -647,6 +746,8 @@ async function handleMutation(request: Request, mode: "create" | "update") {
       }
 
       let matriculaId: string | null = null;
+      let numeroContratoEspejoAlumno: string | null = null;
+      failureStage = "contrato";
       if (gestionaMatricula) {
         if (editingMatricula) {
           const hadStoredContractNumber = Boolean(editingMatricula.numero_contrato?.trim());
@@ -678,6 +779,8 @@ async function handleMutation(request: Request, mode: "create" | "update") {
             contractPrefix = nextContract.prefix;
             contractSequence = nextContract.nextSequence;
           }
+
+          numeroContratoEspejoAlumno = contractNumber;
 
           if (canPersistHistoricalSequence && canPersistHistoricalPrefix) {
             await client.query(
@@ -855,6 +958,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
             escuelaId: schoolId,
             categorias: payload.categorias,
           });
+          numeroContratoEspejoAlumno = nextContract.nextNumber;
           const matriculaRes = await client.query<{ id: string }>(
             contractCapabilities.matriculaConsecutive && contractCapabilities.matriculaPrefix
               ? `
@@ -982,9 +1086,29 @@ async function handleMutation(request: Request, mode: "create" | "update") {
             );
           }
         }
+
+        if (numeroContratoEspejoAlumno) {
+          await client.query(
+            `
+              update public.alumnos
+              set numero_contrato = $2
+              where id = $1
+            `,
+            [alumnoId, numeroContratoEspejoAlumno]
+          );
+        }
+      }
+
+      if (payload.datos_facturacion && alumnoId) {
+        failureStage = "perfil_fiscal";
+        await client.query(
+          "update public.alumnos set datos_facturacion=$1 where id=$2 and escuela_id=$3",
+          [payload.datos_facturacion, alumnoId, schoolId]
+        );
       }
 
       if (mode === "create" && payload.abono > 0) {
+        failureStage = "abono";
         const categoriaIngreso: TipoRegistroAlumno = payload.tipo_registro;
         const concepto =
           categoriaIngreso === "aptitud_conductor"
@@ -1021,6 +1145,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
         );
       }
 
+      failureStage = "confirmacion";
       await client.query("COMMIT");
       return NextResponse.json({ ok: true });
     } catch (error) {
@@ -1030,6 +1155,13 @@ async function handleMutation(request: Request, mode: "create" | "update") {
       client.release();
     }
   } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    // Never log the payload or error message: they may contain student contact data.
+    console.error("alumnos.manage.failed", {
+      operation: mode,
+      stage: failureStage,
+      code: typeof code === "string" && /^[A-Za-z0-9_]{1,64}$/.test(code) ? code : "unknown",
+    });
     if (createdAuthUser) {
       await createdAuthUser.cleanup();
     }
@@ -1051,6 +1183,16 @@ async function handleDelete(request: Request) {
   const existing = await loadExistingAlumno(parsed.data.alumno_id);
   if (!existing) {
     return NextResponse.json({ error: "El alumno ya no existe." }, { status: 404 });
+  }
+
+  if (alumnoHasProtectedContract(existing)) {
+    return NextResponse.json(
+      {
+        error:
+          "Este alumno tiene un contrato asignado. Debes cancelarlo para conservar el consecutivo; ya no se permite eliminarlo físicamente.",
+      },
+      { status: 409 }
+    );
   }
 
   const schoolScopeError = ensureSchoolScope(authz.perfil, existing.alumno.escuela_id);
@@ -1093,27 +1235,10 @@ async function handleDelete(request: Request) {
     const ownsDedicatedAlumnoUser = perfilRol === "alumno" && linkedStudents <= 1;
 
     if (ownsDedicatedAlumnoUser) {
-      const deleteAuthResult = await supabaseAdmin.auth.admin
-        .deleteUser(existing.alumno.user_id)
-        .catch((error) => ({ error }));
-      const deleteAuthError =
-        deleteAuthResult && typeof deleteAuthResult === "object" && "error" in deleteAuthResult
-          ? (deleteAuthResult.error as { message?: string } | null | undefined)
-          : null;
-
-      await client.query("BEGIN");
-      await client.query(
-        `
-          delete from public.perfiles
-          where id = $1
-        `,
-        [existing.alumno.user_id]
-      );
-      await client.query("COMMIT");
-
-      if (deleteAuthError?.message) {
-        console.warn(
-          `[alumnos.delete] No se pudo eliminar auth.users para ${existing.alumno.user_id}: ${deleteAuthError.message}`
+      const deleteAuthResult = await supabaseAdmin.auth.admin.deleteUser(existing.alumno.user_id);
+      if (deleteAuthResult?.error?.message) {
+        throw new Error(
+          `No se pudo eliminar la cuenta del alumno. Intenta nuevamente. ${deleteAuthResult.error.message}`
         );
       }
     } else {

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { BadgeCheck, BookOpenCheck, Building2, Car, CreditCard } from "lucide-react";
+import CondusoftLogo from "@/components/brand/CondusoftLogo";
 
 type AuthHighlight = {
   title: string;
@@ -19,6 +21,13 @@ type AuthWorkspaceProps = {
   securityNote?: string;
 };
 
+const authCapabilityGroups = [
+  { icon: Building2, label: "Alumnos, matrículas y sedes" },
+  { icon: CreditCard, label: "Ingresos, cartera y caja diaria" },
+  { icon: Car, label: "Flota, bitácora y mantenimiento" },
+  { icon: BookOpenCheck, label: "Evaluación CALE y app móvil" },
+];
+
 export default function AuthWorkspace({
   mode,
   badge,
@@ -34,20 +43,20 @@ export default function AuthWorkspace({
   const isMinimalHero = heroVariant === "minimal";
   const visibleHighlights = highlights.slice(0, isMinimalHero ? 2 : 3);
   const heroTagline =
-    mode === "login" ? "Acceso claro para tu operación diaria" : "Base inicial lista para operar";
+    mode === "login" ? "Panel operativo para autoescuelas" : "Base inicial lista para operar";
   const heroCopy = isMinimalHero
-    ? "Entra sin distracciones y vuelve rápido a tu panel."
+    ? "Vuelve a tu panel para revisar alumnos, agenda, recaudo, cartera, flota y evaluación CALE."
     : "Crea tu escuela con una base limpia y sigue después con alumnos, pagos y agenda.";
 
   return (
     <main className="apple-auth-shell px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto grid w-full max-w-6xl gap-6 pt-[max(0.75rem,env(safe-area-inset-top))] lg:grid-cols-[minmax(0,1.08fr)_minmax(430px,0.92fr)] lg:items-stretch">
-        <section className="apple-auth-hero apple-panel order-2 min-h-[320px] px-6 py-7 lg:order-1 lg:px-8 lg:py-9">
+      <div className="mx-auto grid w-full max-w-6xl gap-6 pt-[max(0.75rem,env(safe-area-inset-top))] lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.78fr)] lg:items-stretch">
+        <section className="apple-auth-hero order-2 min-h-[360px] px-6 py-7 lg:order-1 lg:px-8 lg:py-9">
           <div className="relative z-10 flex h-full flex-col justify-between">
             <div>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <Link href="/" className="apple-button-secondary text-xs font-medium">
-                  &larr; {backLabel}
+                <Link href="/" className="apple-auth-back-link text-xs font-medium">
+                  {backLabel}
                 </Link>
 
                 <div className="apple-auth-switch" aria-label="Cambiar entre login y registro">
@@ -71,13 +80,7 @@ export default function AuthWorkspace({
               </div>
 
               <div className="mt-10 flex items-center gap-4">
-                <span className="apple-brand-mark flex h-12 w-12 items-center justify-center text-sm font-semibold">
-                  C
-                </span>
-                <div>
-                  <p className="apple-kicker">Condusoft</p>
-                  <p className="text-foreground/80 text-sm">{heroTagline}</p>
-                </div>
+                <CondusoftLogo size="lg" subtitle={heroTagline} />
               </div>
 
               <h2 className="text-foreground mt-6 max-w-2xl text-3xl font-semibold tracking-tight sm:text-[2.55rem] sm:leading-[1.08]">
@@ -86,11 +89,11 @@ export default function AuthWorkspace({
               <p className="apple-copy mt-3 max-w-2xl text-sm leading-7 sm:text-base">{heroCopy}</p>
             </div>
 
-            <div className="mt-7 space-y-3">
-              {visibleHighlights.map((highlight, index) => (
+            <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              {visibleHighlights.map((highlight) => (
                 <div key={highlight.title} className="apple-auth-list-item">
                   <span className="apple-auth-list-dot" aria-hidden="true">
-                    {String(index + 1).padStart(2, "0")}
+                    <BadgeCheck size={15} />
                   </span>
                   <div>
                     <p className="text-foreground text-sm font-semibold">{highlight.title}</p>
@@ -100,9 +103,18 @@ export default function AuthWorkspace({
               ))}
             </div>
 
-            <div className="apple-auth-footnote mt-6">
+            <div className="mt-7 grid gap-2 sm:grid-cols-2">
+              {authCapabilityGroups.map((item) => (
+                <div key={item.label} className="apple-auth-mini-card">
+                  <item.icon size={16} />
+                  <span>{item.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="apple-auth-footnote mt-7">
               {mode === "login"
-                ? "Acceso simple, rápido y sin ruido visual."
+                ? "Acceso segmentado para administradores, alumnos, instructores y administrativos."
                 : "Registro claro para que empieces con una estructura seria."}
             </div>
           </div>

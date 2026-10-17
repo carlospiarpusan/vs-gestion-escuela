@@ -5,10 +5,10 @@ import { buildPublicMetadata } from "@/lib/site-metadata";
 export const metadata: Metadata = buildPublicMetadata({
   title: "Términos y condiciones",
   description:
-    "Consulta los términos básicos de uso de Condusoft para autoescuelas y escuelas de conducción en Colombia.",
+    "Consulta los términos básicos de uso de ConduSoft para autoescuelas y escuelas de conducción en Colombia.",
   path: "/terminos",
   keywords: [
-    "términos condusoft",
+    "términos ConduSoft",
     "condiciones software para autoescuelas",
     "términos escuelas de conducción",
   ],
@@ -19,7 +19,7 @@ export default function TerminosPage() {
     <LegalDocumentShell
       badge="Términos y condiciones"
       title="Uso básico de la plataforma"
-      description="Condusoft es una herramienta de apoyo operativo para escuelas de conducción. El uso de la plataforma implica la responsabilidad de custodiar usuarios, contraseñas y la información registrada dentro del sistema."
+      description="ConduSoft es una herramienta de apoyo operativo para escuelas de conducción. El uso de la plataforma implica la responsabilidad de custodiar usuarios, contraseñas y la información registrada dentro del sistema."
       principles={[
         {
           title: "Acceso responsable",

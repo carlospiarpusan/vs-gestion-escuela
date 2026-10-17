@@ -1,5 +1,20 @@
 /* Dashboard-specific UI components to reduce render-blocking CSS on landing pages */
 
+:root {
+  --dashboard-mobile-tabbar-height: 4.6rem;
+  --dashboard-mobile-browser-bar-offset: 0rem;
+}
+
+body[data-device-variant="mobile"] {
+  --dashboard-mobile-browser-bar-offset: 0.45rem;
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body[data-device-variant="mobile"] {
+    --dashboard-mobile-browser-bar-offset: 0rem;
+  }
+}
+
 .apple-table-shell {
   position: relative;
   overflow-x: auto;

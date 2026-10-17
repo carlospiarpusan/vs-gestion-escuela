@@ -1,5 +1,7 @@
 "use client";
 
+import { APP_TIME_ZONE } from "@/lib/date-utils";
+
 import { useEffect, useMemo, useState } from "react";
 import { KeyRound, Mail, Moon, Phone, ShieldCheck, Sun, UserCircle2 } from "lucide-react";
 import { toast } from "sonner";
@@ -15,7 +17,7 @@ import {
   type AccountProfileDraft,
 } from "@/lib/account-service";
 import { getStoredThemePreference, toggleThemePreference } from "@/lib/theme-service";
-import { getPasswordValidationError } from "@/lib/password-policy";
+import { getPasswordValidationError, PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
 
 const inputCls = "apple-input";
 const labelCls = "apple-label";
@@ -136,7 +138,16 @@ export default function MiCuentaPage() {
         tone: "warning" as const,
       },
     ],
-    [darkMode, draft.telefono, escuelaNombre, perfil?.email, perfil?.nombre, perfil?.rol, sedeNombre, user?.email]
+    [
+      darkMode,
+      draft.telefono,
+      escuelaNombre,
+      perfil?.email,
+      perfil?.nombre,
+      perfil?.rol,
+      sedeNombre,
+      user?.email,
+    ]
   );
 
   const handleProfileSave = async () => {
@@ -237,7 +248,7 @@ export default function MiCuentaPage() {
       }
       aside={
         <div className="apple-panel-muted rounded-[22px] p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8591]">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#7b8591] uppercase">
             Estado de cuenta
           </p>
           <p className="mt-2 text-sm font-semibold text-[#111214] dark:text-[#f5f5f7]">
@@ -245,7 +256,7 @@ export default function MiCuentaPage() {
           </p>
           <p className="mt-2 text-sm leading-6 text-[#66707a] dark:text-[#aeb6bf]">
             {perfil.ultimo_acceso
-              ? `Último acceso: ${new Date(perfil.ultimo_acceso).toLocaleString("es-CO")}`
+              ? `Último acceso: ${new Date(perfil.ultimo_acceso).toLocaleString("es-CO", { timeZone: APP_TIME_ZONE })}`
               : "Aún no se registra un último acceso visible."}
           </p>
         </div>
@@ -264,7 +275,9 @@ export default function MiCuentaPage() {
                 <label className={labelCls}>Nombre completo</label>
                 <input
                   value={draft.nombre}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, nombre: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((prev) => ({ ...prev, nombre: event.target.value }))
+                  }
                   className={inputCls}
                   placeholder="Tu nombre"
                 />
@@ -331,7 +344,9 @@ export default function MiCuentaPage() {
                   <label className={labelCls}>Ciudad</label>
                   <input
                     value={draft.ciudad}
-                    onChange={(event) => setDraft((prev) => ({ ...prev, ciudad: event.target.value }))}
+                    onChange={(event) =>
+                      setDraft((prev) => ({ ...prev, ciudad: event.target.value }))
+                    }
                     className={inputCls}
                     placeholder="Ciudad"
                   />
@@ -367,7 +382,7 @@ export default function MiCuentaPage() {
                     setDraft((prev) => ({ ...prev, nuevaPassword: event.target.value }))
                   }
                   className={inputCls}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder={`Mínimo ${PASSWORD_MIN_LENGTH} caracteres`}
                 />
               </div>
               <div>
@@ -405,7 +420,8 @@ export default function MiCuentaPage() {
                     Apariencia del panel
                   </p>
                   <p className="mt-2 text-sm leading-6 text-[#66707a] dark:text-[#aeb6bf]">
-                    Cambia entre modo claro y oscuro. La preferencia se guarda para toda la plataforma.
+                    Cambia entre modo claro y oscuro. La preferencia se guarda para toda la
+                    plataforma.
                   </p>
                 </div>
                 <div
@@ -442,7 +458,8 @@ export default function MiCuentaPage() {
                     Revisión de cuenta
                   </p>
                   <p className="mt-2 text-sm leading-6 text-emerald-700 dark:text-emerald-300">
-                    Mantener tus datos y tu acceso al día ayuda a que la plataforma funcione con menos errores y más contexto operativo.
+                    Mantener tus datos y tu acceso al día ayuda a que la plataforma funcione con
+                    menos errores y más contexto operativo.
                   </p>
                 </div>
               </div>

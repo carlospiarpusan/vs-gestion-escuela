@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import { parseInteger, createWhereBuilder, buildPaginationRefs, toNumber } from "@/lib/api-helpers";
+import { getStaffReadSedeScope } from "@/lib/api-auth";
 import {
   buildDashboardListServerCacheKey,
   isFreshDashboardDataRequested,
@@ -58,6 +59,8 @@ export async function GET(request: Request) {
   const page = parseInteger(url.searchParams.get("page"), 0, 0, 100_000);
   const pageSize = parseInteger(url.searchParams.get("pageSize"), 10, 1, 250);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
+  const { sedeId, error: scopeError } = getStaffReadSedeScope(perfil);
+  if (scopeError) return NextResponse.json({ error: scopeError }, { status: 403 });
 
   if (!escuelaId) {
     return NextResponse.json({ totalCount: 0, rows: [] });
@@ -84,9 +87,10 @@ export async function GET(request: Request) {
     }
   }
 
-  const scope = { escuelaId, sedeId: perfil.sede_id };
+  const scope = { escuelaId, sedeId };
   const wb = createWhereBuilder();
   wb.where.push(`m.escuela_id = ${wb.addValue(escuelaId)}`);
+  if (sedeId) wb.where.push(`m.sede_id = ${wb.addValue(sedeId)}`);
 
   if (vehiculoId) {
     wb.where.push(`m.vehiculo_id = ${wb.addValue(vehiculoId)}`);
@@ -116,7 +120,12 @@ export async function GET(request: Request) {
   const pg = buildPaginationRefs(page, pageSize, wb.values.length);
 
   const payload = await getServerReadCached({
-    key: buildDashboardListServerCacheKey("mantenimiento", perfil.id, scope, url.searchParams),
+    key: buildDashboardListServerCacheKey(
+      "mantenimiento",
+      currentInstructorId ? `${perfil.rol}:${perfil.id}` : perfil.rol,
+      scope,
+      url.searchParams
+    ),
     ttlMs: DASHBOARD_LIST_CACHE_TTL_MS,
     tags: buildDashboardListCacheTags("mantenimiento", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),

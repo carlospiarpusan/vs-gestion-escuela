@@ -1,6 +1,7 @@
 "use client";
 
 import { fetchJsonWithRetry } from "@/lib/retry";
+import { normalizeStoredCourseCategories } from "@/lib/course-categories";
 
 const categoriesCache = new Map<string, string[]>();
 const pendingRequests = new Map<string, Promise<string[]>>();
@@ -16,7 +17,7 @@ export async function fetchSchoolCategories(escuelaId: string) {
     const payload = await fetchJsonWithRetry<{ categorias: string[] }>(
       `/api/escuelas/categorias?escuela_id=${encodeURIComponent(escuelaId)}`
     );
-    const categories = payload.categorias || [];
+    const categories = normalizeStoredCourseCategories(payload.categorias || []);
     categoriesCache.set(escuelaId, categories);
     pendingRequests.delete(escuelaId);
     return categories;

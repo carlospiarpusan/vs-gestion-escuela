@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DASHBOARD_MODULES,
   findDashboardModuleByPath,
   getDashboardDefaultRoute,
   getDashboardHomePriorityModules,
@@ -9,6 +10,38 @@ import {
 } from "./dashboard-nav";
 
 describe("dashboard navigation config", () => {
+  it("removes Classes from the module catalog and all navigation surfaces", () => {
+    expect(DASHBOARD_MODULES.map((module) => module.id)).not.toContain("classes");
+    for (const role of [
+      "super_admin",
+      "admin_escuela",
+      "admin_sede",
+      "administrativo",
+      "recepcion",
+      "instructor",
+      "alumno",
+    ] as const) {
+      expect(
+        getDashboardNavigationForRole(role).flatMap((area) =>
+          area.modules.map((module) => module.id)
+        )
+      ).not.toContain("classes");
+      expect(getDashboardHomePriorityModules(role).map((module) => module.id)).not.toContain(
+        "classes"
+      );
+    }
+    expect(findDashboardModuleByPath("/dashboard/clases")).toBeNull();
+  });
+  it("keeps the billing connector hidden unless explicitly enabled for the school", () => {
+    const ids = (rol: "admin_escuela" | "instructor", enabled: boolean) =>
+      getDashboardNavigationForRole(rol, { vsBilling: enabled }).flatMap((area) =>
+        area.modules.map((module) => module.id)
+      );
+    expect(ids("admin_escuela", false)).not.toContain("invoicing");
+    expect(ids("admin_escuela", true)).toContain("invoicing");
+    expect(ids("instructor", true)).not.toContain("invoicing");
+    expect(findDashboardModuleByPath("/dashboard/facturacion")).toMatchObject({ id: "invoicing" });
+  });
   it("keeps super_admin navigation limited to global modules", () => {
     const navigation = getDashboardNavigationForRole("super_admin");
 
@@ -41,10 +74,10 @@ describe("dashboard navigation config", () => {
       "finance",
       "exams",
       "configuration",
+      "platform",
     ]);
     expect(navigation[1]?.modules.map((module) => module.id)).toEqual([
       "students",
-      "classes",
       "vehicles",
       "hours",
     ]);
@@ -66,6 +99,7 @@ describe("dashboard navigation config", () => {
       "branches",
       "arco",
     ]);
+    expect(navigation[5]?.modules.map((module) => module.id)).toEqual(["subscriptions"]);
   });
 
   it("matches dashboard routes to the most specific module", () => {
@@ -98,18 +132,36 @@ describe("dashboard navigation config", () => {
     ]);
     expect(getDashboardHomePriorityModules("admin_escuela").map((module) => module.id)).toEqual([
       "students",
-      "classes",
-      "vehicles",
-      "hours",
       "income",
-      "automation",
-      "contracts",
+      "hours",
+      "vehicles",
+      "portfolio",
+      "cash",
+      "expenses",
     ]);
   });
 
   it("keeps the instructor fallback route", () => {
     expect(getDashboardDefaultRoute("instructor")).toBe("/dashboard/vehiculos?tab=bitacora");
     expect(getDashboardDefaultRoute("admin_escuela")).toBe("/dashboard");
+  });
+  it("prioritizes actual role tasks rather than Contracts for everyone", () => {
+    for (const role of [
+      "super_admin",
+      "admin_escuela",
+      "admin_sede",
+      "administrativo",
+      "recepcion",
+      "instructor",
+      "alumno",
+    ] as const) {
+      const priorities = getDashboardHomePriorityModules(role);
+      expect(priorities.map((module) => module.id)).not.toContain("contracts");
+      expect(priorities.every((module) => module.roles.includes(role))).toBe(true);
+    }
+    expect(getDashboardHomePriorityModules("recepcion")[0]?.id).toBe("students");
+    expect(getDashboardHomePriorityModules("alumno").map((module) => module.id)).toEqual(["exams"]);
+    expect(getDashboardHomePriorityModules("super_admin")[0]?.id).toBe("schools");
   });
 
   it("returns page meta for the dedicated account workspace", () => {

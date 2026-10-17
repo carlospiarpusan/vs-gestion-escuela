@@ -13,7 +13,11 @@ export function readCookieValue(cookieHeader: string | null, cookieName: string)
     const [rawName, ...rawValue] = part.trim().split("=");
     if (rawName !== cookieName) continue;
     const value = rawValue.join("=").trim();
-    return value ? decodeURIComponent(value) : null;
+    try {
+      return value ? decodeURIComponent(value) : null;
+    } catch {
+      return null;
+    }
   }
 
   return null;

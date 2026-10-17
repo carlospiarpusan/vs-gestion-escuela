@@ -26,9 +26,14 @@
 
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
+
+const subscribeToClient = () => () => {};
+const clientSnapshot = () => true;
+const serverSnapshot = () => false;
 
 interface ModalProps {
   open: boolean;
@@ -48,6 +53,7 @@ export default function Modal({
   mobilePresentation = "sheet",
 }: ModalProps) {
   const isMobile = useIsMobileVariant();
+  const mounted = useSyncExternalStore(subscribeToClient, clientSnapshot, serverSnapshot);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -73,14 +79,15 @@ export default function Modal({
   }, [open, handleEscape]);
 
   // No renderizar nada si el modal está cerrado
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   const isFullscreenMobile = isMobile && mobilePresentation === "fullscreen";
 
-  return (
+  // Escape page stacking contexts so navigation cannot cover form actions.
+  return createPortal(
     <div
       ref={overlayRef}
-      className={`apple-overlay fixed inset-0 z-50 flex justify-center ${
+      className={`apple-overlay fixed inset-0 z-[100] flex justify-center ${
         isFullscreenMobile ? "items-stretch p-0" : "items-end p-0 sm:items-center sm:p-4"
       }`}
       onClick={(e) => {
@@ -95,12 +102,12 @@ export default function Modal({
           isFullscreenMobile
             ? "h-[100dvh] max-w-none rounded-none"
             : `${maxWidth} max-h-[96dvh] rounded-t-[2rem] sm:max-h-[90vh] sm:rounded-[2rem]`
-        } flex flex-col overflow-hidden animate-scale-in shadow-[var(--surface-shadow-strong)]`}
+        } animate-scale-in flex flex-col overflow-hidden shadow-[var(--surface-shadow-strong)]`}
       >
         <div className="flex shrink-0 items-center justify-between px-5 py-4 sm:px-7 sm:py-5">
           <h3
             id="modal-title"
-            className="pr-2 truncate text-lg font-semibold tracking-tight text-foreground sm:text-xl"
+            className="text-foreground truncate pr-2 text-lg font-semibold tracking-tight sm:text-xl"
           >
             {title}
           </h3>
@@ -118,6 +125,7 @@ export default function Modal({
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

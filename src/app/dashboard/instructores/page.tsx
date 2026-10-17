@@ -31,7 +31,6 @@ import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilit
 import type { Instructor, EstadoInstructor } from "@/types/database";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
-import { instructorSchema } from "./schemas";
 
 const PAGE_SIZE = 10;
 
@@ -238,22 +237,24 @@ export default function InstructoresPage() {
   // --- Save (create / update) -------------------------------------------
 
   const handleSave = async () => {
+    if (saving) return;
     if ((!editing && !canCreateInstructor) || (editing && !canEditInstructor)) {
       toast.error("No tienes permisos para gestionar instructores.");
       return;
     }
 
-    const result = instructorSchema.safeParse(form);
-    if (!result.success) {
-      toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
-      return;
-    }
     setSaving(true);
-
-    // Use first selected specialty as the legacy single-value field
-    const especialidadPrincipal = form.especialidades[0];
-
     try {
+      const { instructorSchema } = await import("./schemas");
+      const result = instructorSchema.safeParse(form);
+      if (!result.success) {
+        toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
+        return;
+      }
+
+      // Use first selected specialty as the legacy single-value field
+      const especialidadPrincipal = form.especialidades[0];
+
       const supabase = createClient();
 
       if (editing) {
@@ -355,6 +356,7 @@ export default function InstructoresPage() {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error inesperado al guardar.";
       toast.error(message);
+    } finally {
       setSaving(false);
     }
   };

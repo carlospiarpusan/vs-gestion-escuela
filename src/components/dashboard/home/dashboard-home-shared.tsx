@@ -1,11 +1,7 @@
 import type { AlumnoDashboardExamen } from "@/lib/dashboard-admin-summary";
+import { formatCop } from "@/lib/intl-formatters";
 
-export const fmt = (n: number) =>
-  new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(n);
+export const fmt = formatCop;
 
 export const ESTADO_PAGO: Record<string, string> = {
   cobrado: "Pagado",
