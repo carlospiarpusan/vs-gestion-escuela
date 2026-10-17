@@ -13,6 +13,7 @@ import {
 } from "./contracts";
 
 type DbClient = Pool | PoolClient;
+
 type ContractSequenceColumn =
   | "siguiente_consecutivo_mot"
   | "siguiente_consecutivo_car"
@@ -35,6 +36,9 @@ type ContractSequenceRun = {
   end: number;
   length: number;
 };
+
+export const CAR_SEQUENCE_FLOOR = 2932;
+export const CAR_SEQUENCE_FLOOR_SCHOOL_ID = "a5320c4a-3bf6-4da5-b365-da17d7001d4f";
 
 export type ContractSchemaCapabilities = {
   /** Whether the matriculas_alumno table has a `prefijo_contrato` column. */
@@ -85,11 +89,15 @@ function getContractSequenceColumn(prefix: ContractSequencePrefix): ContractSequ
 
 function getConfiguredContractSequenceStart(
   row: ContractConfigRow | null | undefined,
-  prefix: ContractSequencePrefix
+  prefix: ContractSequencePrefix,
+  escuelaId?: string
 ) {
   const raw = row?.[getContractSequenceColumn(prefix)];
   const value = raw == null ? null : Number(raw);
-  return Number.isInteger(value) && Number(value) > 0 ? Number(value) : undefined;
+  const floor =
+    prefix === "CAR" && escuelaId === CAR_SEQUENCE_FLOOR_SCHOOL_ID ? CAR_SEQUENCE_FLOOR : 1;
+  const configured = Number.isInteger(value) && Number(value) > 0 ? Number(value) : floor;
+  return Math.max(configured, floor);
 }
 
 export function formatReservedContractNumber(prefix: ContractSequencePrefix, sequence: number) {
@@ -272,7 +280,7 @@ export async function previewNextContractNumber(
   const occupiedSequences = listOccupiedContractSequences(occupiedRows, prefix);
   const nextSequence = findSmallestAvailableContractSequence(
     occupiedSequences,
-    getConfiguredContractSequenceStart(configRow, prefix)
+    getConfiguredContractSequenceStart(configRow, prefix, opts.escuelaId)
   );
 
   return {
@@ -345,7 +353,7 @@ export async function reserveNextContractNumber(
   const occupiedSequences = listOccupiedContractSequences(occupiedRows, prefix);
   const nextSequence = findSmallestAvailableContractSequence(
     occupiedSequences,
-    getConfiguredContractSequenceStart(configRow, prefix)
+    getConfiguredContractSequenceStart(configRow, prefix, opts.escuelaId)
   );
   const nextSequenceAfterReservation = findSmallestAvailableContractSequence(
     [...occupiedSequences, nextSequence],
