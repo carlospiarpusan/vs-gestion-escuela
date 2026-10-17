@@ -3,7 +3,10 @@ const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 const { Client } = require("pg");
 
-const DEFAULT_JSON_PATH = path.resolve(__dirname, "../data/cale/exports/cale-editorial-lote-01-a-lote-26.json");
+const DEFAULT_JSON_PATH = path.resolve(
+  __dirname,
+  "../data/cale/exports/cale-editorial-lote-01-a-lote-05.json"
+);
 const CALE_SOURCE = "cale_editorial_v1";
 const CALE_SOURCE_PREFIX = "cale";
 const PLACEHOLDER_OPTION_PATTERN = /\bincorrecta\b/i;
@@ -166,9 +169,12 @@ function ensureRows(rawRows) {
         if (!codigoExterno) throw new Error(`Fila editorial ${index + 1}: falta el id externo.`);
         if (!pregunta) throw new Error(`Fila editorial ${index + 1}: falta la pregunta.`);
         if (!opcionA || !opcionB || !opcionC || !opcionD) {
-          throw new Error(`Fila editorial ${index + 1}: la pregunta ${codigoExterno} no tiene las 4 opciones completas.`);
+          throw new Error(
+            `Fila editorial ${index + 1}: la pregunta ${codigoExterno} no tiene las 4 opciones completas.`
+          );
         }
-        if (!categoriaNombre) throw new Error(`Fila editorial ${index + 1}: falta el núcleo de conocimiento.`);
+        if (!categoriaNombre)
+          throw new Error(`Fila editorial ${index + 1}: falta el núcleo de conocimiento.`);
 
         return {
           codigo_externo: codigoExterno,
@@ -208,7 +214,9 @@ function ensureRows(rawRows) {
     if (!codigoExterno) throw new Error(`Fila ${index + 1}: falta el id externo.`);
     if (!pregunta) throw new Error(`Fila ${index + 1}: falta la pregunta.`);
     if (!opcionA || !opcionB || !opcionC || !opcionD) {
-      throw new Error(`Fila ${index + 1}: la pregunta ${codigoExterno} no tiene las 4 opciones completas.`);
+      throw new Error(
+        `Fila ${index + 1}: la pregunta ${codigoExterno} no tiene las 4 opciones completas.`
+      );
     }
     if (!categoriaNombre) throw new Error(`Fila ${index + 1}: falta el núcleo de conocimiento.`);
 
@@ -233,8 +241,8 @@ function ensureRows(rawRows) {
   const skippedRows = normalizedRows.filter((row) =>
     hasPlaceholderOption([row.opcion_a, row.opcion_b, row.opcion_c, row.opcion_d])
   );
-  const importableRows = normalizedRows.filter((row) =>
-    !hasPlaceholderOption([row.opcion_a, row.opcion_b, row.opcion_c, row.opcion_d])
+  const importableRows = normalizedRows.filter(
+    (row) => !hasPlaceholderOption([row.opcion_a, row.opcion_b, row.opcion_c, row.opcion_d])
   );
 
   if (importableRows.length === 0) {
