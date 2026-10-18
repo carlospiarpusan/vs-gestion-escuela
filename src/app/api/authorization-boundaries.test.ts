@@ -67,6 +67,11 @@ const routes = [
   },
   { name: "cumplimiento", load: () => import("./cumplimiento/route"), methods: ["GET"] },
   {
+    name: "cumplimiento/retencion",
+    load: () => import("./cumplimiento/retencion/route"),
+    methods: ["GET", "POST"],
+  },
+  {
     name: "dashboard/admin-summary",
     load: () => import("./dashboard/admin-summary/route"),
     methods: ["GET"],

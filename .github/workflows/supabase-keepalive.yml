@@ -1,0 +1,51 @@
+name: Supabase Maintenance Keepalive
+
+on:
+  schedule:
+    # Ejecuta diariamente a las 04:00 UTC para prevenir la pausa por inactividad de Supabase
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      custom_url:
+        description: 'URL base personalizada (opcional, por defecto usa APP_URL o https://condusoft.co)'
+        required: false
+        default: ''
+
+jobs:
+  supabase-ping:
+    name: Supabase Health & Keepalive Ping
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ejecutar ping de mantenimiento
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ inputs.custom_url != '' && inputs.custom_url || secrets.APP_URL || 'https://condusoft.co' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "⚠️ [WARN] La variable CRON_SECRET no está configurada en los secretos del repositorio (Settings -> Secrets -> Actions)."
+            echo "Para habilitar el keepalive autónomo desde GitHub Actions, configure el secreto CRON_SECRET."
+            exit 0
+          fi
+
+          TARGET_URL="${APP_URL%/}/api/cron/supabase-ping"
+          echo "🚀 Ejecutando ping de mantenimiento contra: $TARGET_URL"
+
+          HTTP_RESPONSE=$(curl -s -S -w "\nHTTP_STATUS:%{http_code}" \
+            -X GET "$TARGET_URL" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "User-Agent: GitHubActions-SupabaseKeepalive/1.0" \
+            --max-time 30)
+
+          HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed -e '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n 1 | sed -e 's/HTTP_STATUS://')
+
+          echo "Código HTTP recibido: $HTTP_STATUS"
+          echo "Respuesta:"
+          echo "$HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "❌ Error: El ping de mantenimiento retornó código $HTTP_STATUS (se esperaba 200)."
+            exit 1
+          fi
+
+          echo "✅ Ping de mantenimiento a Supabase completado con éxito."

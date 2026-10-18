@@ -158,8 +158,16 @@ export default function PrivacidadPage() {
         <h2 className="text-foreground text-lg font-semibold">Retencion de datos</h2>
         <p className="mt-2">
           Los datos personales se conservan mientras exista una relacion activa entre la escuela y
-          la plataforma. Al cancelar el servicio, los datos se mantienen por un periodo de 6 meses
-          para respaldo y cumplimiento regulatorio, tras lo cual se eliminan de forma segura.
+          la plataforma. Desde la baja definitiva documentada del servicio de la escuela se
+          establece una ventana operativa de conservacion de seis meses. Al vencer este plazo, se
+          abre una revision de eliminacion: se identifican los datos que ya no son necesarios y se
+          tramita su supresion de forma controlada y con evidencia de la decision.
+        </p>
+        <p className="mt-2">
+          La suspension por falta de pago o la inactividad de un alumno no inician por si solas este
+          plazo. Los contratos, facturas, pagos, nominas, evidencias academicas y demas informacion
+          sujeta a obligaciones de conservacion o reclamaciones no se eliminan indiscriminadamente.
+          Toda conservacion adicional debe justificarse y revisarse de nuevo.
         </p>
         <p className="mt-2">
           Este periodo de 6 meses corresponde a la cancelacion del servicio de la escuela y no se

@@ -28,6 +28,7 @@ import type {
   TipoDatoRetencionCumplimiento,
   TipoRespaldoCumplimiento,
 } from "@/types/database";
+import SchoolRetentionPanel from "./SchoolRetentionPanel";
 
 type CompliancePayload = {
   escuelaId: string;
@@ -80,7 +81,7 @@ type CompliancePayload = {
   retencion: Array<{
     id: string;
     tipo_dato: TipoDatoRetencionCumplimiento;
-    meses_retencion: number;
+    meses_retencion: number | null;
     criterio_legal: string | null;
     estado_revision: EstadoRevisionRetencionCumplimiento;
     revisado_at: string | null;
@@ -509,6 +510,14 @@ export default function DashboardCompliancePage() {
             description="Matriz resumida de retencion y accesos rapidos a otros flujos del control interno."
           >
             <div className="space-y-5">
+              {payload && (
+                <SchoolRetentionPanel
+                  key={payload.escuelaId}
+                  schoolId={payload.escuelaId}
+                  canManage={perfil?.rol === "super_admin"}
+                  onChanged={loadCompliance}
+                />
+              )}
               {payload?.retencion.length ? (
                 <div className="space-y-3">
                   {payload.retencion.map((item) => (
@@ -522,7 +531,9 @@ export default function DashboardCompliancePage() {
                             {toTitleLabel(item.tipo_dato)}
                           </p>
                           <p className="mt-1 text-sm text-[var(--gray-500)]">
-                            {item.meses_retencion} meses de retencion
+                            {item.meses_retencion === null
+                              ? "Plazo sujeto a revision documentada"
+                              : `${item.meses_retencion} meses de retencion`}
                           </p>
                         </div>
                         <span
@@ -580,9 +591,9 @@ export default function DashboardCompliancePage() {
                 <div className="flex items-start gap-3">
                   <Archive className="mt-0.5 shrink-0 text-[var(--gray-500)]" size={18} />
                   <p className="text-sm leading-6 text-[var(--gray-500)]">
-                    Este modulo ya consulta las tablas reales de cumplimiento de la escuela activa.
-                    Hoy el estado aparece vacio porque todavia no hay registros cargados en base
-                    para politica, respaldos, incidentes o retencion.
+                    Los vencimientos requieren revisar la eliminacion y documentar cualquier
+                    conservacion adicional. Este control no elimina automaticamente contratos,
+                    facturas, nominas ni evidencias protegidas.
                   </p>
                 </div>
               </div>

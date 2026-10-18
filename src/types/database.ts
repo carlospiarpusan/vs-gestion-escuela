@@ -739,7 +739,7 @@ export interface CumplimientoRetencion {
   id: string;
   escuela_id: string;
   tipo_dato: TipoDatoRetencionCumplimiento;
-  meses_retencion: number;
+  meses_retencion: number | null;
   criterio_legal: string | null;
   estado_revision: EstadoRevisionRetencionCumplimiento;
   revisado_at: string | null;

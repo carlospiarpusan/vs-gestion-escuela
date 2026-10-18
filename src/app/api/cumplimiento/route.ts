@@ -254,7 +254,7 @@ export async function GET(request: Request) {
         incidentes: incidentsRes.rows,
         retencion: retentionRes.rows.map((row) => ({
           ...row,
-          meses_retencion: toCount(row.meses_retencion),
+          meses_retencion: row.meses_retencion === null ? null : toCount(row.meses_retencion),
         })),
       },
       { headers: NO_CACHE_HEADERS }
