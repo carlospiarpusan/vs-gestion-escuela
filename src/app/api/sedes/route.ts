@@ -7,6 +7,7 @@ import {
   normalizeText,
   parseJsonBody,
 } from "@/lib/api-auth";
+import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
 import { getAuditedRolesForCapabilityAction } from "@/lib/role-capabilities";
 import { normalizeStoredCourseCategories } from "@/lib/course-categories";
 import { getServerDbPool } from "@/lib/server-db";
@@ -232,8 +233,20 @@ async function saveSede(
 }
 
 export async function POST(request: Request) {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const authz = await authorizeApiRequest(ALLOWED_ROLES, request);
   if (!authz.ok) return authz.response;
+
+  const limiter = await rateLimit(
+    getRateLimitKey(request, "api:sedes:mutation", authz.perfil.id),
+    30,
+    60 * 1000
+  );
+  if (!limiter.ok) {
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Intenta más tarde." },
+      { status: 429 }
+    );
+  }
 
   const parsed = await parseJsonBody(request, upsertSedeSchema.omit({ id: true }));
   if (!parsed.ok) return parsed.response;
@@ -242,8 +255,20 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const authz = await authorizeApiRequest(ALLOWED_ROLES, request);
   if (!authz.ok) return authz.response;
+
+  const limiter = await rateLimit(
+    getRateLimitKey(request, "api:sedes:mutation", authz.perfil.id),
+    30,
+    60 * 1000
+  );
+  if (!limiter.ok) {
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Intenta más tarde." },
+      { status: 429 }
+    );
+  }
 
   const parsed = await parseJsonBody(request, upsertSedeSchema);
   if (!parsed.ok) return parsed.response;
@@ -256,8 +281,20 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const authz = await authorizeApiRequest(ALLOWED_ROLES, request);
   if (!authz.ok) return authz.response;
+
+  const limiter = await rateLimit(
+    getRateLimitKey(request, "api:sedes:mutation", authz.perfil.id),
+    30,
+    60 * 1000
+  );
+  if (!limiter.ok) {
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Intenta más tarde." },
+      { status: 429 }
+    );
+  }
 
   const parsed = await parseJsonBody(request, deleteSedeSchema);
   if (!parsed.ok) return parsed.response;

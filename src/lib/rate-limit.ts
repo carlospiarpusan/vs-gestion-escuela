@@ -26,7 +26,16 @@ async function ensureRateLimitStore() {
           on public.api_rate_limits (reset_at)
       `);
       await pool.query("alter table public.api_rate_limits enable row level security");
-      await pool.query("revoke all on table public.api_rate_limits from anon, authenticated");
+      await pool.query(`
+        do $$ begin
+          if exists (select 1 from pg_roles where rolname = 'anon') then
+            revoke all on table public.api_rate_limits from anon;
+          end if;
+          if exists (select 1 from pg_roles where rolname = 'authenticated') then
+            revoke all on table public.api_rate_limits from authenticated;
+          end if;
+        end $$;
+      `);
     })().catch((error) => {
       global.__autoescuelaRateLimitStoreReady = undefined;
       throw error;
@@ -46,17 +55,12 @@ async function cleanupExpiredRateLimits() {
   await pool.query("delete from public.api_rate_limits where reset_at < now()");
 }
 
-export async function rateLimit(
+async function executeRateLimitQuery(
+  pool: ReturnType<typeof getServerDbPool>,
   key: string,
-  limit: number,
-  windowMs: number
-): Promise<RateLimitResult> {
-  await ensureRateLimitStore();
-  void cleanupExpiredRateLimits().catch(() => undefined);
-
-  const pool = getServerDbPool();
-  const intervalText = `${windowMs} milliseconds`;
-  const { rows } = await pool.query<{ count: number | string | null }>(
+  intervalText: string
+) {
+  return pool.query<{ count: number | string | null }>(
     `
       insert into public.api_rate_limits as rl (key, count, reset_at)
       values ($1, 1, now() + $2::interval)
@@ -74,6 +78,37 @@ export async function rateLimit(
     `,
     [key, intervalText]
   );
+}
+
+export async function rateLimit(
+  key: string,
+  limit: number,
+  windowMs: number
+): Promise<RateLimitResult> {
+  await ensureRateLimitStore();
+  void cleanupExpiredRateLimits().catch(() => undefined);
+
+  const pool = getServerDbPool();
+  const intervalText = `${windowMs} milliseconds`;
+
+  let rows: { count: number | string | null }[];
+  try {
+    const res = await executeRateLimitQuery(pool, key, intervalText);
+    rows = res.rows;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      msg.includes("api_rate_limits") &&
+      (msg.includes("does not exist") || msg.includes("no existe"))
+    ) {
+      global.__autoescuelaRateLimitStoreReady = undefined;
+      await ensureRateLimitStore();
+      const res = await executeRateLimitQuery(pool, key, intervalText);
+      rows = res.rows;
+    } else {
+      throw err;
+    }
+  }
 
   const currentCount = Number(rows[0]?.count || 0);
   return {

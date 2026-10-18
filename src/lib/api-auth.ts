@@ -1,6 +1,6 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type User } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { getDashboardSchoolIdFromRequest, normalizeUuid } from "@/lib/dashboard-scope";
 import type { Perfil, Rol } from "@/types/database";
@@ -9,8 +9,43 @@ import type { ZodSchema } from "zod";
 type MinimalPerfil = Pick<Perfil, "id" | "rol" | "escuela_id" | "sede_id" | "activo">;
 
 type AuthorizationResult =
-  | { ok: true; perfil: MinimalPerfil }
+  | { ok: true; perfil: MinimalPerfil; user: User }
   | { ok: false; response: NextResponse };
+
+export type AuthorizeApiRequestOptions = {
+  allowMustChangePassword?: boolean;
+  request?: Request;
+  skipCsrf?: boolean;
+};
+
+export function isAllowedOrigin(originHeader: string | null, targetHost?: string | null): boolean {
+  if (!originHeader) return true;
+  try {
+    const originHost = new URL(originHeader).host.toLowerCase();
+    if (!targetHost) {
+      if (process.env.NEXT_PUBLIC_SITE_URL) {
+        const configuredHost = new URL(process.env.NEXT_PUBLIC_SITE_URL).host.toLowerCase();
+        if (originHost === configuredHost) return true;
+      }
+      return true;
+    }
+    const cleanHost = targetHost.split(",")[0].trim().toLowerCase();
+    if (originHost === cleanHost) return true;
+    const cleanWithoutPort = cleanHost.endsWith(":443")
+      ? cleanHost.slice(0, -4)
+      : cleanHost.endsWith(":80")
+        ? cleanHost.slice(0, -3)
+        : cleanHost;
+    if (originHost === cleanWithoutPort) return true;
+    if (process.env.NEXT_PUBLIC_SITE_URL) {
+      const configuredHost = new URL(process.env.NEXT_PUBLIC_SITE_URL).host.toLowerCase();
+      if (originHost === configuredHost) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 async function buildServerClient() {
   const cookieStore = await cookies();
@@ -44,7 +79,57 @@ export function buildSupabaseAdminClient() {
   });
 }
 
-export async function authorizeApiRequest(allowedRoles: Rol[]): Promise<AuthorizationResult> {
+export async function authorizeApiRequest(
+  allowedRoles: Rol[],
+  optionsOrRequest?: AuthorizeApiRequestOptions | Request
+): Promise<AuthorizationResult> {
+  const options: AuthorizeApiRequestOptions =
+    optionsOrRequest instanceof Request ? { request: optionsOrRequest } : optionsOrRequest || {};
+
+  if (!options.skipCsrf) {
+    let reqOrigin: string | null = null;
+    let reqHost: string | null = null;
+    let reqMethod: string | null = null;
+    let secFetchSite: string | null = null;
+
+    if (options.request) {
+      reqOrigin = options.request.headers.get("origin");
+      reqHost =
+        options.request.headers.get("host") || options.request.headers.get("x-forwarded-host");
+      reqMethod = options.request.method;
+      secFetchSite = options.request.headers.get("sec-fetch-site");
+    } else {
+      try {
+        const headerList = await headers();
+        reqOrigin = headerList.get("origin");
+        reqHost = headerList.get("host") || headerList.get("x-forwarded-host");
+        secFetchSite = headerList.get("sec-fetch-site");
+      } catch {
+        // Fuera de contexto Next.js (tests unitarios u operaciones internas)
+      }
+    }
+
+    if (secFetchSite === "cross-site") {
+      return {
+        ok: false,
+        response: NextResponse.json({ error: "Origen no autorizado." }, { status: 403 }),
+      };
+    }
+
+    const isMutative = reqMethod
+      ? !["GET", "HEAD", "OPTIONS"].includes(reqMethod.toUpperCase())
+      : reqOrigin !== null;
+
+    if (isMutative && reqOrigin) {
+      if (!isAllowedOrigin(reqOrigin, reqHost)) {
+        return {
+          ok: false,
+          response: NextResponse.json({ error: "Origen no autorizado." }, { status: 403 }),
+        };
+      }
+    }
+  }
+
   const supabase = await buildServerClient();
   const {
     data: { user },
@@ -55,6 +140,19 @@ export async function authorizeApiRequest(allowedRoles: Rol[]): Promise<Authoriz
     return {
       ok: false,
       response: NextResponse.json({ error: "No autorizado." }, { status: 401 }),
+    };
+  }
+
+  if (user.user_metadata?.debe_cambiar_password === true && !options.allowMustChangePassword) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        {
+          error: "Debes cambiar tu contraseña antes de continuar.",
+          code: "MUST_CHANGE_PASSWORD",
+        },
+        { status: 403 }
+      ),
     };
   }
 
@@ -81,7 +179,7 @@ export async function authorizeApiRequest(allowedRoles: Rol[]): Promise<Authoriz
     };
   }
 
-  return { ok: true, perfil };
+  return { ok: true, perfil, user };
 }
 
 export function normalizeText(value: unknown): string | null {

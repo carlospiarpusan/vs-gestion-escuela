@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest, buildSupabaseAdminClient, parseJsonBody } from "@/lib/api-auth";
+import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
 import { getServerDbPool } from "@/lib/server-db";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
 import {
@@ -29,8 +30,20 @@ async function deleteAuthUserIfExists(
 
 export async function POST(request: Request) {
   try {
-    const authz = await authorizeApiRequest(["super_admin"]);
+    const authz = await authorizeApiRequest(["super_admin"], request);
     if (!authz.ok) return authz.response;
+
+    const limiter = await rateLimit(
+      getRateLimitKey(request, "api:escuelas:eliminar", authz.perfil.id),
+      5,
+      15 * 60 * 1000
+    );
+    if (!limiter.ok) {
+      return NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta más tarde." },
+        { status: 429 }
+      );
+    }
 
     const parsedBody = await parseJsonBody(request, deleteEscuelaSchema);
     if (!parsedBody.ok) return parsedBody.response;

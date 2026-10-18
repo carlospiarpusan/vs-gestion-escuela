@@ -12,6 +12,7 @@ import {
   normalizeEmail,
   parseJsonBody,
 } from "@/lib/api-auth";
+import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
 import {
   inferHistoricContractPrefix,
   normalizeContractSequencePrefix,
@@ -381,7 +382,7 @@ async function loadExistingAlumno(alumnoId: string) {
 }
 
 async function handleMutation(request: Request, mode: "create" | "update") {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const authz = await authorizeApiRequest(ALLOWED_ROLES, request);
   if (!authz.ok) return authz.response;
 
   const parsed = await parseJsonBody(request, manageAlumnoSchema);
@@ -435,6 +436,18 @@ async function handleMutation(request: Request, mode: "create" | "update") {
     return NextResponse.json(
       { error: "La creación no debe incluir un alumno existente." },
       { status: 400 }
+    );
+  }
+
+  const limiter = await rateLimit(
+    getRateLimitKey(request, "api:alumnos:manage", authz.perfil.id),
+    60,
+    60 * 1000
+  );
+  if (!limiter.ok) {
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Intenta más tarde." },
+      { status: 429 }
     );
   }
 
@@ -1174,8 +1187,20 @@ async function handleMutation(request: Request, mode: "create" | "update") {
 }
 
 async function handleDelete(request: Request) {
-  const authz = await authorizeApiRequest(ALLOWED_ROLES);
+  const authz = await authorizeApiRequest(ALLOWED_ROLES, request);
   if (!authz.ok) return authz.response;
+
+  const limiter = await rateLimit(
+    getRateLimitKey(request, "api:alumnos:manage", authz.perfil.id),
+    60,
+    60 * 1000
+  );
+  if (!limiter.ok) {
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Intenta más tarde." },
+      { status: 429 }
+    );
+  }
 
   const parsed = await parseJsonBody(request, deleteAlumnoSchema);
   if (!parsed.ok) return parsed.response;

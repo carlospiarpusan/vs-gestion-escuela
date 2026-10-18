@@ -27,6 +27,7 @@ export async function GET(request: Request) {
 
   const pool = getServerDbPool();
   const client = await pool.connect();
+  let lockAcquired = false;
 
   try {
     const lockRes = await client.query<{ locked: boolean }>(
@@ -34,7 +35,8 @@ export async function GET(request: Request) {
       [CRON_LOCK_KEY]
     );
 
-    if (!lockRes.rows[0]?.locked) {
+    lockAcquired = Boolean(lockRes.rows[0]?.locked);
+    if (!lockAcquired) {
       return NextResponse.json({ ok: true, skipped: true, reason: "subscriptions_cron_locked" });
     }
 
@@ -74,10 +76,12 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   } finally {
-    try {
-      await client.query("select pg_advisory_unlock($1)", [CRON_LOCK_KEY]);
-    } catch {
-      // noop
+    if (lockAcquired) {
+      try {
+        await client.query("select pg_advisory_unlock($1)", [CRON_LOCK_KEY]);
+      } catch {
+        // noop
+      }
     }
     try {
       client.release();

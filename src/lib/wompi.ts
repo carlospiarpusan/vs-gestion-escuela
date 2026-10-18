@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 export type WompiEnvironment = "sandbox" | "production";
 
@@ -129,7 +129,9 @@ export function validateWompiEventChecksum(event: WompiEventBody, eventSecret: s
   const timestamp = String(event.timestamp ?? "");
   const expected = sha256Hex(`${propertyValues}${timestamp}${eventSecret}`);
 
-  return expected.toLowerCase() === String(signature.checksum).toLowerCase();
+  const expectedBuf = Buffer.from(expected.toLowerCase(), "utf8");
+  const actualBuf = Buffer.from(String(signature.checksum).toLowerCase(), "utf8");
+  return expectedBuf.length === actualBuf.length && timingSafeEqual(expectedBuf, actualBuf);
 }
 
 export function buildWompiCheckoutPayload(input: {
