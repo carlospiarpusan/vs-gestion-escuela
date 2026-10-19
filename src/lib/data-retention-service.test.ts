@@ -36,18 +36,25 @@ const record = (date = oldDate) =>
     actor
   );
 
-beforeAll(async () => {
-  db = new PGlite();
-  await db.exec(`create role anon; create role authenticated;
+async function createRetentionDatabase(useEnums = false) {
+  const fixture = new PGlite();
+  if (useEnums) {
+    await fixture.exec(`create type tipo_dato_retencion_cumplimiento as enum
+      ('alumnos','instructores','administrativos','contratos','examenes','finanzas','solicitudes_arco');
+      create type estado_revision_retencion_cumplimiento as enum ('vigente','pendiente','en_revision');`);
+  }
+  await fixture.exec(`create role anon; create role authenticated;
     create table escuelas(id uuid primary key,estado text);
     create table perfiles(id uuid primary key);
     create table cumplimiento_retencion(id uuid primary key default gen_random_uuid(), escuela_id uuid references escuelas(id),
-      tipo_dato text, meses_retencion integer not null default 60 check(meses_retencion>0), criterio_legal text,estado_revision text);
+      tipo_dato ${useEnums ? "tipo_dato_retencion_cumplimiento" : "text check(tipo_dato in ('alumnos','contratos','examenes','financiero_contable','nominas_personal','biometria_asistencia','solicitudes_arco'))"},
+      meses_retencion integer not null default 60 check(meses_retencion>0), criterio_legal text,
+      estado_revision ${useEnums ? "estado_revision_retencion_cumplimiento" : "text"});
     insert into escuelas values('${school}','inactiva'),('${other}','activa');
     insert into perfiles values('${actor}');
     insert into cumplimiento_retencion(escuela_id,tipo_dato,meses_retencion,criterio_legal,estado_revision)
       values('${other}','contratos',120,'Regla existente','vigente');`);
-  await db.exec(
+  await fixture.exec(
     readFileSync(
       new URL(
         "../../supabase/migrations/20261018213152_school_cancellation_retention.sql",
@@ -56,6 +63,10 @@ beforeAll(async () => {
       "utf8"
     )
   );
+  return fixture;
+}
+beforeAll(async () => {
+  db = await createRetentionDatabase();
 }, 30000);
 beforeEach(async () => {
   mock.query.mockReset();
@@ -70,6 +81,44 @@ beforeEach(async () => {
 afterAll(async () => {
   await db?.close();
 });
+
+it("carga reglas con los tipos enumerados reales de produccion sin duplicarlas", async () => {
+  const fixture = await createRetentionDatabase(true);
+  try {
+    await fixture.query("select public.seed_school_retention_rules()");
+    expect(
+      (await fixture.query("select count(*)::int as total from cumplimiento_retencion")).rows
+    ).toEqual([{ total: 14 }]);
+    expect(
+      (
+        await fixture.query(
+          "select tipo_dato from cumplimiento_retencion where escuela_id=$1 order by tipo_dato::text",
+          [school]
+        )
+      ).rows
+    ).toEqual(
+      [
+        "administrativos",
+        "alumnos",
+        "contratos",
+        "examenes",
+        "finanzas",
+        "instructores",
+        "solicitudes_arco",
+      ].map((tipo_dato) => ({ tipo_dato }))
+    );
+    expect(
+      (
+        await fixture.query(
+          "select meses_retencion from cumplimiento_retencion where escuela_id=$1 and tipo_dato='contratos'",
+          [other]
+        )
+      ).rows
+    ).toEqual([{ meses_retencion: 120 }]);
+  } finally {
+    await fixture.close();
+  }
+}, 30000);
 
 it("carga siete reglas por escuela sin sobreescribir reglas previas ni fijar plazos fiscales", async () => {
   const rows = (

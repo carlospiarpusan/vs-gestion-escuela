@@ -1,9 +1,9 @@
-name: Supabase Maintenance Keepalive
+name: Supabase Maintenance Keepalive (GitHub Actions)
 
 on:
   schedule:
-    # Ejecuta diariamente a las 04:00 UTC para prevenir la pausa por inactividad de Supabase
-    - cron: '0 4 * * *'
+    # Ejecuta dos veces al día (04:00 UTC y 16:00 UTC) directamente desde GitHub Actions
+    - cron: '0 4,16 * * *'
   workflow_dispatch:
     inputs:
       custom_url:
@@ -13,18 +13,39 @@ on:
 
 jobs:
   supabase-ping:
-    name: Supabase Health & Keepalive Ping
+    name: Supabase Keepalive & Health Ping
     runs-on: ubuntu-latest
     steps:
-      - name: Ejecutar ping de mantenimiento
+      - name: 1. Ping directo a Supabase API Gateway (PostgREST)
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://oyptexglggazvqaofqaj.supabase.co' }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95cHRleGdsZ2dhenZxYW9mcWFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4MzMxODUsImV4cCI6MjA4NjQwOTE4NX0.sAyeyaH4PTvmxJhYz14jlLBST3LQqZf3Jnw6nXIiPnY' }}
+        run: |
+          echo "📡 Ejecutando ping directo a la API de Supabase: $SUPABASE_URL/rest/v1/escuelas"
+          DIRECT_RESPONSE=$(curl -s -S -w "\nHTTP_STATUS:%{http_code}" \
+            -X GET "$SUPABASE_URL/rest/v1/escuelas?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "User-Agent: GitHubActions-SupabaseDirectPing/1.0" \
+            --max-time 30)
+
+          DIRECT_STATUS=$(echo "$DIRECT_RESPONSE" | tail -n 1 | sed -e 's/HTTP_STATUS://')
+          echo "Código HTTP directo Supabase: $DIRECT_STATUS"
+
+          if [ "$DIRECT_STATUS" -ne 200 ]; then
+            echo "⚠️ Advertencia: Supabase directo retornó código $DIRECT_STATUS"
+          else
+            echo "✅ Supabase REST API respondió correctamente (activo)."
+          fi
+
+      - name: 2. Ping al Endpoint de Mantenimiento (PostgreSQL Pooler + Warmup)
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           APP_URL: ${{ inputs.custom_url != '' && inputs.custom_url || secrets.APP_URL || 'https://condusoft.co' }}
         run: |
           if [ -z "$CRON_SECRET" ]; then
-            echo "⚠️ [WARN] La variable CRON_SECRET no está configurada en los secretos del repositorio (Settings -> Secrets -> Actions)."
-            echo "Para habilitar el keepalive autónomo desde GitHub Actions, configure el secreto CRON_SECRET."
-            exit 0
+            echo "⚠️ [WARN] La variable CRON_SECRET no está configurada en GitHub Secrets."
+            exit 1
           fi
 
           TARGET_URL="${APP_URL%/}/api/cron/supabase-ping"
@@ -40,7 +61,7 @@ jobs:
           HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n 1 | sed -e 's/HTTP_STATUS://')
 
           echo "Código HTTP recibido: $HTTP_STATUS"
-          echo "Respuesta:"
+          echo "Reporte de estado:"
           echo "$HTTP_BODY"
 
           if [ "$HTTP_STATUS" -ne 200 ]; then
@@ -48,4 +69,4 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Ping de mantenimiento a Supabase completado con éxito."
+          echo "✅ Ping de mantenimiento completado exitosamente por GitHub Actions."

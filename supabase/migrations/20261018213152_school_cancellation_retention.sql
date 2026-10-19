@@ -49,20 +49,36 @@ REVOKE ALL ON public.school_retention_cases, public.school_retention_events,
 
 CREATE FUNCTION public.seed_school_retention_rules() RETURNS void
 LANGUAGE sql SECURITY INVOKER SET search_path = '' AS $$
+  -- Historical installs use a text/check layout; production uses enum categories.
+  WITH rules AS MATERIALIZED (
+    SELECT r.tipo,r.months,r.criterion,r.state
+    FROM (VALUES
+      ('alumnos',6,'Revision a los seis meses de la baja definitiva documentada. No autoriza borrado por antiguedad del alumno ni elimina soportes protegidos.','vigente','all'),
+      ('contratos',NULL,'Conservacion protegida. Revisar obligaciones y soporte antes de autorizar eliminacion.','en_revision','all'),
+      ('examenes',NULL,'Conservacion protegida de evidencias academicas; requiere revision documentada.','en_revision','all'),
+      ('solicitudes_arco',NULL,'Conservar evidencia de atencion y revisar la supresion segun cada solicitud.','en_revision','all'),
+      ('finanzas',NULL,'Conservacion protegida de facturas, pagos y soportes; no se aplica la ventana operativa de seis meses.','en_revision','enum'),
+      ('instructores',NULL,'Conservacion protegida de datos laborales, nominas y soportes; requiere revision documentada.','en_revision','enum'),
+      ('administrativos',NULL,'Conservacion protegida de datos laborales, nominas y soportes; requiere revision documentada.','en_revision','enum'),
+      ('financiero_contable',NULL,'Conservacion protegida de facturas, pagos y soportes; no se aplica la ventana operativa de seis meses.','en_revision','text'),
+      ('nominas_personal',NULL,'Conservacion protegida laboral; requiere revision documentada.','en_revision','text'),
+      ('biometria_asistencia',NULL,'No fijar un plazo sin revisar finalidad y obligaciones aplicables.','pendiente','text')
+    ) AS r(tipo,months,criterion,state,layout)
+    WHERE r.layout='all' OR r.layout=(
+      SELECT CASE WHEN t.typtype='e' THEN 'enum' ELSE 'text' END
+      FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid=a.atttypid
+      WHERE a.attrelid='public.cumplimiento_retencion'::regclass AND a.attname='tipo_dato'
+    )
+  )
   INSERT INTO public.cumplimiento_retencion
     (escuela_id,tipo_dato,meses_retencion,criterio_legal,estado_revision)
-  SELECT e.id, r.tipo, r.months, r.criterion, r.state
-  FROM public.escuelas e CROSS JOIN (VALUES
-    ('alumnos',6,'Revision a los seis meses de la baja definitiva documentada. No autoriza borrado por antiguedad del alumno ni elimina soportes protegidos.','vigente'),
-    ('contratos',NULL,'Conservacion protegida. Revisar obligaciones y soporte antes de autorizar eliminacion.','en_revision'),
-    ('examenes',NULL,'Conservacion protegida de evidencias academicas; requiere revision documentada.','en_revision'),
-    ('financiero_contable',NULL,'Conservacion protegida de facturas, pagos y soportes; no se aplica la ventana operativa de seis meses.','en_revision'),
-    ('nominas_personal',NULL,'Conservacion protegida laboral; requiere revision documentada.','en_revision'),
-    ('biometria_asistencia',NULL,'No fijar un plazo sin revisar finalidad y obligaciones aplicables.','pendiente'),
-    ('solicitudes_arco',NULL,'Conservar evidencia de atencion y revisar la supresion segun cada solicitud.','en_revision')
-  ) AS r(tipo,months,criterion,state)
+  SELECT e.id, v.tipo_dato, r.months, r.criterion, v.estado_revision
+  FROM public.escuelas e CROSS JOIN rules r
+  -- Production uses enums; older installations use text for these columns.
+  CROSS JOIN LATERAL jsonb_populate_record(NULL::public.cumplimiento_retencion,
+    jsonb_build_object('tipo_dato',r.tipo,'estado_revision',r.state)) AS v
   WHERE NOT EXISTS (SELECT 1 FROM public.cumplimiento_retencion p
-    WHERE p.escuela_id=e.id AND p.tipo_dato=r.tipo);
+    WHERE p.escuela_id=e.id AND p.tipo_dato=v.tipo_dato);
 $$;
 REVOKE ALL ON FUNCTION public.seed_school_retention_rules() FROM PUBLIC, anon, authenticated;
 SELECT public.seed_school_retention_rules();
