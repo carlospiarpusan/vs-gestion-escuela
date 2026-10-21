@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import {
   authorizeApiRequest,
   ensureSchoolScope,
@@ -9,7 +10,7 @@ import {
 import { getServerDbPool } from "@/lib/server-db";
 import { isValidDateOnly } from "@/lib/date-utils";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
-import { buildDashboardListCacheTags, buildFinanceCacheTags } from "@/lib/server-cache-tags";
+import { buildIncomeMutationInvalidationTags } from "@/lib/server-cache-tags";
 import type { Rol } from "@/types/database";
 
 const ALLOWED_ROLES: Rol[] = [
@@ -21,6 +22,7 @@ const ALLOWED_ROLES: Rol[] = [
 ];
 
 const createAbonoSchema = z.object({
+  operacion_id: z.string().uuid().optional(),
   alumno_id: z.string().uuid(),
   matricula_id: z.string().uuid().nullable().optional(),
   monto: z.number().positive("El monto debe ser mayor a 0."),
@@ -69,6 +71,33 @@ export async function POST(request: Request) {
       ensureSedeScope(authz.perfil, alumno.sede_id);
     if (scopeError) return await reject(scopeError, 403);
     const sedeId = authz.perfil.sede_id || alumno.sede_id;
+    const { operacion_id: operationId, ...payment } = payload;
+    const requestHash = createHash("sha256").update(JSON.stringify(payment)).digest("hex");
+    if (operationId) {
+      const previous = await client.query<{
+        actor_id: string;
+        request_hash: string;
+        ingreso_id: string | null;
+      }>("select actor_id,request_hash,ingreso_id from public.web_payment_operations where id=$1", [
+        operationId,
+      ]);
+      if (previous.rows[0]) {
+        const operation = previous.rows[0];
+        if (
+          operation.actor_id !== authz.perfil.id ||
+          operation.request_hash !== requestHash ||
+          !operation.ingreso_id
+        ) {
+          return await reject(
+            "Esta operación ya se utilizó con otros datos o su ingreso fue eliminado.",
+            409
+          );
+        }
+        await client.query("COMMIT");
+        committed = true;
+        return NextResponse.json({ ok: true, ingreso_id: operation.ingreso_id, repetida: true });
+      }
+    }
     const matriculaId = payload.matricula_id ?? null;
     let valorTotal = Number(alumno.valor_total || 0);
     if (matriculaId) {
@@ -106,10 +135,10 @@ export async function POST(request: Request) {
           ? "Práctica adicional"
           : "Abono";
     const concepto = payload.concepto?.trim() || `${label} — ${alumno.nombre} ${alumno.apellidos}`;
-    await client.query(
+    const created = await client.query<{ id: string }>(
       `insert into public.ingresos(
       escuela_id,sede_id,user_id,alumno_id,matricula_id,categoria,concepto,monto,metodo_pago,fecha,estado,notas)
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'cobrado',null)`,
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'cobrado',null) returning id`,
       [
         alumno.escuela_id,
         sedeId,
@@ -123,16 +152,16 @@ export async function POST(request: Request) {
         payload.fecha,
       ]
     );
+    if (operationId)
+      await client.query(
+        "insert into public.web_payment_operations(id,actor_id,escuela_id,request_hash,ingreso_id) values($1,$2,$3,$4,$5)",
+        [operationId, authz.perfil.id, alumno.escuela_id, requestHash, created.rows[0].id]
+      );
     await client.query("COMMIT");
     committed = true;
     const scope = { escuelaId: alumno.escuela_id, sedeId };
-    revalidateServerReadCache([
-      ...buildDashboardListCacheTags("alumnos", scope),
-      ...buildFinanceCacheTags("income", scope),
-      ...buildFinanceCacheTags("portfolio", scope),
-      ...buildFinanceCacheTags("cash", scope),
-    ]);
-    return NextResponse.json({ ok: true });
+    revalidateServerReadCache(buildIncomeMutationInvalidationTags(scope));
+    return NextResponse.json({ ok: true, ingreso_id: created.rows[0].id });
   } catch {
     if (committed) {
       console.error("alumnos.abonos.cache.failed");

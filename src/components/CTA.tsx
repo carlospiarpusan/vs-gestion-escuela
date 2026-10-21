@@ -10,7 +10,7 @@ export default function CTA() {
             Empieza a operar con una base más clara esta misma semana.
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-8 text-[var(--gray-500)] sm:text-xl">
-            Crea tu escuela, configura lo esencial y reúne alumnos, agenda, recaudo y flota en una
+            Crea tu escuela, configura lo esencial y reúne alumnos, horas, recaudo y flota en una
             sola plataforma.
           </p>
 

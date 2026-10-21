@@ -45,8 +45,8 @@ export default function AuthWorkspace({
   const heroTagline =
     mode === "login" ? "Panel operativo para autoescuelas" : "Base inicial lista para operar";
   const heroCopy = isMinimalHero
-    ? "Vuelve a tu panel para revisar alumnos, agenda, recaudo, cartera, flota y evaluación CALE."
-    : "Crea tu escuela con una base limpia y sigue después con alumnos, pagos y agenda.";
+    ? "Vuelve a tu panel para revisar alumnos, horas, recaudo, cartera, flota y evaluación CALE."
+    : "Crea tu escuela con una base limpia y sigue después con alumnos, pagos y horas.";
 
   return (
     <main className="apple-auth-shell px-4 py-6 sm:px-6 lg:px-8">

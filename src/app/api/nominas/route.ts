@@ -17,7 +17,7 @@ import {
 import { buildLegacyInstructorPayrollRows } from "@/lib/payroll";
 import type { InstructorPayrollClosure } from "@/lib/payroll";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
-import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
+import { buildDashboardListInvalidationTags } from "@/lib/server-cache-tags";
 import type { EstadoPagoGasto, Rol } from "@/types/database";
 
 // ── Roles con acceso al módulo de nóminas ────────────────────────────
@@ -36,7 +36,7 @@ type GastoLegacyRow = {
 function revalidateNominasCache(escuelaId: string, sedeId?: string | null) {
   const scope = { escuelaId, sedeId };
   try {
-    revalidateServerReadCache(buildDashboardListCacheTags("nominas", scope));
+    revalidateServerReadCache(buildDashboardListInvalidationTags("nominas", scope));
   } catch {
     console.error("nominas.cache.failed");
   }

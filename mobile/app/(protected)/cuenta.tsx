@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { router } from "expo-router";
-import { Text } from "react-native";
+import { Linking, Text } from "react-native";
 import { AppScreen, Panel, SecondaryButton, Tag } from "@/components/primitives";
 import { PublicLegalLinks } from "@/components/public-legal-links";
 import { ROLE_LABELS } from "@/lib/modules";
@@ -41,6 +41,16 @@ export default function AccountScreen() {
         <Text style={{ color: palette.textMuted }}>{isOnline ? "En línea" : "Sin conexión"}</Text>
         {pendingCount > 0 ? <Tag label={`${pendingCount} pendientes`} tone="warning" /> : null}
         {syncing ? <Tag label="Sincronizando" /> : null}
+        <SecondaryButton
+          label="Cambiar contraseña"
+          onPress={async () => {
+            try {
+              await Linking.openURL("https://condusoft.co/dashboard/mi-cuenta");
+            } catch {
+              setSignOutError("No se pudo abrir ConduSoft web.");
+            }
+          }}
+        />
         <SecondaryButton label="Volver" onPress={() => router.back()} />
         <SecondaryButton
           label={signingOut ? "Cerrando sesión..." : "Cerrar sesión"}

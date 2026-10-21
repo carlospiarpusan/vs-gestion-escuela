@@ -127,10 +127,10 @@ export default function Pricing() {
               El plan correcto no es el más grande, sino el que coincide con tu etapa operativa
             </h3>
             <p className="mt-4 text-sm leading-6 text-[var(--gray-700)] dark:text-[var(--gray-500)]">
-              Si tu escuela apenas está ordenando alumnos, clases y caja, conviene empezar simple.
-              Si ya manejas varias sedes, flota, gastos e informes más visibles, el plan debe
-              responder a esa complejidad. La idea es que pagues por una estructura que sí te ayude
-              a operar mejor.
+              Si tu escuela apenas está ordenando alumnos, horas y caja, conviene empezar simple. Si
+              ya manejas varias sedes, flota, gastos e informes más visibles, el plan debe responder
+              a esa complejidad. La idea es que pagues por una estructura que sí te ayude a operar
+              mejor.
             </p>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">

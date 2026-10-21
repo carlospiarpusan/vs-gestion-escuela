@@ -11,13 +11,13 @@ import {
 import CondusoftLogo from "@/components/brand/CondusoftLogo";
 
 const outcomes = [
-  { value: "Operación", label: "alumnos, matrículas, clases y horas" },
+  { value: "Operación", label: "alumnos, matrículas y horas" },
   { value: "Finanzas", label: "ingresos, cartera, caja diaria y gastos" },
   { value: "Control", label: "flota, sedes, permisos y cumplimiento" },
 ];
 
 const dailyFlow = [
-  { icon: CalendarDays, title: "Agenda", detail: "clases y horas por instructor" },
+  { icon: CalendarDays, title: "Horas", detail: "trabajo registrado por instructor" },
   { icon: CreditCard, title: "Recaudo", detail: "cobros, abonos y cartera" },
   { icon: Car, title: "Flota", detail: "vehículos y mantenimientos" },
   { icon: Smartphone, title: "CALE", detail: "práctica móvil para alumnos" },
@@ -38,7 +38,7 @@ export default function Hero() {
           </h1>
 
           <p className="animate-fade-in-up mt-5 max-w-2xl text-[15px] leading-7 text-slate-600 sm:text-lg sm:leading-8">
-            ConduSoft reúne alumnos, clases, recaudo, cartera y flota en una plataforma clara para
+            ConduSoft reúne alumnos, horas, recaudo, cartera y flota en una plataforma clara para
             que tu equipo trabaje con la información al día.
           </p>
 

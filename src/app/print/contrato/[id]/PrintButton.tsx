@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Printer } from "lucide-react";
 
-export default function PrintButton() {
+export default function PrintButton({ label = "Imprimir Contrato" }: { label?: string }) {
   const [printing, setPrinting] = useState(false);
 
   async function waitForPrintLayout() {
@@ -54,7 +54,7 @@ export default function PrintButton() {
       className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2 font-semibold text-white transition-opacity hover:opacity-80 print:hidden"
     >
       <Printer size={16} />
-      {printing ? "Preparando impresion..." : "Imprimir Contrato"}
+      {printing ? "Preparando impresion..." : label}
     </button>
   );
 }

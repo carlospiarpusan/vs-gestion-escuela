@@ -7,7 +7,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
 import { AccountingWorkspaceHeader } from "@/components/dashboard/accounting/AccountingWorkspace";
 import { runSupabaseMutationWithRetry } from "@/lib/retry";
-import { fetchAllSupabaseRows } from "@/lib/supabase-pagination";
+import { fetchJsonWithRetry } from "@/lib/retry";
+import type { StudentOptionsResponse } from "@/lib/student-options";
 import {
   downloadCsv,
   formatAccountingMoney,
@@ -20,7 +21,7 @@ import {
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
-import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import { buildIncomeMutationInvalidationTags } from "@/lib/server-cache-tags";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import { fetchIncomeDashboard } from "@/lib/finance/income-service";
 import type { IncomeDashboardResponse, IncomeLedgerRow } from "@/lib/finance/types";
@@ -140,92 +141,6 @@ export default function IngresosPage() {
   const [alumnos, setAlumnos] = useState<AlumnoOption[]>([]);
   const [matriculas, setMatriculas] = useState<MatriculaOption[]>([]);
   const [catalogsLoading, setCatalogsLoading] = useState(false);
-  const catalogFetchIdRef = useRef(0);
-  const catalogsLoadedRef = useRef(false);
-  const catalogRequestRef = useRef<Promise<void> | null>(null);
-
-  useEffect(() => {
-    catalogsLoadedRef.current = false;
-    catalogRequestRef.current = null;
-    setAlumnos([]);
-    setMatriculas([]);
-  }, [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]);
-
-  const loadIngresoCatalogs = useCallback(
-    async (forceFresh = false) => {
-      if (!perfil?.escuela_id) return;
-      if (catalogsLoadedRef.current && !forceFresh) return;
-      if (catalogRequestRef.current) return catalogRequestRef.current;
-
-      const escuelaId = perfil.escuela_id;
-      const fetchId = ++catalogFetchIdRef.current;
-      const request = (async () => {
-        setCatalogsLoading(true);
-        try {
-          const catalogs = await getDashboardCatalogCached<{
-            alumnos: AlumnoOption[];
-            matriculas: MatriculaOption[];
-          }>({
-            name: "ingresos-form",
-            scope: {
-              id: perfil.id,
-              rol: perfil.rol,
-              escuelaId,
-              sedeId: perfil.sede_id,
-            },
-            forceFresh,
-            loader: async () => {
-              const supabase = createClient();
-              const [a, m] = await Promise.all([
-                fetchAllSupabaseRows<AlumnoOption>((from, to) =>
-                  supabase
-                    .from("alumnos")
-                    .select("id, nombre, apellidos, dni")
-                    .eq("escuela_id", escuelaId)
-                    .order("nombre", { ascending: true })
-                    .order("apellidos", { ascending: true })
-                    .range(from, to)
-                    .then(({ data, error }) => ({ data: (data as AlumnoOption[]) ?? [], error }))
-                ),
-                fetchAllSupabaseRows<MatriculaOption>((from, to) =>
-                  supabase
-                    .from("matriculas_alumno")
-                    .select(
-                      "id, alumno_id, numero_contrato, categorias, valor_total, fecha_inscripcion"
-                    )
-                    .eq("escuela_id", escuelaId)
-                    .order("fecha_inscripcion", { ascending: false })
-                    .order("created_at", { ascending: false })
-                    .range(from, to)
-                    .then(({ data, error }) => ({ data: (data as MatriculaOption[]) ?? [], error }))
-                ),
-              ]);
-
-              return {
-                alumnos: a,
-                matriculas: m,
-              };
-            },
-          });
-
-          if (fetchId !== catalogFetchIdRef.current) return;
-          catalogsLoadedRef.current = true;
-          setAlumnos(catalogs.alumnos);
-          setMatriculas(catalogs.matriculas);
-        } finally {
-          if (fetchId === catalogFetchIdRef.current) {
-            setCatalogsLoading(false);
-          }
-          catalogRequestRef.current = null;
-        }
-      })();
-
-      catalogRequestRef.current = request;
-      return request;
-    },
-    [perfil?.escuela_id, perfil?.id, perfil?.rol, perfil?.sede_id]
-  );
-
   // ─── Ledger data ──────────────────────────────────────────────────
 
   const [report, setReport] = useState<IncomeDashboardResponse | null>(null);
@@ -310,6 +225,64 @@ export default function IngresosPage() {
   } = useDraftForm("dashboard:ingresos:form", emptyForm, {
     persist: modalOpen && !editing,
   });
+
+  useEffect(() => {
+    let active = true;
+    setAlumnos([]);
+    setMatriculas([]);
+    if (!modalOpen || !form.alumno_id || !perfil?.escuela_id) {
+      setCatalogsLoading(false);
+      return;
+    }
+    setCatalogsLoading(true);
+    const alumnoId = form.alumno_id;
+    const params = new URLSearchParams({
+      id: alumnoId,
+      matriculas: "1",
+      escuela_id: perfil.escuela_id,
+    });
+    void getDashboardCatalogCached<StudentOptionsResponse>({
+      name: "student-options",
+      scope: {
+        id: perfil.id,
+        rol: perfil.rol,
+        escuelaId: perfil.escuela_id,
+        sedeId: perfil.sede_id,
+      },
+      params,
+      loader: () => fetchJsonWithRetry(`/api/alumnos/opciones?${params}`),
+    })
+      .then((payload) => {
+        if (!active) return;
+        if (!payload.rows.some((row) => row.id === alumnoId))
+          throw new Error("El alumno no está disponible en tu escuela o sede.");
+        setAlumnos(payload.rows);
+        setMatriculas(payload.matriculas || []);
+        setForm((prev) =>
+          prev.alumno_id === alumnoId && !prev.matricula_id && payload.matriculas?.length === 1
+            ? { ...prev, matricula_id: payload.matriculas[0].id }
+            : prev
+        );
+      })
+      .catch((error) => {
+        if (active)
+          setError(error instanceof Error ? error.message : "No se pudo cargar el alumno.");
+      })
+      .finally(() => {
+        if (active) setCatalogsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    modalOpen,
+    form.alumno_id,
+    perfil?.id,
+    perfil?.rol,
+    perfil?.escuela_id,
+    perfil?.sede_id,
+    setForm,
+  ]);
 
   const matriculasDisponibles = useMemo(
     () => (form.alumno_id ? matriculas.filter((m) => m.alumno_id === form.alumno_id) : []),
@@ -422,9 +395,6 @@ export default function IngresosPage() {
     restoreDraft(emptyForm);
     setError("");
     setModalOpen(true);
-    void loadIngresoCatalogs().catch((err) => {
-      console.error("[IngresosPage] Error cargando catálogos:", err);
-    });
   };
 
   const openEdit = async (row: IncomeLedgerRow) => {
@@ -433,16 +403,13 @@ export default function IngresosPage() {
     setSaving(true);
     try {
       const supabase = createClient();
-      const [detailResult] = await Promise.all([
-        supabase
-          .from("ingresos")
-          .select(
-            "id, alumno_id, matricula_id, categoria, concepto, monto, metodo_pago, medio_especifico, numero_factura, fecha, fecha_vencimiento, estado, notas"
-          )
-          .eq("id", row.id)
-          .single<EditableIncomeRecord>(),
-        loadIngresoCatalogs(),
-      ]);
+      const detailResult = await supabase
+        .from("ingresos")
+        .select(
+          "id, alumno_id, matricula_id, categoria, concepto, monto, metodo_pago, medio_especifico, numero_factura, fecha, fecha_vencimiento, estado, notas"
+        )
+        .eq("id", row.id)
+        .single<EditableIncomeRecord>();
 
       if (detailResult.error || !detailResult.data) {
         throw detailResult.error ?? new Error("No se pudo cargar el ingreso para editar.");
@@ -482,17 +449,19 @@ export default function IngresosPage() {
 
   const handleAlumnoChange = useCallback(
     (alumnoId: string) => {
-      const opciones = matriculas.filter((m) => m.alumno_id === alumnoId);
-      setForm((prev) => ({
-        ...prev,
-        alumno_id: alumnoId,
-        matricula_id: opciones.length === 1 ? opciones[0].id : "",
-      }));
+      setCatalogsLoading(Boolean(alumnoId));
+      setAlumnos([]);
+      setMatriculas([]);
+      setForm((prev) => ({ ...prev, alumno_id: alumnoId, matricula_id: "" }));
     },
-    [matriculas, setForm]
+    [setForm]
   );
 
   const handleSave = async () => {
+    if (form.alumno_id && (catalogsLoading || !alumnos.some((a) => a.id === form.alumno_id))) {
+      setError("Espera a que se cargue el alumno y sus matrículas antes de guardar.");
+      return;
+    }
     if (editing ? !canEditIncome : !canCreateIncome) return;
     if (!form.concepto || !form.monto) {
       setError("Concepto y monto son obligatorios.");
@@ -571,6 +540,7 @@ export default function IngresosPage() {
       setModalOpen(false);
       invalidateDashboardClientCaches([
         "dashboard-summary:",
+        "dashboard-list:alumnos-table:",
         "dashboard-catalog:ingresos-form:",
         "finance-income:",
         "finance-portfolio:",
@@ -578,10 +548,9 @@ export default function IngresosPage() {
         "finance-reports:",
       ]);
       await revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
-          includeFinance: true,
-          includeDashboard: true,
+        buildIncomeMutationInvalidationTags({
+          escuelaId: perfil?.escuela_id,
+          sedeId: perfil?.sede_id,
         })
       );
       setReloadKey((v) => v + 1);
@@ -610,16 +579,16 @@ export default function IngresosPage() {
       setDeleting(null);
       invalidateDashboardClientCaches([
         "dashboard-summary:",
+        "dashboard-list:alumnos-table:",
         "finance-income:",
         "finance-portfolio:",
         "finance-cash:",
         "finance-reports:",
       ]);
       await revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
-          includeFinance: true,
-          includeDashboard: true,
+        buildIncomeMutationInvalidationTags({
+          escuelaId: perfil?.escuela_id,
+          sedeId: perfil?.sede_id,
         })
       );
       setReloadKey((v) => v + 1);
@@ -678,7 +647,6 @@ export default function IngresosPage() {
         filtroMes={filtroMes}
         mesesDelAno={mesesDelAno}
         filtroAlumno={filtroAlumno}
-        alumnos={alumnos}
         filtroMetodo={filtroMetodo}
         filtroCategoria={filtroCategoria}
         filtroEstado={filtroEstado}

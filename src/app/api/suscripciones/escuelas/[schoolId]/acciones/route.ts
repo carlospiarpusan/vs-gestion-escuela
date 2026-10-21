@@ -7,8 +7,8 @@ import {
 } from "@/lib/school-subscription-service";
 import { getServerDbPool } from "@/lib/server-db";
 import {
-  buildDashboardCacheTags,
-  buildDashboardListCacheTags,
+  buildDashboardInvalidationTags,
+  buildDashboardListInvalidationTags,
   buildScopeCacheTags,
 } from "@/lib/server-cache-tags";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
@@ -157,8 +157,8 @@ export async function POST(
     );
 
     revalidateServerReadCache([
-      ...buildDashboardCacheTags("superadmin", { escuelaId: schoolId }),
-      ...buildDashboardListCacheTags("subscriptions", { escuelaId: schoolId }),
+      ...buildDashboardInvalidationTags("superadmin", { escuelaId: schoolId }),
+      ...buildDashboardListInvalidationTags("subscriptions", { escuelaId: schoolId }),
       ...buildScopeCacheTags({ escuelaId: schoolId }),
     ]);
 

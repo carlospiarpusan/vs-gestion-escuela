@@ -12,17 +12,40 @@ export function buildScopeCacheTags(scope?: CacheScope | null) {
   const sedeId = scope?.sedeId || null;
 
   return unique([
-    "scope",
+    ...(escuelaId ? [] : ["scope", "scope:aggregate"]),
     escuelaId ? `scope:school:${escuelaId}` : "",
     escuelaId && sedeId ? `scope:branch:${escuelaId}:${sedeId}` : "",
   ]);
+}
+
+function domainReadTags(domain: string, scope?: CacheScope | null) {
+  const group = domain.split(":")[0];
+  return unique([
+    group,
+    domain,
+    ...buildScopeCacheTags(scope),
+    ...(scope?.escuelaId
+      ? [`${group}:school:${scope.escuelaId}`, `${domain}:school:${scope.escuelaId}`]
+      : [`${group}:aggregate`, `${domain}:aggregate`]),
+  ]);
+}
+
+function domainInvalidationTags(domain: string, scope?: CacheScope | null) {
+  return [scope?.escuelaId ? `${domain}:school:${scope.escuelaId}` : domain];
 }
 
 export function buildFinanceCacheTags(
   kind: "income" | "expense" | "portfolio" | "cash" | "reports",
   scope?: CacheScope | null
 ) {
-  return unique(["finance", `finance:${kind}`, ...buildScopeCacheTags(scope)]);
+  return domainReadTags(`finance:${kind}`, scope);
+}
+
+export function buildFinanceInvalidationTags(
+  kind: "income" | "expense" | "portfolio" | "cash" | "reports",
+  scope?: CacheScope | null
+) {
+  return domainInvalidationTags(`finance:${kind}`, scope);
 }
 
 export function buildDashboardCacheTags(
@@ -30,36 +53,65 @@ export function buildDashboardCacheTags(
   options?: CacheScope & { userId?: string | null }
 ) {
   return unique([
-    "dashboard",
-    `dashboard:${kind}`,
-    ...(kind !== "alumno" ? buildScopeCacheTags(options) : []),
+    ...domainReadTags(`dashboard:${kind}`, options),
     options?.userId ? `user:${options.userId}` : "",
   ]);
 }
 
+export function buildDashboardInvalidationTags(
+  kind: "admin" | "superadmin" | "alumno",
+  options?: CacheScope & { userId?: string | null }
+) {
+  return kind === "alumno" && options?.userId
+    ? [`user:${options.userId}`]
+    : domainInvalidationTags(`dashboard:${kind}`, options);
+}
+
 export function buildDashboardListCacheTags(name: string, scope?: CacheScope | null) {
-  return unique(["dashboard", `dashboard:list:${name}`, ...buildScopeCacheTags(scope)]);
+  return domainReadTags(`dashboard:list:${name}`, scope);
+}
+
+export function buildDashboardListInvalidationTags(name: string, scope?: CacheScope | null) {
+  return domainInvalidationTags(`dashboard:list:${name}`, scope);
 }
 
 export function buildBroadFinanceInvalidationTags(scope?: CacheScope | null) {
-  return unique([
-    "finance",
-    "finance:income",
-    "finance:expense",
-    "finance:portfolio",
-    "finance:cash",
-    "finance:reports",
-    ...buildScopeCacheTags(scope),
-  ]);
+  return domainInvalidationTags("finance", scope);
 }
 
 export function buildBroadDashboardInvalidationTags(scope?: CacheScope | null) {
+  return domainInvalidationTags("dashboard", scope);
+}
+
+export function buildIncomeMutationInvalidationTags(scope?: CacheScope | null) {
   return unique([
-    "dashboard",
-    "dashboard:admin",
-    "dashboard:superadmin",
-    ...buildScopeCacheTags(scope),
+    ...(["income", "portfolio", "cash", "reports"] as const).flatMap((kind) =>
+      buildFinanceInvalidationTags(kind, scope)
+    ),
+    ...buildDashboardInvalidationTags("admin", scope ?? undefined),
+    ...buildDashboardInvalidationTags("alumno", scope ?? undefined),
+    ...buildDashboardListInvalidationTags("alumnos", scope),
   ]);
+}
+
+export function buildExpenseMutationInvalidationTags(scope?: CacheScope | null) {
+  return (["expense", "cash", "reports"] as const).flatMap((kind) =>
+    buildFinanceInvalidationTags(kind, scope)
+  );
+}
+
+// Global reports depend on every school. Their aggregate tags are assigned only
+// to global reads, never to another school's private cache entries.
+export function expandMutationCacheTags(tags: string[]) {
+  return unique(
+    tags.flatMap((tag) => {
+      const match = /^(finance(?::[a-z-]+)?|dashboard(?::[a-z-]+){0,2}|scope):school:[^:]+$/.exec(
+        tag
+      );
+      if (!match) return [tag];
+      return [tag, `${match[1]}:aggregate`, "scope:aggregate", "dashboard:aggregate"];
+    })
+  );
 }
 
 export function buildScopedMutationRevalidationTags(options?: {

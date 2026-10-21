@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(response, {
       headers: {
-        "Cache-Control": `private, max-age=${Math.floor(SUPERADMIN_SUMMARY_CACHE_TTL_MS / 1000)}, stale-while-revalidate=60`,
+        "Cache-Control": "private, no-store",
       },
     });
   } catch (error) {

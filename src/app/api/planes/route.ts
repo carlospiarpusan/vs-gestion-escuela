@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { authorizeApiRequest, parseJsonBody } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached, revalidateServerReadCache } from "@/lib/server-read-cache";
-import { buildDashboardCacheTags, buildDashboardListCacheTags } from "@/lib/server-cache-tags";
+import {
+  buildDashboardInvalidationTags,
+  buildDashboardListInvalidationTags,
+} from "@/lib/server-cache-tags";
 import { z } from "zod";
 import type { PlanConfig } from "@/types/database";
 
@@ -195,8 +198,8 @@ export async function PATCH(request: Request) {
     // Invalidate cache
     revalidateServerReadCache([
       ...PLANES_CACHE_TAGS,
-      ...buildDashboardCacheTags("superadmin"),
-      ...buildDashboardListCacheTags("subscriptions"),
+      ...buildDashboardInvalidationTags("superadmin"),
+      ...buildDashboardListInvalidationTags("subscriptions"),
     ]);
 
     const updated = result.rows[0];

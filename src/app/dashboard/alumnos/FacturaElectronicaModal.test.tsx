@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import FacturaElectronicaModal from "./FacturaElectronicaModal";
 import type { AlumnoRow } from "./constants";
 import { getTodayDateString } from "@/lib/date-utils";
+import { calculateAnsv } from "@/lib/ansv";
 import { readBillingProductUsage, rememberBillingProducts } from "@/lib/vs-billing/product-usage";
 import * as productSearch from "@/lib/vs-billing/product-usage";
 vi.mock("@/components/dashboard/Modal", () => ({
@@ -270,7 +271,7 @@ it("preselecciona Efectivo habilitado y permite cambiarlo antes de revisar", asy
     return Response.json(
       JSON.parse(init.body).action === "catalog"
         ? { ...catalog, paymentMethods: ["Tarjeta Débito", "Efectivo"] }
-        : quote
+        : { ...quote, payment: JSON.parse(init.body).payment }
     );
   });
   render(
@@ -290,6 +291,149 @@ it("preselecciona Efectivo habilitado y permite cambiarlo antes de revisar", asy
     .map((c) => JSON.parse(c[1].body))
     .find((c) => c.action === "quote");
   expect(command.payment.method).toBe("Tarjeta Débito");
+});
+
+const collectionCatalog = {
+  ...catalog,
+  capabilities: { paymentCollection: true, accountingPreflight: true, businessStatus: true },
+  collectionAccounts: [
+    { code: "110505", name: "Caja" },
+    { code: "111005", name: "Banco" },
+  ],
+  defaultCollectionAccounts: [{ method: "Efectivo", accountCode: "110505" }],
+  canConfirmCollections: true,
+  accounting: { ready: true, issues: [] },
+};
+function mockCollections(overrides = {}) {
+  fetcher.mockImplementation(async (_url, init) => {
+    if (!init?.method) return Response.json({ enabled: true, contact, invoices: [] });
+    const body = JSON.parse(init.body);
+    if (body.action === "catalog") return Response.json({ ...collectionCatalog, ...overrides });
+    const received = body.payment?.collection?.state === "received";
+    return Response.json({
+      ...quote,
+      payment: {
+        ...body.payment,
+        ...(received
+          ? {
+              collection: {
+                ...body.payment.collection,
+                cashAccountCode: body.payment.collection.cashAccountCode || "110505",
+                date: getTodayDateString(),
+                amount: quote.totals.total,
+              },
+            }
+          : {}),
+      },
+    });
+  });
+}
+function renderCollectionInvoice() {
+  render(
+    <FacturaElectronicaModal
+      alumno={{ ...alumno, matriculas: alumno.matriculas.slice(0, 1) }}
+      onClose={vi.fn()}
+    />
+  );
+}
+it("preselecciona recibido completo y permite cambiarlo a pendiente antes de revisar", async () => {
+  mockCollections();
+  renderCollectionInvoice();
+  const choice = await screen.findByLabelText(/^Recaudo/);
+  expect(choice).toHaveValue("received");
+  expect(
+    screen.getByRole("checkbox", { name: /Confirmo que se recibió el total/ })
+  ).not.toBeChecked();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Servicio separado" }));
+  expect(screen.getByRole("button", { name: "Revisar factura" })).toBeDisabled();
+  fireEvent.change(choice, { target: { value: "pending" } });
+  fireEvent.click(screen.getByRole("button", { name: "Revisar factura" }));
+  await screen.findByText("Recaudo pendiente de recibir");
+  const command = fetcher.mock.calls
+    .map((call) => call[1]?.body && JSON.parse(call[1].body))
+    .find((body) => body?.action === "quote");
+  expect(command.payment.collection).toEqual({ state: "pending" });
+});
+it("exige confirmación explícita, conserva la cuenta elegida y envía solo la elección", async () => {
+  mockCollections();
+  renderCollectionInvoice();
+  fireEvent.change(await screen.findByLabelText(/^Recaudo/), { target: { value: "received" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Servicio separado" }));
+  expect(screen.getByRole("button", { name: "Revisar factura" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText(/^Cuenta receptora/), { target: { value: "111005" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: /Confirmo que se recibió el total/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Revisar factura" }));
+  await screen.findByText(/Recaudo confirmado:.*111005/);
+  const command = fetcher.mock.calls
+    .map((call) => call[1]?.body && JSON.parse(call[1].body))
+    .find((body) => body?.action === "quote");
+  expect(command.payment.collection).toEqual({
+    state: "received",
+    confirmed: true,
+    cashAccountCode: "111005",
+  });
+  expect(command.payment.collection).not.toHaveProperty("amount");
+  expect(command.payment.collection).not.toHaveProperty("date");
+});
+it("limpia la confirmación al cambiar el medio de pago y no admite recibido a crédito", async () => {
+  mockCollections({ paymentMethods: ["Efectivo", "Transferencia"] });
+  renderCollectionInvoice();
+  fireEvent.change(await screen.findByLabelText(/^Recaudo/), { target: { value: "received" } });
+  const confirmation = screen.getByRole("checkbox", { name: /Confirmo que se recibió el total/ });
+  fireEvent.click(confirmation);
+  fireEvent.change(screen.getByLabelText("Medio de pago"), { target: { value: "Transferencia" } });
+  expect(confirmation).not.toBeChecked();
+  expect(screen.getByLabelText(/^Cuenta receptora/)).toHaveDisplayValue("Seleccionar");
+  fireEvent.change(screen.getByLabelText("Forma de pago"), { target: { value: "credito" } });
+  expect(screen.getByLabelText(/^Recaudo/)).toHaveValue("");
+  expect(screen.getByRole("option", { name: "Recibido completo" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Forma de pago"), { target: { value: "contado" } });
+  expect(screen.getByLabelText(/^Recaudo/)).toHaveValue("received");
+});
+it("no ofrece confirmar recibido cuando el responsable de API carece del permiso", async () => {
+  mockCollections({ canConfirmCollections: false });
+  renderCollectionInvoice();
+  await screen.findByLabelText(/^Recaudo/);
+  expect(screen.getByLabelText(/^Recaudo/)).not.toHaveValue("received");
+  expect(screen.getByRole("option", { name: "Recibido completo" })).toBeDisabled();
+});
+it("bloquea la revisión si falta configuración contable", async () => {
+  mockCollections({
+    accounting: {
+      ready: false,
+      issues: [{ field: "accounting.rules", message: "Falta configurar la cuenta de ingresos." }],
+    },
+  });
+  renderCollectionInvoice();
+  await screen.findByText("Falta configurar la cuenta de ingresos.");
+  fireEvent.change(screen.getByLabelText(/^Recaudo/), { target: { value: "pending" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Servicio separado" }));
+  expect(screen.getByRole("button", { name: "Revisar factura" })).toBeDisabled();
+});
+it("un 422 contable no abre el editor fiscal del alumno ni reintenta la operación", async () => {
+  fetcher.mockImplementation(async (_url, init) => {
+    if (!init?.method) return Response.json({ enabled: true, contact, invoices: [] });
+    return JSON.parse(init.body).action === "catalog"
+      ? Response.json(catalog)
+      : Response.json(
+          {
+            code: "INVOICE_DATA_INCOMPLETE",
+            error: "Revisa la configuración.",
+            issues: [{ field: "accounting.period", message: "El período contable está cerrado." }],
+          },
+          { status: 422 }
+        );
+  });
+  renderCollectionInvoice();
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Servicio separado" }));
+  fireEvent.click(screen.getByRole("button", { name: "Revisar factura" }));
+  await screen.findByText(/El período contable está cerrado/);
+  expect(screen.queryByRole("button", { name: /Guardar datos/ })).not.toBeInTheDocument();
+  expect(
+    fetcher.mock.calls.filter(
+      (call) => call[1]?.body && JSON.parse(call[1].body).action === "quote"
+    )
+  ).toHaveLength(1);
 });
 it("no impone Efectivo si FacturaX no lo tiene habilitado", async () => {
   fetcher.mockImplementation(async (_url, init) =>
@@ -387,6 +531,203 @@ it("permite seleccionar ANSV, exige precio variable e IVA y envia solo el precio
   ]);
   expect(variable.price).toBe(0);
 });
+it.each(["ANSV", "OTRO"])(
+  "rellena solo el código ANSV, no un producto con nombre ANSV y código %s",
+  async (code) => {
+    const variable = { ...catalog.products[0], code, name: "ANSV", price: 0, priceEditable: true };
+    const saved = calculateAnsv(
+      {
+        fechaNacimiento: "2006-01-01",
+        sexo: "M",
+        fechaMatricula: "2026-09-01",
+        categorias: ["A2"],
+      },
+      "2026-10-19"
+    );
+    fetcher.mockImplementation(async (_url, init) => {
+      if (!init?.method) return Response.json({ enabled: true, contact, invoices: [] });
+      return Response.json(
+        JSON.parse(init.body).action === "catalog"
+          ? { ...catalog, ansv: saved, products: [variable] }
+          : quote
+      );
+    });
+    render(
+      <FacturaElectronicaModal
+        alumno={{ ...alumno, matriculas: alumno.matriculas.slice(0, 1) }}
+        onClose={vi.fn()}
+      />
+    );
+    fireEvent.click(await screen.findByRole("checkbox", { name: "ANSV" }));
+    expect(screen.getByLabelText("Precio de ANSV")).toHaveValue(code === "ANSV" ? 8900 : null);
+    if (code !== "ANSV") return;
+    fireEvent.change(screen.getByLabelText("Precio de ANSV"), { target: { value: "9500" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "ANSV" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "ANSV" }));
+    expect(screen.getByLabelText("Precio de ANSV")).toHaveValue(9500);
+    fireEvent.click(screen.getByRole("button", { name: "Revisar factura" }));
+    await screen.findByText("Revision antes de emitir");
+    const commands = fetcher.mock.calls.filter((c) => c[1]?.body).map((c) => JSON.parse(c[1].body));
+    expect(commands.find((c) => c.action === "quote").items).toEqual([
+      { productId, quantity: 1000, unitPrice: 950000 },
+    ]);
+    expect(variable.price).toBe(0);
+  }
+);
+
+it("cambiar de contrato reemplaza ANSV por el cálculo guardado de ese contrato", async () => {
+  const variable = {
+    ...catalog.products[0],
+    code: "ANSV",
+    name: "ANSV",
+    price: 0,
+    priceEditable: true,
+  };
+  fetcher.mockImplementation(async (_url, init) => {
+    if (!init?.method) return Response.json({ enabled: true, contact, invoices: [] });
+    const command = JSON.parse(init.body);
+    const ansv = calculateAnsv(
+      {
+        fechaNacimiento: command.contratoId === contract ? "2006-01-01" : "1986-01-01",
+        sexo: "M",
+        fechaMatricula: "2026-09-01",
+        categorias: ["A2"],
+      },
+      "2026-10-19"
+    );
+    return Response.json({ ...catalog, ansv, products: [variable] });
+  });
+  render(<FacturaElectronicaModal alumno={alumno} onClose={vi.fn()} />);
+  fireEvent.change(await screen.findByLabelText("Contrato"), { target: { value: contract } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: "ANSV" }));
+  expect(screen.getByLabelText("Precio de ANSV")).toHaveValue(8900);
+  fireEvent.change(screen.getByLabelText("Contrato"), { target: { value: second } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: "ANSV" }));
+  expect(screen.getByLabelText("Precio de ANSV")).toHaveValue(9500);
+});
+it("precarga ANSV y ANSV2 por separado sin seleccionar productos ni multiplicar cantidades", async () => {
+  const products = [
+    { ...catalog.products[0], code: "ANSV", name: "ANSV", price: 0, priceEditable: true },
+    {
+      ...catalog.products[0],
+      id: second,
+      code: "ANSV2",
+      name: "ANSV2",
+      price: 0,
+      priceEditable: true,
+    },
+  ];
+  const saved = calculateAnsv(
+    {
+      fechaNacimiento: "1986-01-01",
+      sexo: "M",
+      fechaMatricula: "2026-09-01",
+      categorias: ["A2", "B1"],
+      categoria: "A2",
+    },
+    "2026-10-19"
+  );
+  fetcher.mockImplementation(async (_url, init) => {
+    if (!init?.method) return Response.json({ enabled: true, contact, invoices: [] });
+    return Response.json(
+      JSON.parse(init.body).action === "catalog" ? { ...catalog, ansv: saved, products } : quote
+    );
+  });
+  render(
+    <FacturaElectronicaModal
+      alumno={{ ...alumno, matriculas: alumno.matriculas.slice(0, 1) }}
+      onClose={vi.fn()}
+    />
+  );
+  const firstProduct = await screen.findByRole("checkbox", { name: "ANSV" });
+  const secondProduct = screen.getByRole("checkbox", { name: "ANSV2" });
+  expect(firstProduct).not.toBeChecked();
+  expect(secondProduct).not.toBeChecked();
+  fireEvent.click(firstProduct);
+  fireEvent.click(secondProduct);
+  expect(screen.getByLabelText("Precio de ANSV")).toHaveValue(9500);
+  expect(screen.getByLabelText("Precio de ANSV2")).toHaveValue(9400);
+  fireEvent.click(screen.getByRole("button", { name: "Revisar factura" }));
+  await screen.findByText("Revision antes de emitir");
+  const commands = fetcher.mock.calls.filter((c) => c[1]?.body).map((c) => JSON.parse(c[1].body));
+  expect(commands.find((c) => c.action === "quote").items).toEqual([
+    { productId, quantity: 1000, unitPrice: 950000 },
+    { productId: second, quantity: 1000, unitPrice: 940000 },
+  ]);
+});
+it.each([1, 2])(
+  "selecciona automáticamente productos y cantidades para %i categoría(s) del contrato",
+  async (count) => {
+    const categories = count === 2 ? ["A2", "B1"] : ["A2"];
+    const saved = calculateAnsv(
+      {
+        fechaNacimiento: "1986-01-01",
+        sexo: "M",
+        fechaMatricula: "2026-09-01",
+        categorias: categories,
+        categoria: "A2",
+      },
+      "2026-10-19"
+    );
+    const products = [
+      { ...catalog.products[0], code: "SICOV", name: "SICOV" },
+      { ...catalog.products[0], id: second, code: "RECAUDO", name: "Recaudo de trámite" },
+      {
+        ...catalog.products[0],
+        id: quoteId,
+        code: "ANSV",
+        name: "ANSV",
+        price: 0,
+        priceEditable: true,
+      },
+      {
+        ...catalog.products[0],
+        id: contract,
+        code: "ANSV2",
+        name: "ANSV2",
+        price: 0,
+        priceEditable: true,
+      },
+    ];
+    fetcher.mockImplementation(async (_url, init) => {
+      if (!init?.method) return Response.json({ enabled: true, contact, invoices: [] });
+      return Response.json(
+        JSON.parse(init.body).action === "catalog"
+          ? { ...catalog, contractCategories: categories, ansv: saved, products }
+          : quote
+      );
+    });
+    render(
+      <FacturaElectronicaModal
+        alumno={{ ...alumno, tipo_registro: "regular", matriculas: alumno.matriculas.slice(0, 1) }}
+        onClose={vi.fn()}
+      />
+    );
+    expect(await screen.findByRole("checkbox", { name: "SICOV" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Recaudo de trámite" })).toBeChecked();
+    expect(screen.getByLabelText("Cantidad de SICOV")).toHaveValue(count);
+    expect(screen.getByLabelText("Cantidad de Recaudo de trámite")).toHaveValue(count);
+    expect(screen.getByLabelText("Cantidad de ANSV")).toHaveValue(1);
+    expect(screen.getByLabelText("Precio de ANSV")).toHaveValue(9500);
+    if (count === 2) {
+      expect(screen.getByLabelText("Cantidad de ANSV2")).toHaveValue(1);
+      expect(screen.getByLabelText("Precio de ANSV2")).toHaveValue(9400);
+    } else expect(screen.getByRole("checkbox", { name: "ANSV2" })).not.toBeChecked();
+    const initialCommands = fetcher.mock.calls
+      .filter((c) => c[1]?.body)
+      .map((c) => JSON.parse(c[1].body));
+    expect(initialCommands.every((command) => command.action === "catalog")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Revisar factura" }));
+    await screen.findByText("Revision antes de emitir");
+    const commands = fetcher.mock.calls.filter((c) => c[1]?.body).map((c) => JSON.parse(c[1].body));
+    const items = commands.find((command) => command.action === "quote").items;
+    expect(items).toContainEqual({ productId, quantity: count * 1000 });
+    expect(items).toContainEqual({ productId: second, quantity: count * 1000 });
+    expect(items).toContainEqual({ productId: quoteId, quantity: 1000, unitPrice: 950000 });
+    expect(items).toHaveLength(count === 2 ? 4 : 3);
+  }
+);
+
 it("siempre muestra el correo guardado, aunque todavia no se haya seleccionado contrato", async () => {
   fetcher.mockImplementation(async () =>
     Response.json({
@@ -901,4 +1242,130 @@ it.each(["0", "1001"])("no prepara una factura con %s unidades", async (value) =
       (call) => call[1]?.body && JSON.parse(call[1].body).action === "quote"
     )
   ).toHaveLength(0);
+});
+
+it("completa ANSV histórico en la factura, recalcula y conserva el precio manual", async () => {
+  const variable = {
+    ...catalog.products[0],
+    code: "ANSV",
+    name: "Ingresos para terceros ANSV",
+    price: 0,
+    priceEditable: true,
+  };
+  fetcher.mockImplementation(async (_url, init) => {
+    if (!init?.method) return Response.json({ enabled: true, contact, invoices: [] });
+    return Response.json(
+      JSON.parse(init.body).action === "catalog"
+        ? {
+            ...catalog,
+            products: [variable],
+            contractCategories: ["A2"],
+            ansv: null,
+            ansvContext: {
+              fechaNacimiento: "",
+              sexo: "",
+              fechaMatricula: "2026-09-01",
+              categorias: ["A2"],
+            },
+          }
+        : quote
+    );
+  });
+  render(
+    <FacturaElectronicaModal
+      alumno={{ ...alumno, tipo_registro: "regular", matriculas: alumno.matriculas.slice(0, 1) }}
+      onClose={vi.fn()}
+    />
+  );
+  expect(await screen.findByRole("checkbox", { name: variable.name })).toBeChecked();
+  const price = screen.getByLabelText(`Precio de ${variable.name}`);
+  expect(price).toHaveValue(null);
+  fireEvent.change(screen.getByLabelText(/Fecha de nacimiento/), {
+    target: { value: "2006-01-01" },
+  });
+  fireEvent.change(screen.getByLabelText(/Sexo para ANSV/), { target: { value: "M" } });
+  await waitFor(() => expect(price).toHaveValue(8900));
+  fireEvent.change(screen.getByLabelText(/Sexo para ANSV/), { target: { value: "F" } });
+  await waitFor(() => expect(price).toHaveValue(8600));
+  fireEvent.change(screen.getByLabelText(/Sexo para ANSV/), { target: { value: "" } });
+  await waitFor(() => expect(price).toHaveValue(null));
+  fireEvent.change(screen.getByLabelText(/Sexo para ANSV/), { target: { value: "M" } });
+  await waitFor(() => expect(price).toHaveValue(8900));
+  fireEvent.change(price, { target: { value: "9500" } });
+  fireEvent.change(screen.getByLabelText(/Sexo para ANSV/), { target: { value: "F" } });
+  await waitFor(() => expect(screen.getByText(/ANSV para esta factura:/)).toBeInTheDocument());
+  expect(price).toHaveValue(9500);
+  fireEvent.click(screen.getByRole("button", { name: "Revisar factura" }));
+  await screen.findByText("Revision antes de emitir");
+  const commands = fetcher.mock.calls.filter((c) => c[1]?.body).map((c) => JSON.parse(c[1].body));
+  const command = commands.find((c) => c.action === "quote");
+  expect(command.items).toEqual([{ productId, quantity: 1000, unitPrice: 950000 }]);
+  expect(command).not.toHaveProperty("ansvContext");
+  expect(commands.every((c) => ["catalog", "quote"].includes(c.action))).toBe(true);
+});
+
+it("precarga ANSV y ANSV2 del combo histórico con sus valores individuales", async () => {
+  const products = [
+    {
+      ...catalog.products[0],
+      code: "ANSV",
+      name: "Ingresos para terceros ANSV",
+      price: 0,
+      priceEditable: true,
+    },
+    {
+      ...catalog.products[0],
+      id: second,
+      code: "ANSV2",
+      name: "Ingresos para terceros ANSV2",
+      price: 0,
+      priceEditable: true,
+    },
+  ];
+  fetcher.mockImplementation(async (_url, init) => {
+    if (!init?.method) return Response.json({ enabled: true, contact, invoices: [] });
+    return Response.json(
+      JSON.parse(init.body).action === "catalog"
+        ? {
+            ...catalog,
+            products,
+            contractCategories: ["A2", "B1"],
+            ansv: null,
+            ansvContext: {
+              fechaNacimiento: "1986-01-01",
+              sexo: "M",
+              fechaMatricula: "2026-09-01",
+              categorias: ["A2", "B1"],
+            },
+          }
+        : quote
+    );
+  });
+  render(
+    <FacturaElectronicaModal
+      alumno={{ ...alumno, tipo_registro: "regular", matriculas: alumno.matriculas.slice(0, 1) }}
+      onClose={vi.fn()}
+    />
+  );
+  expect(await screen.findByRole("checkbox", { name: products[0].name })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: products[1].name })).toBeChecked();
+  fireEvent.change(screen.getByLabelText(/Categoría principal ANSV/), { target: { value: "A2" } });
+  await waitFor(() =>
+    expect(screen.getByLabelText(`Precio de ${products[0].name}`)).toHaveValue(9500)
+  );
+  expect(screen.getByLabelText(`Precio de ${products[1].name}`)).toHaveValue(9400);
+  expect(screen.getByLabelText(`Cantidad de ${products[0].name}`)).toHaveValue(1);
+  expect(screen.getByLabelText(`Cantidad de ${products[1].name}`)).toHaveValue(1);
+  fireEvent.change(screen.getByLabelText(/Categoría principal ANSV/), { target: { value: "B1" } });
+  await waitFor(() =>
+    expect(screen.getByLabelText(`Precio de ${products[0].name}`)).toHaveValue(9400)
+  );
+  expect(screen.getByLabelText(`Precio de ${products[1].name}`)).toHaveValue(9500);
+  fireEvent.click(screen.getByRole("button", { name: "Revisar factura" }));
+  await screen.findByText("Revision antes de emitir");
+  const commands = fetcher.mock.calls.filter((c) => c[1]?.body).map((c) => JSON.parse(c[1].body));
+  expect(commands.find((c) => c.action === "quote").items).toEqual([
+    { productId, quantity: 1000, unitPrice: 940000 },
+    { productId: second, quantity: 1000, unitPrice: 950000 },
+  ]);
 });

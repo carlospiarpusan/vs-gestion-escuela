@@ -1,3 +1,12 @@
+# ConduSoft Design Principles
+
+- Apply a minimalist, elegant, compact design to every function and subfunction, preserving the existing ConduSoft branding, typography, blue accent, theme variables and light/dark modes.
+- Prioritize efficient daily workflows: short labels, clear hierarchy, responsive form grids, modest spacing and reachable primary actions. Compact must remain readable and touch-friendly on mobile.
+- Avoid decorative cards, nested panels, oversized icons, repeated summaries, explanatory filler and duplicate controls. Use unframed sections with restrained dividers.
+- Keep required fields visible and consistently marked; determine requirements from actual business validation, billing and ANSV rules. Never remove required information just to simplify the layout.
+- Keep uncommon optional fields in clearly labeled disclosures without losing their values, validation or functionality. Preserve useful editable defaults and historic-record compatibility.
+- Check desktop/mobile layout, keyboard interaction, accessibility, contrast and functional tests when changing a workflow. Do not restyle unrelated modules as part of a narrow change.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know

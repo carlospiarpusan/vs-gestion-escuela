@@ -3,6 +3,16 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getContractTemplateTypeFromCategories } from "@/lib/contracts";
+import { APP_TIME_ZONE } from "@/lib/date-utils";
+import {
+  CONTRACT_FORMATION_LABELS,
+  getContractAgeRequirement,
+  replaceContractVariables,
+  splitContractTemplate,
+  usesSinFronterasForm,
+} from "@/lib/contract-template";
+import SinFronterasContractHeader from "@/components/contracts/SinFronterasContractHeader";
+import SinFronterasContractSignatures from "@/components/contracts/SinFronterasContractSignatures";
 import type { Perfil, Rol } from "@/types/database";
 import PrintButton from "./PrintButton";
 
@@ -89,14 +99,6 @@ function applyContractScope<T extends { eq: (column: string, value: string) => T
   return scopedQuery;
 }
 
-function replaceVariables(text: string, vars: Record<string, string>): string {
-  let result = text;
-  for (const [key, value] of Object.entries(vars)) {
-    result = result.replaceAll(`{{${key}}}`, value);
-  }
-  return result;
-}
-
 function renderTextToJsx(text: string) {
   const paragraphs = text.split(/\n\n+/);
   return paragraphs.map((p, i) => {
@@ -149,7 +151,7 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
       .select(
         `
       *,
-      alumno:alumnos(nombre, apellidos, dni, tipo_documento, telefono, direccion, email),
+      alumno:alumnos(nombre, apellidos, dni, tipo_documento, lugar_expedicion_documento, telefono, direccion, email),
       sede:sedes(nombre, direccion, email, telefono, escuela:escuelas(id, nombre, cif, telefono, direccion))
     `
       )
@@ -174,6 +176,7 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
   let dbConfig: Record<string, string | null> | null = null;
   let templatePage1: string | null = null;
   let templatePage2: string | null = null;
+  let templateTitle: string | null = null;
 
   if (escuelaId) {
     const [configRes, plantillaRes] = await Promise.all([
@@ -184,7 +187,7 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
         .maybeSingle(),
       supabase
         .from("plantillas_contrato_escuela")
-        .select("tipo_plantilla, html_plantilla")
+        .select("tipo_plantilla, titulo, html_plantilla")
         .eq("escuela_id", escuelaId)
         .in("tipo_plantilla", Array.from(new Set([contractTemplateType, "vehiculo"]))),
     ]);
@@ -196,13 +199,15 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
       plantillas.find((plantilla) => plantilla.tipo_plantilla === "vehiculo");
 
     if (selectedTemplate?.html_plantilla) {
-      const parts = selectedTemplate.html_plantilla.split("\n---PAGE_BREAK---\n");
+      const parts = splitContractTemplate(selectedTemplate.html_plantilla);
       templatePage1 = parts[0] || null;
       templatePage2 = parts[1] || null;
+      templateTitle = selectedTemplate.titulo;
     }
   }
 
   const currentDate = new Date().toLocaleDateString("es-CO", {
+    timeZone: APP_TIME_ZONE,
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -216,7 +221,8 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
   const alumnoNombre = `${alumno.nombre} ${alumno.apellidos}`;
   const categorias = m.categorias?.join(", ") || "___";
   const esTI = alumno.tipo_documento === "TI";
-  const ciudadFirma = dbConfig?.ciudad_firma || "";
+  const sinFronterasForm = usesSinFronterasForm(escuelaId, templateTitle);
+  const ciudadFirma = dbConfig?.ciudad_firma || (sinFronterasForm ? "Ipiales Nariño" : "");
 
   // Footer info from config or fallback
   const pieDireccion = dbConfig?.pie_direccion || sedeDireccion;
@@ -231,9 +237,14 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
     TELEFONO_CEA: (dbConfig?.telefono_legal_escuela as string) || sedeTelefono,
     ALUMNO_NOMBRE: alumnoNombre,
     ALUMNO_DNI: alumno.dni || "___",
+    ALUMNO_TIPO_DOCUMENTO: alumno.tipo_documento || "___",
+    ALUMNO_LUGAR_EXPEDICION: alumno.lugar_expedicion_documento || "________________________",
     ALUMNO_DIRECCION: alumno.direccion || "________________________",
     ALUMNO_TELEFONO: alumno.telefono || "___",
     CATEGORIAS: categorias,
+    NUMERO_CONTRATO: contratoNum,
+    FORMACION_CONDUCCION: CONTRACT_FORMATION_LABELS[contractTemplateType],
+    REQUISITO_EDAD: getContractAgeRequirement(m.categorias ?? []),
     FECHA_CONTRATO: currentDate,
     CIUDAD_FIRMA: ciudadFirma,
     SEDE_DIRECCION: sedeDireccion,
@@ -241,10 +252,10 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
 
   // Render page content: use saved templates if available, otherwise hardcoded
   const page1Content = templatePage1
-    ? renderTextToJsx(replaceVariables(templatePage1, vars))
+    ? renderTextToJsx(replaceContractVariables(templatePage1, vars))
     : null;
   const page2Content = templatePage2
-    ? renderTextToJsx(replaceVariables(templatePage2, vars))
+    ? renderTextToJsx(replaceContractVariables(templatePage2, vars))
     : null;
 
   const headerBlock = (
@@ -268,6 +279,16 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
       </div>
     </div>
   );
+  const renderHeader = (page: number) =>
+    sinFronterasForm ? (
+      <SinFronterasContractHeader
+        type={contractTemplateType}
+        contractNumber={contratoNum}
+        page={page}
+      />
+    ) : (
+      headerBlock
+    );
 
   const footerLine = (
     <div className="flex items-center justify-between text-[8px] text-gray-400">
@@ -292,6 +313,15 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
       <div className="text-right text-[8px] text-gray-400">Página 2 de 2</div>
     </div>
   );
+  const formFooter = (
+    <footer className="border-t border-gray-300 pt-1 text-[8px] leading-3 text-gray-500">
+      <p>
+        {pieDireccion}
+        {pieTelefonos ? ` · Tel: ${pieTelefonos}` : ""}
+      </p>
+      {footerLine}
+    </footer>
+  );
 
   return (
     <>
@@ -309,18 +339,23 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
         }}
       />
 
-      <div className="mx-auto min-h-screen max-w-[216mm] bg-white font-sans text-[#1d1d1f] antialiased">
+      <div
+        className="mx-auto min-h-screen max-w-[216mm] bg-white font-sans text-[#1d1d1f] antialiased"
+        style={sinFronterasForm ? { fontFamily: "Arial, sans-serif" } : undefined}
+      >
         {/* Toolbar */}
-        <div className="no-print sticky top-0 z-10 flex items-center justify-between border-b bg-white px-10 py-4">
-          <h1 className="text-2xl font-semibold">Previsualización de Contrato</h1>
+        <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-white px-4 py-4 sm:px-10">
+          <h1 className="text-lg font-semibold sm:text-2xl">Previsualización de Contrato</h1>
           <PrintButton />
         </div>
 
         {/* ══════════ PÁGINA 1 ══════════ */}
-        <div className="print-page flex min-h-[279mm] flex-col px-10 py-4 print:min-h-0 print:px-0 print:py-0">
-          {headerBlock}
+        <div className="print-page contract-print-sheet flex min-h-[279mm] flex-col px-10 py-4 print:min-h-0 print:px-0 print:py-0">
+          {renderHeader(1)}
 
-          <div className="flex-1 pt-3 text-justify text-[9px] leading-[13px]">
+          <div
+            className={`flex-1 pt-3 text-justify break-words ${sinFronterasForm ? "text-[9pt] leading-[1.15]" : "text-[9px] leading-[13px]"}`}
+          >
             {page1Content || (
               <>
                 <p>
@@ -442,17 +477,19 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
             )}
           </div>
 
-          {footerPage1}
+          {sinFronterasForm ? formFooter : footerPage1}
         </div>
 
         {/* Separator for screen preview */}
         <div className="no-print mx-10 border-t-4 border-dashed border-gray-300" />
 
         {/* ══════════ PÁGINA 2 ══════════ */}
-        <div className="print-page flex min-h-[279mm] flex-col px-10 py-4 print:min-h-0 print:px-0 print:py-0">
-          {headerBlock}
+        <div className="print-page contract-print-sheet flex min-h-[279mm] flex-col px-10 py-4 print:min-h-0 print:px-0 print:py-0">
+          {renderHeader(2)}
 
-          <div className="flex-1 pt-3 text-justify text-[9px] leading-[13px]">
+          <div
+            className={`flex-1 pt-3 text-justify break-words ${sinFronterasForm ? "text-[9pt] leading-[1.15]" : "text-[9px] leading-[13px]"}`}
+          >
             {page2Content || (
               <>
                 <p>
@@ -538,41 +575,53 @@ export default async function PrintContratoPage({ params }: { params: Promise<{ 
             )}
 
             {/* Signatures */}
-            <div className="mt-6 grid grid-cols-2 gap-8">
-              <div className="text-center">
-                <div className="mx-auto mt-10 mb-1 w-3/4 border-b border-black" />
-                <p className="text-[9px]">Firma Estudiante</p>
-                <p className="mt-1 text-[9px] font-bold">{alumnoNombre}</p>
-              </div>
-              <div />
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-8">
-              <div className="text-center">
-                <div className="mx-auto mt-8 mb-1 w-3/4 border-b border-black" />
-                <p className="text-[9px]">Firma CEA {escuelaNombre.toUpperCase()}</p>
-              </div>
-              {esTI && (
-                <div className="text-center">
-                  <div className="mx-auto mt-8 mb-1 w-3/4 border-b border-black" />
-                  <p className="text-[9px]">Firma Acudiente</p>
-                  <p className="text-[9px]">(para menores de edad) C.C. __________________</p>
+            {sinFronterasForm ? (
+              <SinFronterasContractSignatures
+                studentName={alumnoNombre}
+                schoolName={escuelaNombre}
+                address={alumno.direccion}
+                phone={alumno.telefono}
+                guardian={esTI}
+              />
+            ) : (
+              <>
+                <div className="mt-6 grid grid-cols-2 gap-8">
+                  <div className="text-center">
+                    <div className="mx-auto mt-10 mb-1 w-3/4 border-b border-black" />
+                    <p className="text-[9px]">Firma Estudiante</p>
+                    <p className="mt-1 text-[9px] font-bold">{alumnoNombre}</p>
+                  </div>
+                  <div />
                 </div>
-              )}
-            </div>
 
-            <p className="mt-2 text-[9px]">Adjuntar fotocopia cédula de ciudadanía</p>
-            <p className="text-[9px]">
-              Dirección: {alumno.direccion || "________________________"}
-            </p>
-            <p className="text-[9px]">No. Celular: {alumno.telefono}</p>
+                <div className="mt-4 grid grid-cols-2 gap-8">
+                  <div className="text-center">
+                    <div className="mx-auto mt-8 mb-1 w-3/4 border-b border-black" />
+                    <p className="text-[9px]">Firma CEA {escuelaNombre.toUpperCase()}</p>
+                  </div>
+                  {esTI && (
+                    <div className="text-center">
+                      <div className="mx-auto mt-8 mb-1 w-3/4 border-b border-black" />
+                      <p className="text-[9px]">Firma Acudiente</p>
+                      <p className="text-[9px]">(para menores de edad) C.C. __________________</p>
+                    </div>
+                  )}
+                </div>
 
-            <p className="mt-4 text-[9px] font-bold">
-              Consecutivo anual de contrato: {contratoNum}
-            </p>
+                <p className="mt-2 text-[9px]">Adjuntar fotocopia cédula de ciudadanía</p>
+                <p className="text-[9px]">
+                  Dirección: {alumno.direccion || "________________________"}
+                </p>
+                <p className="text-[9px]">No. Celular: {alumno.telefono}</p>
+
+                <p className="mt-4 text-[9px] font-bold">
+                  Consecutivo anual de contrato: {contratoNum}
+                </p>
+              </>
+            )}
           </div>
 
-          {footerPage2}
+          {sinFronterasForm ? formFooter : footerPage2}
         </div>
       </div>
     </>

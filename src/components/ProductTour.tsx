@@ -26,10 +26,10 @@ const productAreas: ProductArea[] = [
   {
     id: "operacion",
     label: "Operación",
-    title: "Alumnos, agenda y clases en el mismo recorrido",
+    title: "Alumnos, matrículas y horas en el mismo recorrido",
     description:
       "Desde el registro hasta las horas y evaluaciones, la operación académica se mantiene conectada para que el equipo tenga contexto al atender.",
-    items: ["Alumnos y matrículas", "Clases, horas e instructores", "Exámenes y seguimiento"],
+    items: ["Alumnos y matrículas", "Horas e instructores", "Exámenes y seguimiento"],
     icon: CalendarDays,
   },
   {

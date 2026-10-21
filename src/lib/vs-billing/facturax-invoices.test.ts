@@ -127,10 +127,23 @@ beforeAll(async () => {
  alter table alumnos add column departamento text;
  alter table alumnos add column datos_facturacion jsonb;
  alter table matriculas_alumno add column sede_id uuid default '${VS_BILLING_SCHOOL.id}';`);
+  await db.exec("alter table matriculas_alumno add column categorias text[] default '{A2}'");
+  await db.exec(
+    "alter table alumnos add column fecha_nacimiento date; alter table matriculas_alumno add column fecha_inscripcion date"
+  );
   await db.exec(
     readFileSync(
       new URL(
         "../../../supabase/migrations/20261010190934_facturax_contract_invoices.sql",
+        import.meta.url
+      ),
+      "utf8"
+    )
+  );
+  await db.exec(
+    readFileSync(
+      new URL(
+        "../../../supabase/migrations/20261020005811_ansv_contract_snapshot.sql",
         import.meta.url
       ),
       "utf8"
@@ -457,8 +470,54 @@ describe("factura por contrato", () => {
   it("una consulta anterior no borra el numero ni regresa una factura aceptada a pendiente", async () => {
     await emitContractInvoice(student, contract, request, actor);
     mock.remote.mockResolvedValue(quoted);
-    await syncContractInvoice(student, contract);
+    const response = await syncContractInvoice(student, contract);
+    expect(response.status.state).toBe("accepted");
+    expect(response.status.number).toBe("ESF123");
     expect((await contractInvoices(student))[0].status?.state).toBe("accepted");
+  });
+  it("no devuelve un documento ajeno cuando la protección del estado impide sustituirlo", async () => {
+    await emitContractInvoice(student, contract, request, actor);
+    mock.remote.mockResolvedValue({ ...accepted, documentId: second, number: "OTRA" });
+    const response = await syncContractInvoice(student, contract);
+    expect(response.status.documentId).toBe(accepted.documentId);
+    expect(response.status.number).toBe("ESF123");
+  });
+  it("guarda el estado contable aditivo y no convierte falta de cartera en saldo cero", async () => {
+    const business = {
+      accounting: { state: "pending", journalReference: null, issue: "Falta asiento." },
+      collection: { state: "unregistered", balance: null, paid: null, issue: null, receipts: [] },
+    };
+    mock.remote.mockImplementation(async (_schema, _body, id) =>
+      id ? quoted : { ...accepted, business }
+    );
+    const response = await emitContractInvoice(student, contract, request, actor);
+    expect(response.status.business).toEqual(business);
+    expect((await contractInvoices(student))[0].status?.business).toEqual(business);
+    mock.remote.mockResolvedValue(quoted);
+    expect((await syncContractInvoice(student, contract)).status.business).toEqual(business);
+  });
+  it("no reserva ni emite cuando el recaudo de la revisión no coincide con el total", async () => {
+    mock.remote.mockResolvedValue({
+      ...quoted,
+      quote: {
+        ...quoted.quote,
+        payment: {
+          ...quoted.quote!.payment,
+          collection: {
+            state: "received",
+            confirmed: true,
+            cashAccountCode: "110505",
+            date: "2026-10-20",
+            amount: 1,
+          },
+        },
+      },
+    });
+    await expect(emitContractInvoice(student, contract, request, actor)).rejects.toThrow(
+      /recaudo revisado/
+    );
+    expect(await contractInvoices(student)).toEqual([]);
+    expect(mock.remote).toHaveBeenCalledTimes(1);
   });
   it("no libera la asociacion si FacturaX no confirma que sigue sin emitir", async () => {
     await emitContractInvoice(student, contract, request, actor);

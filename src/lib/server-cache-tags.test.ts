@@ -19,7 +19,7 @@ describe("server-cache-tags", () => {
       expect.arrayContaining([
         "finance",
         "finance:income",
-        "scope",
+        "finance:income:school:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "scope:school:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "scope:branch:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       ])
@@ -39,18 +39,23 @@ describe("server-cache-tags", () => {
   });
 
   it("expone invalidación amplia y estable por escuela/sede", () => {
-    expect(buildBroadFinanceInvalidationTags(scope)).toEqual(
-      expect.arrayContaining(["finance:income", "finance:reports"])
-    );
-    expect(buildBroadDashboardInvalidationTags(scope)).toEqual(
-      expect.arrayContaining(["dashboard:admin", "dashboard:superadmin"])
-    );
+    expect(buildBroadFinanceInvalidationTags(scope)).toEqual([
+      "finance:school:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    ]);
+    expect(buildBroadDashboardInvalidationTags(scope)).toEqual([
+      "dashboard:school:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    ]);
     expect(
       buildScopedMutationRevalidationTags({
         scope,
         includeFinance: true,
         includeDashboard: true,
       })
-    ).toEqual(expect.arrayContaining(["finance", "dashboard"]));
+    ).toEqual(
+      expect.arrayContaining([
+        "finance:school:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "dashboard:school:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      ])
+    );
   });
 });

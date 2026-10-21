@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { readAnsvSnapshot } from "@/lib/ansv";
+import { extractDateOnly } from "@/lib/date-utils";
+import { resolveInvoiceAnsv } from "@/lib/vs-billing/invoice-ansv";
+import { normalizeStoredCourseCategories } from "@/lib/course-categories";
 import {
   authorizeInvoiceStaff,
   CONNECTION_HEADERS,
@@ -15,6 +19,9 @@ import {
   facturaxQuoteSchema,
   facturaxSelectionSchema,
   invoiceStudent,
+  invoicePaymentDateIssue,
+  invoiceCollectionIssues,
+  invoiceQuotePaymentIssue,
 } from "@/lib/vs-billing/facturax-contract";
 import {
   contractInvoices,
@@ -174,16 +181,40 @@ export async function POST(request: Request) {
         409
       );
     const invoiceData = invoiceStudent(student);
-    if (input.action === "catalog")
-      return json(
-        await facturaxRequest(facturaxCatalogSchema, {
-          action: "catalog",
-          student: invoiceData,
-        })
-      );
+    if (input.action === "catalog") {
+      const catalog = await facturaxRequest(facturaxCatalogSchema, {
+        action: "catalog",
+        student: invoiceData,
+      });
+      const ansvContext = {
+        fechaNacimiento: extractDateOnly(student.fecha_nacimiento) ?? "",
+        sexo: student.sexo ?? "",
+        fechaMatricula: extractDateOnly(student.fecha_inscripcion) ?? "",
+        categorias: normalizeStoredCourseCategories(student.categorias),
+      };
+      const ansv = resolveInvoiceAnsv(student.ansv, ansvContext);
+      return json({
+        ...catalog,
+        ansv: ansv.snapshot,
+        ansvContext: readAnsvSnapshot(student.ansv) ? null : ansvContext,
+        contractCategories: normalizeStoredCourseCategories(student.categorias),
+      });
+    }
     if (input.action === "quote") {
+      const paymentIssue = invoicePaymentDateIssue(input.payment);
+      if (paymentIssue) throw new FacturaxError(paymentIssue, 400);
       if ((await contractInvoices(input.alumnoId)).some((i) => i.contratoId === input.contratoId))
         throw new FacturaxError("Este contrato ya tiene una solicitud. Consulta su estado.", 409);
+      const catalog = await facturaxRequest(facturaxCatalogSchema, {
+        action: "catalog",
+        student: invoiceData,
+      });
+      const collectionIssues = invoiceCollectionIssues(catalog, input.payment);
+      if (collectionIssues.length)
+        throw new InvoiceDataIncompleteError(
+          collectionIssues,
+          collectionIssues.map((issue) => issue.message).join(" ")
+        );
       const quote = await facturaxRequest(facturaxQuoteSchema, {
         action: "quote",
         student: invoiceData,
@@ -193,6 +224,8 @@ export async function POST(request: Request) {
       });
       if (quote.studentId !== input.alumnoId)
         throw new FacturaxError("La respuesta no corresponde al alumno.");
+      const quotePaymentIssue = invoiceQuotePaymentIssue(quote, input.payment);
+      if (quotePaymentIssue) throw new FacturaxError(quotePaymentIssue, 409);
       return json(quote);
     }
     return json(

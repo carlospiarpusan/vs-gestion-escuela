@@ -3,6 +3,7 @@
 // PGLITE_MODULE_PATH=/tmp/mobile-review-pglite/node_modules/@electric-sql/pglite \
 //   node supabase/tests/mobile_review_fixes.mjs
 import assert from "node:assert/strict";
+import { checkRlsIdentityCache } from "./rls_identity_cache.mjs";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
@@ -20,8 +21,9 @@ try {
   await db.exec(`
     create role anon;
     create role authenticated;
+    create role service_role bypassrls;
     create schema auth;
-    create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb);
+    create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb, raw_app_meta_data jsonb);
     create function auth.uid() returns uuid language sql stable as $$
       select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
     $$;
@@ -61,9 +63,13 @@ try {
   await apply("052_mobile_review_fixes");
   assert.deepEqual((await functions()).rows, before, "Migration can be reapplied without new overloads");
 
+  await apply("20261020141949_enforce_mobile_password_change");
+  await apply("20261020145133_restrict_internal_database_functions");
   const sql = await read("tests/mobile_review_fixes.sql");
   await db.exec(sql);
   console.log("PASS: signatures, repeat migration, SQL regression assertions (rolled back)");
+
+  await checkRlsIdentityCache(db);
 
   // Prove these assertions detect the two observed runtime regressions in 049.
   await apply("049_mobile_app_rpc");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BookOpen, CarFront, DollarSign, FileText, Users } from "lucide-react";
 import DeferredIncomeChart from "./DeferredIncomeChart";
 import {
@@ -9,8 +9,18 @@ import {
   type AdminDashboardDailyIngresoPoint,
   type AdminDashboardStats as Stats,
   type AdminDashboardSummaryResponse,
+  type AdminDashboardInitialSummary,
+  DASHBOARD_SUMMARY_CACHE_TTL_MS,
 } from "@/lib/dashboard-admin-summary";
-import { getDashboardSummaryCached, readDashboardSummaryCache } from "@/lib/dashboard-client-cache";
+import {
+  buildDashboardSummaryClientCacheKey,
+  getDashboardSummaryCached,
+  readDashboardSummaryCache,
+} from "@/lib/dashboard-client-cache";
+import {
+  wasClientResourceInvalidatedSince,
+  writeClientResourceCache,
+} from "@/lib/client-resource-cache";
 import PageScaffold from "@/components/dashboard/PageScaffold";
 import SummaryRow from "@/components/dashboard/SummaryRow";
 import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
@@ -23,30 +33,57 @@ import {
   getShareLabel,
 } from "@/components/dashboard/home/dashboard-home-shared";
 
-export default function AdminDashboardHome() {
+export default function AdminDashboardHome({
+  initialSummary = null,
+}: {
+  initialSummary?: AdminDashboardInitialSummary | null;
+}) {
   const { perfil } = useAuth();
+  const consumedSeed = useRef<AdminDashboardInitialSummary | null>(null);
+  const initialData =
+    perfil &&
+    initialSummary &&
+    initialSummary.expiresAt > Date.now() &&
+    !wasClientResourceInvalidatedSince(
+      initialSummary.key,
+      initialSummary.expiresAt - DASHBOARD_SUMMARY_CACHE_TTL_MS
+    ) &&
+    initialSummary.key ===
+      buildDashboardSummaryClientCacheKey("admin", {
+        id: perfil.id,
+        rol: perfil.rol,
+        escuelaId: perfil.escuela_id,
+        sedeId: perfil.sede_id,
+      })
+      ? initialSummary.data
+      : null;
   const isMobile = useIsMobileVariant();
-  const [stats, setStats] = useState<Stats>({
-    alumnos: 0,
-    cursosNuevosMes: 0,
-    clasesHoy: 0,
-    examenesPendientes: 0,
-    ingresosMes: 0,
-    lineasMesMoto: 0,
-    lineasMesCarro: 0,
-    lineasMesCombos: 0,
-    lineasMesSinCategoria: 0,
-    practicaAdicionalMes: 0,
-    evaluacionesAptitudMes: 0,
-  });
-  const [comparisonStats, setComparisonStats] = useState<ComparativeStats>({
-    cursosNuevosMes: 0,
-    ingresosMes: 0,
-    practicaAdicionalMes: 0,
-    evaluacionesAptitudMes: 0,
-  });
-  const [dailyIngresos, setDailyIngresos] = useState<AdminDashboardDailyIngresoPoint[]>([]);
-  const [loadingStats, setLoadingStats] = useState(true);
+  const [stats, setStats] = useState<Stats>(
+    initialData?.stats ?? {
+      alumnos: 0,
+      cursosNuevosMes: 0,
+      examenesPendientes: 0,
+      ingresosMes: 0,
+      lineasMesMoto: 0,
+      lineasMesCarro: 0,
+      lineasMesCombos: 0,
+      lineasMesSinCategoria: 0,
+      practicaAdicionalMes: 0,
+      evaluacionesAptitudMes: 0,
+    }
+  );
+  const [comparisonStats, setComparisonStats] = useState<ComparativeStats>(
+    initialData?.comparisonStats ?? {
+      cursosNuevosMes: 0,
+      ingresosMes: 0,
+      practicaAdicionalMes: 0,
+      evaluacionesAptitudMes: 0,
+    }
+  );
+  const [dailyIngresos, setDailyIngresos] = useState<AdminDashboardDailyIngresoPoint[]>(
+    initialData?.dailyIngresos ?? []
+  );
+  const [loadingStats, setLoadingStats] = useState(!initialData);
   const [summaryWarning, setSummaryWarning] = useState<string | null>(null);
 
   useEffect(() => {
@@ -59,6 +96,21 @@ export default function AdminDashboardHome() {
       escuelaId: perfil.escuela_id,
       sedeId: perfil.sede_id,
     };
+    if (initialSummary && consumedSeed.current !== initialSummary) {
+      consumedSeed.current = initialSummary;
+      const key = buildDashboardSummaryClientCacheKey("admin", cacheScope);
+      const remainingTtl = initialSummary.expiresAt - Date.now();
+      if (
+        initialSummary.key === key &&
+        remainingTtl > 0 &&
+        !wasClientResourceInvalidatedSince(
+          key,
+          initialSummary.expiresAt - DASHBOARD_SUMMARY_CACHE_TTL_MS
+        )
+      ) {
+        writeClientResourceCache(key, initialSummary.data, remainingTtl);
+      }
+    }
     const cachedSnapshot = readDashboardSummaryCache<AdminDashboardSummaryResponse>(
       "admin",
       cacheScope
@@ -82,7 +134,7 @@ export default function AdminDashboardHome() {
           loader: async () => {
             return fetchJsonWithRetry<AdminDashboardSummaryResponse>(
               "/api/dashboard/admin-summary",
-              { cache: "default" },
+              { cache: "no-store" },
               { attempts: 3, baseDelayMs: 400 }
             );
           },
@@ -113,7 +165,7 @@ export default function AdminDashboardHome() {
     return () => {
       isActive = false;
     };
-  }, [perfil]);
+  }, [perfil, initialSummary]);
 
   const nombre = perfil?.nombre || "Usuario";
   const previousMonthRange = getDashboardMonthRange(-1);

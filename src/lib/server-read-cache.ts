@@ -1,7 +1,8 @@
 import { revalidateTag, unstable_cache } from "next/cache";
+import { expandMutationCacheTags } from "@/lib/server-cache-tags";
 
 function normalizeCacheKey(key: string | string[]) {
-  return Array.isArray(key) ? key : [key];
+  return ["school-domain-tags-v2", ...(Array.isArray(key) ? key : [key])];
 }
 
 export async function getServerReadCached<T>({
@@ -30,10 +31,10 @@ export async function getServerReadCached<T>({
 }
 
 export function revalidateServerReadCache(tags: string | string[]) {
-  const normalizedTags = Array.isArray(tags) ? tags : [tags];
+  const normalizedTags = expandMutationCacheTags(Array.isArray(tags) ? tags : [tags]);
 
   for (const tag of normalizedTags) {
     if (!tag) continue;
-    revalidateTag(tag, "max");
+    revalidateTag(tag, { expire: 0 });
   }
 }

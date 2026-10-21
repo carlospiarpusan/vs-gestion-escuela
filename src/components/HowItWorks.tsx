@@ -12,13 +12,13 @@ const steps = [
     number: "02",
     title: "Configura la estructura esencial",
     description:
-      "La estructura inicial queda preparada para operar con alumnos, agenda, finanzas y flota desde el mismo panel.",
+      "La estructura inicial queda preparada para operar con alumnos, horas, finanzas y flota desde el mismo panel.",
   },
   {
     number: "03",
     title: "Opera con la información al día",
     description:
-      "Cada tarea vive donde corresponde: alumnos, clases, ingresos, cartera, gastos, informes y vehículos.",
+      "Cada tarea vive donde corresponde: alumnos, horas, ingresos, cartera, gastos, informes y vehículos.",
   },
 ];
 
@@ -32,7 +32,7 @@ export default function HowItWorks() {
         <SectionIntro
           badge="Implementación simple"
           title="Una puesta en marcha pensada para autoescuelas que necesitan operar rápido"
-          description="ConduSoft no busca llenarte de configuración. Busca dejar la base lista para controlar alumnos, agenda, finanzas y flota con una estructura clara."
+          description="ConduSoft no busca llenarte de configuración. Busca dejar la base lista para controlar alumnos, horas, finanzas y flota con una estructura clara."
         />
 
         <div className="grid gap-5">

@@ -63,7 +63,11 @@ export async function GET() {
     const response = await getServerReadCached<AlumnoDashboardResponse>({
       key: `dashboard:alumno:${userId}`,
       ttlMs: DASHBOARD_SUMMARY_CACHE_TTL_MS,
-      tags: buildDashboardCacheTags("alumno", { userId }),
+      tags: buildDashboardCacheTags("alumno", {
+        userId,
+        escuelaId: authorization.perfil.escuela_id,
+        sedeId: authorization.perfil.sede_id,
+      }),
       loader: async () => {
         const nextResponse = createEmptyAlumnoDashboardSummary();
         const alumnoRes = await pool.query<AlumnoRow>(
@@ -170,7 +174,7 @@ export async function GET() {
 
     return NextResponse.json(response, {
       headers: {
-        "Cache-Control": `private, max-age=${Math.floor(DASHBOARD_SUMMARY_CACHE_TTL_MS / 1000)}, stale-while-revalidate=60`,
+        "Cache-Control": "private, no-store",
       },
     });
   } catch (error) {

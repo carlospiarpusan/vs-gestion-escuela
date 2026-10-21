@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { POST } from "./route";
@@ -41,10 +42,22 @@ beforeEach(async () => {
   active = false;
   await db.exec(`create table alumnos(id uuid primary key,escuela_id uuid,sede_id uuid,tipo_registro text,nombre text,apellidos text,valor_total numeric);
     create table matriculas_alumno(id uuid primary key,alumno_id uuid references alumnos(id),valor_total numeric);
-    create table ingresos(id uuid default gen_random_uuid(),escuela_id uuid,sede_id uuid,user_id uuid,alumno_id uuid references alumnos(id),
+    create table ingresos(id uuid primary key default gen_random_uuid(),escuela_id uuid,sede_id uuid,user_id uuid,alumno_id uuid references alumnos(id),
       matricula_id uuid references matriculas_alumno(id),categoria text,concepto text,monto numeric,metodo_pago text,fecha date,estado text,notas text);
     insert into alumnos values('${id}','${id}','${id}','regular','Ana','Prueba',null),('${other}','${id}','${id}','aptitud_conductor','Otro','Prueba',100);
     insert into matriculas_alumno values('${mat}','${id}',100);`);
+  await db.exec(
+    `create role anon; create role authenticated; create role service_role; create table perfiles(id uuid primary key); create table escuelas(id uuid primary key); insert into perfiles values('${id}'); insert into escuelas values('${id}');`
+  );
+  await db.exec(
+    readFileSync(
+      new URL(
+        "../../../../../supabase/migrations/20261020140459_web_payment_idempotency.sql",
+        import.meta.url
+      ),
+      "utf8"
+    )
+  );
   mock.query.mockImplementation(async (sql: string, values?: unknown[]) => {
     const result = await db.query(sql, values);
     if (sql === "BEGIN") active = true;
@@ -66,6 +79,7 @@ afterEach(async () => {
 });
 
 it("valida saldo y guarda dentro de la misma transacción con alumno y contrato bloqueados", async () => {
+  mock.cache.mockImplementation(() => expect(active).toBe(false));
   expect((await POST(request(body))).status).toBe(200);
   const statements = mock.query.mock.calls.map(([sql]) => sql as string);
   expect(statements[0]).toBe("BEGIN");
@@ -76,6 +90,17 @@ it("valida saldo y guarda dentro de la misma transacción con alumno y contrato 
     { monto: "60", fecha: "2026-09-01" },
   ]);
   expect(mock.release).toHaveBeenCalledTimes(1);
+  expect(mock.cache).toHaveBeenCalledOnce();
+  expect(mock.cache.mock.calls[0][0]).toEqual(
+    expect.arrayContaining([
+      `dashboard:admin:school:${id}`,
+      `finance:income:school:${id}`,
+      `finance:portfolio:school:${id}`,
+      `finance:cash:school:${id}`,
+      `finance:reports:school:${id}`,
+    ])
+  );
+  expect(mock.cache.mock.calls[0][0]).not.toContain("finance");
 });
 it("una segunda solicitud usa el saldo actualizado y no permite sobrepago", async () => {
   expect((await POST(request(body))).status).toBe(200);
@@ -126,4 +151,32 @@ it("un fallo de caché después de guardar no presenta el pago como fallido", as
   });
   expect((await POST(request(body))).status).toBe(200);
   expect((await db.query("select monto from ingresos")).rows).toEqual([{ monto: "60" }]);
+});
+
+it("repite la respuesta de un abono sin volver a cobrar ni reevaluar el saldo", async () => {
+  const command = { ...body, operacion_id: other };
+  const first = await (await POST(request(command))).json();
+  const retry = await (await POST(request(command))).json();
+  expect(retry).toMatchObject({ ok: true, repetida: true, ingreso_id: first.ingreso_id });
+  expect((await db.query("select count(*)::int n, sum(monto) total from ingresos")).rows).toEqual([
+    { n: 1, total: "60" },
+  ]);
+});
+it("no permite reutilizar la operación con otro importe ni otro usuario", async () => {
+  const command = { ...body, operacion_id: other };
+  expect((await POST(request(command))).status).toBe(200);
+  expect((await POST(request({ ...command, monto: 10 }))).status).toBe(409);
+  mock.auth.mockResolvedValue({
+    ok: true,
+    perfil: { id: mat, escuela_id: id, sede_id: id, rol: "admin_escuela", activo: true },
+  });
+  expect((await POST(request(command))).status).toBe(409);
+  expect((await db.query("select count(*)::int n from ingresos")).rows).toEqual([{ n: 1 }]);
+});
+it("revierte también la reserva de operación si falla el guardado", async () => {
+  await db.exec("alter table ingresos add constraint fail_payment check(monto<0)");
+  expect((await POST(request({ ...body, operacion_id: other }))).status).toBe(500);
+  expect((await db.query("select count(*)::int n from web_payment_operations")).rows).toEqual([
+    { n: 0 },
+  ]);
 });

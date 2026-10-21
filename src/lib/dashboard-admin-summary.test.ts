@@ -26,7 +26,6 @@ describe("dashboard-admin-summary", () => {
       stats: {
         alumnos: 0,
         cursosNuevosMes: 0,
-        clasesHoy: 0,
         examenesPendientes: 0,
         ingresosMes: 0,
         lineasMesMoto: 0,

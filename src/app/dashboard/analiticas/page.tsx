@@ -1,6 +1,7 @@
 "use client";
 
 import { APP_TIME_ZONE } from "@/lib/date-utils";
+import { formatCop as formatCOP } from "@/lib/intl-formatters";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -28,17 +29,9 @@ import { useAuth } from "@/hooks/useAuth";
 const ANALYTICS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 // ── Helpers ────────────────────────────────────────────────────────────
-function formatCOP(value: number) {
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
+const numberFormatter = new Intl.NumberFormat("es-CO");
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("es-CO").format(value);
+  return numberFormatter.format(value);
 }
 
 function formatPercent(value: number) {
@@ -76,7 +69,6 @@ const ROL_LABELS: Record<string, string> = {
 
 const TABLE_LABELS: Record<string, string> = {
   alumnos: "Alumnos",
-  clases: "Clases",
   instructores: "Instructores",
   vehiculos: "Vehiculos",
   ingresos: "Ingresos",
@@ -308,7 +300,6 @@ export default function AnaliticasPage() {
 
     return {
       alumnos: calcTrend(last.alumnos, prev.alumnos),
-      clases: calcTrend(last.clases, prev.clases),
       ingresos: calcTrend(last.ingresos, prev.ingresos),
       examenes: calcTrend(last.examenes, prev.examenes),
     };
@@ -518,28 +509,6 @@ export default function AnaliticasPage() {
               </div>
             </div>
 
-            {/* Clases */}
-            <div>
-              <div className="mb-1 flex items-center justify-between text-sm">
-                <span className="font-medium text-zinc-600">Clases impartidas</span>
-                <span className="text-zinc-400">
-                  {formatNumber(monthlyGrowth[monthlyGrowth.length - 1]?.clases ?? 0)} este mes
-                </span>
-              </div>
-              <MiniBarChart
-                data={monthlyGrowth.map((m) => m.clases)}
-                color="bg-violet-500"
-                height={48}
-              />
-              <div className="mt-1 flex justify-between text-[10px] text-zinc-400">
-                {monthlyGrowth.map((m) => (
-                  <span key={m.mes} className="flex-1 text-center">
-                    {shortMonth(m.mes)}
-                  </span>
-                ))}
-              </div>
-            </div>
-
             {/* Ingresos vs Gastos */}
             <div>
               <div className="mb-1 flex items-center justify-between text-sm">
@@ -649,7 +618,9 @@ export default function AnaliticasPage() {
             <Zap className="h-5 w-5 text-zinc-400" />
             <h2 className="text-base font-semibold text-zinc-800">Top 10 escuelas mas activas</h2>
           </div>
-          <p className="mt-1 text-xs text-zinc-400">Clasificadas por alumnos + clases este mes</p>
+          <p className="mt-1 text-xs text-zinc-400">
+            Clasificadas por alumnos activos e ingresos del mes
+          </p>
 
           <div className="mt-4 overflow-hidden">
             <table className="w-full text-sm">
@@ -658,7 +629,6 @@ export default function AnaliticasPage() {
                   <th className="pb-2 font-medium">#</th>
                   <th className="pb-2 font-medium">Escuela</th>
                   <th className="pb-2 text-right font-medium">Alumnos</th>
-                  <th className="pb-2 text-right font-medium">Clases</th>
                   <th className="pb-2 text-right font-medium">Ingresos</th>
                 </tr>
               </thead>
@@ -695,9 +665,6 @@ export default function AnaliticasPage() {
                     <td className="py-2.5 text-right font-medium text-zinc-700 tabular-nums">
                       {formatNumber(school.alumnos_activos)}
                     </td>
-                    <td className="py-2.5 text-right text-zinc-600 tabular-nums">
-                      {formatNumber(school.clases_mes)}
-                    </td>
                     <td className="py-2.5 text-right font-medium text-emerald-600 tabular-nums">
                       {formatCOP(school.ingresos_mes)}
                     </td>
@@ -705,7 +672,7 @@ export default function AnaliticasPage() {
                 ))}
                 {topSchools.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-zinc-400">
+                    <td colSpan={4} className="py-8 text-center text-zinc-400">
                       No hay escuelas activas con actividad este mes.
                     </td>
                   </tr>
@@ -717,7 +684,7 @@ export default function AnaliticasPage() {
       </div>
 
       {/* ── Tendencias sparkline ─────────────────────────────────────── */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-zinc-200/60 bg-white p-5 shadow-sm">
           <p className="text-xs font-medium text-zinc-400">Tendencia alumnos</p>
           <div className="mt-2 flex items-end justify-between">
@@ -737,28 +704,6 @@ export default function AnaliticasPage() {
               )}
             </div>
             <Sparkline data={monthlyGrowth.map((m) => m.alumnos)} color="#3b82f6" />
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-zinc-200/60 bg-white p-5 shadow-sm">
-          <p className="text-xs font-medium text-zinc-400">Tendencia clases</p>
-          <div className="mt-2 flex items-end justify-between">
-            <div>
-              <p className="text-lg font-semibold text-zinc-900">
-                {formatNumber(monthlyGrowth[monthlyGrowth.length - 1]?.clases ?? 0)}
-              </p>
-              {growthTrends && (
-                <p
-                  className={`text-xs ${
-                    growthTrends.clases >= 0 ? "text-emerald-600" : "text-red-500"
-                  }`}
-                >
-                  {growthTrends.clases >= 0 ? "+" : ""}
-                  {growthTrends.clases}% vs mes ant.
-                </p>
-              )}
-            </div>
-            <Sparkline data={monthlyGrowth.map((m) => m.clases)} color="#8b5cf6" />
           </div>
         </div>
 
@@ -810,7 +755,7 @@ export default function AnaliticasPage() {
       {/* ── Footer ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-center gap-2 pb-4 text-xs text-zinc-400">
         <Activity className="h-3.5 w-3.5" />
-        <span>Datos actualizados cada 3 minutos · Cache del servidor</span>
+        <span>Datos en caché hasta 10 minutos · Puedes actualizarlos manualmente</span>
       </div>
     </div>
   );

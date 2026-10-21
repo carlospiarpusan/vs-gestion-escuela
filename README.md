@@ -43,7 +43,7 @@ El sistema cuenta con un panel de control (Dashboard) segmentado por roles que a
 - **Alumnos**: Perfiles completos, control de documentos, seguimiento de aprendizaje y estado de licencias.
 - **Instructores**: Gestión de profesores, asignación, y control de horas laboradas.
 - **Categorías**: Configuración de los diferentes tipos de permisos y licencias expedidos (A1, A2, B1, C1, etc.).
-- **Clases y Horas**: Agendamiento de clases prácticas/teóricas y seguimiento del progreso o cumplimiento de horas de cada estudiante.
+- **Horas de instructores**: Registro de horas trabajadas, seguimiento por periodo y cierre mensual. El módulo de Clases está retirado.
 
 ### 🚗 Gestión de Flota Automotor
 

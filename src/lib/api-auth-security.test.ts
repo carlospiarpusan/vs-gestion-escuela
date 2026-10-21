@@ -88,7 +88,8 @@ describe("api-auth security controls", () => {
         data: {
           user: {
             id: "user-with-temp-pass",
-            user_metadata: { debe_cambiar_password: true },
+            user_metadata: { debe_cambiar_password: false },
+            app_metadata: { debe_cambiar_password: true },
           },
         },
         error: null,
@@ -112,7 +113,8 @@ describe("api-auth security controls", () => {
         data: {
           user: {
             id: "user-with-temp-pass",
-            user_metadata: { debe_cambiar_password: true },
+            user_metadata: { debe_cambiar_password: false },
+            app_metadata: { debe_cambiar_password: true },
           },
         },
         error: null,

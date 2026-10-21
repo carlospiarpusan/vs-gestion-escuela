@@ -2,6 +2,7 @@
 import { formatDateOnlyForDisplay } from "@/lib/date-utils";
 
 import Link from "next/link";
+import { formatCop as formatCOP } from "@/lib/intl-formatters";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -31,7 +32,6 @@ import {
   GraduationCap,
   Car,
   DollarSign,
-  BookOpen,
   Search,
   Pencil,
   Trash2,
@@ -70,7 +70,6 @@ type EscuelaEnriquecida = {
   admin_email: string | null;
   admin_ultimo_acceso: string | null;
   ingresos_mes: number;
-  clases_mes: number;
 };
 
 type SortField = "nombre" | "alumnos_activos" | "sedes_activas" | "ingresos_mes" | "created_at";
@@ -110,15 +109,6 @@ const estadoColors: Record<string, string> = {
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-
-function formatCOP(value: number) {
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function timeAgo(dateStr: string | null) {
   if (!dateStr) return "Sin registro";
@@ -454,14 +444,12 @@ export default function EscuelasPage() {
     const activas = escuelas.filter((e) => e.estado === "activa").length;
     const totalAlumnos = escuelas.reduce((s, e) => s + e.alumnos_activos, 0);
     const totalIngresos = escuelas.reduce((s, e) => s + e.ingresos_mes, 0);
-    const totalClases = escuelas.reduce((s, e) => s + e.clases_mes, 0);
     const totalInstructores = escuelas.reduce((s, e) => s + e.instructores_activos, 0);
     return {
       total,
       activas,
       totalAlumnos,
       totalIngresos,
-      totalClases,
       totalInstructores,
     };
   }, [escuelas]);
@@ -699,7 +687,7 @@ export default function EscuelasPage() {
 
       <div className="relative z-20 mx-auto mt-[-1rem] max-w-7xl px-4 lg:px-12">
         {/* KPI Stats */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {[
             {
               label: "Escuelas",
@@ -735,13 +723,6 @@ export default function EscuelasPage() {
               icon: <DollarSign size={16} />,
               iconBg: "bg-teal-100 dark:bg-teal-500/20",
               iconColor: "text-teal-600 dark:text-teal-400",
-            },
-            {
-              label: "Clases mes",
-              value: stats.totalClases.toLocaleString("es-CO"),
-              icon: <BookOpen size={16} />,
-              iconBg: "bg-rose-100 dark:bg-rose-500/20",
-              iconColor: "text-rose-600 dark:text-rose-400",
             },
           ].map((kpi) => (
             <div
@@ -1007,9 +988,6 @@ export default function EscuelasPage() {
                                       {formatCOP(school.ingresos_mes)}
                                     </span>
                                   </div>
-                                  <p className="text-[10px] text-zinc-400">
-                                    {school.clases_mes} clases
-                                  </p>
                                 </td>
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-1">

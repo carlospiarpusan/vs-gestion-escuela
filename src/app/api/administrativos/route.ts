@@ -19,7 +19,10 @@ import {
   getAuditedRolesForCapabilityModule,
 } from "@/lib/role-capabilities";
 import { getServerReadCached, revalidateServerReadCache } from "@/lib/server-read-cache";
-import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
+import {
+  buildDashboardListCacheTags,
+  buildDashboardListInvalidationTags,
+} from "@/lib/server-cache-tags";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 
@@ -262,7 +265,7 @@ export async function PATCH(request: Request) {
     }
 
     revalidateServerReadCache(
-      buildDashboardListCacheTags("administrativos", {
+      buildDashboardListInvalidationTags("administrativos", {
         escuelaId: target.escuela_id,
         sedeId: target.sede_id,
       })
@@ -306,7 +309,7 @@ export async function DELETE(request: Request) {
     }
 
     revalidateServerReadCache(
-      buildDashboardListCacheTags("administrativos", {
+      buildDashboardListInvalidationTags("administrativos", {
         escuelaId: target.escuela_id,
         sedeId: target.sede_id,
       })

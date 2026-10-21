@@ -35,13 +35,13 @@ export const SCHOOL_PLAN_DESCRIPTORS: Record<PlanEscuela, SchoolPlanDescriptor> 
     dashboardDescription:
       "Plan de entrada para escuelas nuevas o equipos que quieren probar la operación base con control.",
     publicDescription:
-      "Ideal para una autoescuela que apenas está formalizando alumnos, clases y recaudo inicial.",
+      "Ideal para una autoescuela que apenas está formalizando alumnos, horas y recaudo inicial.",
     recommendedFor:
       "Recomendado cuando la prioridad es empezar con orden, no abrir complejidad antes de tiempo.",
     capacityGuide: "Sede única y una base inicial controlada.",
     focusPoints: [
-      "Alumnos, matrículas y agenda base",
-      "Clases, exámenes y operación esencial",
+      "Alumnos y matrículas",
+      "Horas, exámenes y operación esencial",
       "Recaudo inicial sin desorden operativo",
     ],
     badgeClassName: "bg-slate-100 text-slate-700 dark:bg-slate-900/40 dark:text-slate-300",

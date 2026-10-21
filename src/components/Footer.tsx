@@ -25,7 +25,7 @@ export default function Footer() {
                 <p className="apple-kicker">Enfoque</p>
                 <p className="text-foreground mt-2 text-sm font-semibold">Operación diaria</p>
                 <p className="apple-copy mt-1 text-sm">
-                  Alumnos, matrículas, agenda, cartera, caja, gastos y flota.
+                  Alumnos, matrículas, horas, cartera, caja, gastos y flota.
                 </p>
               </div>
               <div className="apple-panel-muted rounded-[22px] p-4">

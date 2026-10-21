@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
+import { calculateAnsv } from "@/lib/ansv";
+import { getTodayDateString } from "@/lib/date-utils";
 import { GET, POST } from "@/app/api/alumnos/factura-electronica/route";
 import {
   VS_BILLING_SCHOOL,
@@ -100,6 +102,28 @@ beforeEach(() => {
   mock.invoices.mockResolvedValue([]);
 });
 afterEach(() => vi.unstubAllEnvs());
+it("entrega el cálculo del contrato elegido sin enviar nacimiento ni sexo a FacturaX", async () => {
+  const ansv = calculateAnsv(
+    { fechaNacimiento: "1986-01-01", sexo: "M", fechaMatricula: "2026-09-01", categorias: ["A2"] },
+    "2026-10-19"
+  );
+  mock.contract.mockResolvedValue({
+    ...completeContact,
+    estado: "activo",
+    alumno_estado: "activo",
+    ansv,
+  });
+  mock.remote.mockResolvedValue({ products: [] });
+  const response = await POST(request({ action: "catalog", alumnoId: id, contratoId: id }));
+  expect(response.status).toBe(200);
+  expect((await response.json()).ansv).toEqual(ansv);
+  expect(mock.contract).toHaveBeenCalledWith(id, id);
+  const sent = mock.remote.mock.calls[0][1];
+  expect(sent).not.toHaveProperty("ansv");
+  expect(sent.student).not.toHaveProperty("sexo");
+  expect(sent.student).not.toHaveProperty("fechaNacimiento");
+  expect(sent.student).not.toHaveProperty("valor_total");
+});
 it("guarda el correo validado sin pedir matricula ni enviar nada a FacturaX", async () => {
   const response = await POST(request({ ...body, email: " ANA@example.com " }));
   expect(response.status).toBe(200);
@@ -293,3 +317,138 @@ it.each([1, 500, 1001, 1500, 999999, 0, -1000, 1000001])(
     expect(mock.remote).not.toHaveBeenCalled();
   }
 );
+
+const accountingCatalog = {
+  schemaVersion: 1,
+  issuerNit: VS_BILLING_SCHOOL.nit,
+  products: [],
+  paymentMethods: ["Efectivo", "Transferencia"],
+  customer: null,
+  customerIssue: null,
+  capabilities: { paymentCollection: true, accountingPreflight: true, businessStatus: true },
+  accounting: { ready: true, issues: [] },
+  canConfirmCollections: true,
+  collectionAccounts: [{ code: "110505", name: "Caja" }],
+  defaultCollectionAccounts: [{ method: "Efectivo", accountCode: "110505" }],
+};
+const baseSelection = () => ({
+  action: "quote",
+  alumnoId: id,
+  contratoId: id,
+  items: [{ productId: id, quantity: 1000 }],
+  payment: { method: "Efectivo", condition: "contado", dueDate: getTodayDateString() },
+  delivery: "email",
+});
+it.each([
+  [undefined, {}, "payment.collection"],
+  [{ state: "received", confirmed: true }, { canConfirmCollections: false }, "payment.collection"],
+  [
+    { state: "received", confirmed: true, cashAccountCode: "119999" },
+    {},
+    "payment.collection.cashAccountCode",
+  ],
+  [
+    { state: "pending" },
+    {
+      accounting: {
+        ready: false,
+        issues: [{ field: "accounting.period", message: "Período cerrado." }],
+      },
+    },
+    "accounting.period",
+  ],
+])(
+  "la API valida elección y configuración vigente antes de preparar (%j)",
+  async (collection, overrides, field) => {
+    mock.contract.mockResolvedValue({
+      ...completeContact,
+      estado: "activo",
+      alumno_estado: "activo",
+    });
+    mock.remote.mockResolvedValue({ ...accountingCatalog, ...overrides });
+    const selection = baseSelection();
+    const response = await POST(
+      request({ ...selection, payment: { ...selection.payment, collection } })
+    );
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      code: "INVOICE_DATA_INCOMPLETE",
+      issues: expect.arrayContaining([expect.objectContaining({ field })]),
+    });
+    expect(mock.remote.mock.calls.map((call) => call[1].action)).toEqual(["catalog"]);
+  }
+);
+it("no permite enviar dinero o fecha de recaudo calculados por el navegador", async () => {
+  const selection = baseSelection();
+  const response = await POST(
+    request({
+      ...selection,
+      payment: {
+        ...selection.payment,
+        collection: { state: "received", confirmed: true, amount: 100, date: getTodayDateString() },
+      },
+    })
+  );
+  expect(response.status).toBe(400);
+  expect(mock.remote).not.toHaveBeenCalled();
+});
+it("transmite elección de recaudo solo tras verificar el catálogo y conserva respuesta canónica", async () => {
+  mock.contract.mockResolvedValue({
+    ...completeContact,
+    estado: "activo",
+    alumno_estado: "activo",
+  });
+  const selection = baseSelection();
+  const received = { state: "received", confirmed: true, cashAccountCode: "110505" };
+  const quote = {
+    schemaVersion: 1,
+    issuerNit: VS_BILLING_SCHOOL.nit,
+    id,
+    studentId: id,
+    payment: {
+      ...selection.payment,
+      collection: { ...received, amount: 100000, date: getTodayDateString() },
+    },
+    totals: { total: 100000 },
+  };
+  mock.remote.mockImplementation(async (_schema, body) =>
+    body.action === "catalog" ? accountingCatalog : quote
+  );
+  const response = await POST(
+    request({ ...selection, payment: { ...selection.payment, collection: received } })
+  );
+  expect(response.status).toBe(200);
+  expect((await response.json()).payment.collection).toEqual(quote.payment.collection);
+  expect(mock.remote.mock.calls.map((call) => call[1].action)).toEqual(["catalog", "quote"]);
+  expect(mock.remote.mock.calls[1][1].payment.collection).toEqual(received);
+});
+
+it("calcula ANSV para contratos anteriores sin snapshot y conserva privados los datos de cálculo", async () => {
+  mock.contract.mockResolvedValue({
+    ...completeContact,
+    estado: "activo",
+    alumno_estado: "activo",
+    ansv: null,
+    fecha_nacimiento: new Date("2006-01-01T05:00:00Z"),
+    sexo: "M",
+    fecha_inscripcion: new Date("2026-09-01T05:00:00Z"),
+    categorias: ["A2"],
+  });
+  mock.remote.mockResolvedValue({ products: [] });
+  const response = await POST(request({ action: "catalog", alumnoId: id, contratoId: id }));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    ansv: { valorPesos: 8900 },
+    ansvContext: {
+      fechaNacimiento: "2006-01-01",
+      sexo: "M",
+      fechaMatricula: "2026-09-01",
+      categorias: ["A2"],
+    },
+  });
+  const sent = mock.remote.mock.calls[0][1];
+  expect(sent.student).not.toHaveProperty("sexo");
+  expect(sent.student).not.toHaveProperty("fecha_nacimiento");
+  expect(sent).not.toHaveProperty("ansvContext");
+  expect(mock.query).toHaveBeenCalledTimes(1);
+});

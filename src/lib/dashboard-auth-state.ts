@@ -2,7 +2,8 @@ import type { User } from "@supabase/supabase-js";
 import type { DashboardSchoolOption } from "@/lib/dashboard-scope";
 import type { Perfil, SchoolSubscriptionAccess } from "@/types/database";
 
-export type AuthUserSnapshot = Pick<User, "id" | "email" | "user_metadata">;
+export type AuthUserSnapshot = Pick<User, "id" | "email" | "user_metadata"> &
+  Partial<Pick<User, "app_metadata">>;
 
 export type DashboardInitialAuthState = {
   user: AuthUserSnapshot;

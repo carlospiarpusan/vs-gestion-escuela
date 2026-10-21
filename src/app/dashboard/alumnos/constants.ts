@@ -76,7 +76,10 @@ export type MatriculaResumen = Pick<
   | "tramitador_nombre"
   | "tramitador_valor"
   | "created_at"
-> & { facturax_invoice?: { number: string | null; state: string } | null };
+> & {
+  facturax_invoice?: { number: string | null; state: string } | null;
+  ansv?: import("@/lib/ansv").AnsvSnapshot | null;
+};
 
 export type AlumnoRow = Alumno & {
   matriculas: MatriculaResumen[];
@@ -107,6 +110,8 @@ export const emptyForm = {
   telefono: "",
   lugar_expedicion_documento: "",
   fecha_nacimiento: "",
+  sexo: "" as "" | "M" | "F",
+  ansv_categoria: "",
   direccion: "",
   ciudad: defaultBillingContact.ciudad,
   departamento: defaultBillingContact.departamento,
@@ -137,6 +142,8 @@ export const emptyForm = {
 };
 
 export const emptyMatriculaForm = {
+  ansv_categoria: "",
+  estado: "activo" as MatriculaAlumno["estado"],
   fecha_inscripcion: getTodayDateString(),
   categorias: [] as string[],
   valor_total: "",

@@ -3,14 +3,21 @@ import { z } from "zod";
 import {
   authorizeApiRequest,
   ensureSchoolScope,
+  getStaffReadSedeScope,
   parseJsonBody,
   resolveEscuelaIdForRequest,
 } from "@/lib/api-auth";
-import { syncEmailInvoiceIntegrationBySchool } from "@/lib/email-invoice-sync";
+import {
+  assertEmailInvoiceSedeScope,
+  EmailInvoiceScopeError,
+  syncEmailInvoiceIntegrationBySchool,
+} from "@/lib/email-invoice-sync";
 import { getAuditedRolesForCapabilityAction } from "@/lib/role-capabilities";
+import { MailProviderError } from "@/lib/email-oauth-providers";
 import type { Rol } from "@/types/database";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const ALLOWED_ROLES: Rol[] = getAuditedRolesForCapabilityAction("automation", "sync");
 
@@ -29,6 +36,8 @@ export async function POST(request: Request) {
   if (!parsed.ok) return parsed.response;
 
   const { perfil } = authorization;
+  const scope = getStaffReadSedeScope(perfil);
+  if (scope.error) return NextResponse.json({ error: scope.error }, { status: 403 });
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, parsed.data.escuela_id);
 
   if (!escuelaId) {
@@ -44,6 +53,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertEmailInvoiceSedeScope(escuelaId, scope.sedeId);
     const summary = await syncEmailInvoiceIntegrationBySchool(escuelaId, {
       mode: parsed.data.mode,
       monthsBack: parsed.data.months_back,
@@ -51,12 +61,24 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ summary });
   } catch (error) {
+    if (error instanceof MailProviderError) {
+      return NextResponse.json(
+        { error: error.message, code: `mail_${error.kind}` },
+        {
+          status: error.kind === "rate_limit" || error.kind === "quota" ? 429 : 502,
+          headers:
+            error.retryAfterMs != null
+              ? { "Retry-After": String(Math.ceil(error.retryAfterMs / 1000)) }
+              : undefined,
+        }
+      );
+    }
     return NextResponse.json(
       {
         error:
           error instanceof Error ? error.message : "No se pudo sincronizar el correo de facturas.",
       },
-      { status: 500 }
+      { status: error instanceof EmailInvoiceScopeError ? 403 : 500 }
     );
   }
 }

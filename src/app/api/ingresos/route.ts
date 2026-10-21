@@ -94,7 +94,7 @@ export async function GET(request: Request) {
       "income_json",
       () =>
         getServerReadCached({
-          key: buildFinanceServerCacheKey("income", perfil.rol, scope, url.searchParams),
+          key: buildFinanceServerCacheKey("income-v2", perfil.rol, scope, url.searchParams),
           ttlMs: CACHE_TTL_MS,
           tags: buildFinanceCacheTags("income", scope),
           bypass: cacheBypass,
@@ -105,56 +105,69 @@ export async function GET(request: Request) {
             // y obligaciones. Incluimos todos los CTE para que los placeholders
             // declarados coincidan con los parametros enviados.
             const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`;
+            const summaryCte = cte.replace(
+              "filtered_ingresos AS (",
+              "filtered_ingresos AS MATERIALIZED ("
+            );
             const offset = page * pageSize;
 
-            const [summaryRes, receivablesRes, byCategoryRes, byMethodRes, ledgerRowsRes] =
-              await Promise.all([
-                pool.query<IncomeSummarySqlRow>(
-                  `
-                  ${cte}
-                  select
+            const loadSummary = async () => {
+              const {
+                rows: [bundle],
+              } = await pool.query<{
+                summaryRes: IncomeSummarySqlRow[];
+                receivablesRes: IncomeReceivablesSqlRow[];
+                byCategoryRes: AggregateRow[];
+                byMethodRes: AggregateRow[];
+              }>(
+                `${summaryCte}
+select
+(select coalesce(json_agg(result), '[]'::json) from (select
                     coalesce(sum(case when estado = 'cobrado' then monto else 0 end), 0) as ingresos_cobrados,
                     coalesce(sum(case when estado = 'anulado' then monto else 0 end), 0) as ingresos_anulados,
                     coalesce(avg(case when estado = 'cobrado' then monto end), 0) as ticket_promedio,
                     count(*)::int as total_ingresos,
                     (count(*) filter (where estado = 'cobrado'))::int as movimientos_cobrados
-                  from filtered_ingresos
-                `,
-                  parts.values
-                ),
-                pool.query<IncomeReceivablesSqlRow>(
-                  `
-                  ${cte}
-                  select
+                  from filtered_ingresos) result) as "summaryRes",
+(select coalesce(json_agg(result), '[]'::json) from (select
                     coalesce(sum(saldo_pendiente), 0) as total_pendiente,
                     count(*)::int as registros_pendientes
                   from filtered_obligations
-                  where saldo_pendiente > 0
-                `,
-                  parts.values
-                ),
-                pool.query<AggregateRow>(
-                  `
-                  ${cte}
-                  select categoria, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
+                  where saldo_pendiente > 0) result) as "receivablesRes",
+(select coalesce(json_agg(result), '[]'::json) from (select categoria, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
                   from filtered_ingresos
                   group by categoria
-                  order by total desc, categoria asc
-                `,
-                  parts.values
-                ),
-                pool.query<AggregateRow>(
-                  `
-                  ${cte}
-                  select metodo_pago, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
+                  order by total desc, categoria asc) result) as "byCategoryRes",
+(select coalesce(json_agg(result), '[]'::json) from (select metodo_pago, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
                   from filtered_ingresos
                   group by metodo_pago
-                  order by total desc, metodo_pago asc
-                `,
-                  parts.values
+                  order by total desc, metodo_pago asc) result) as "byMethodRes"`,
+                parts.values
+              );
+              return bundle;
+            };
+            const summaryParams = new URLSearchParams(url.searchParams);
+            summaryParams.delete("page");
+            summaryParams.delete("pageSize");
+            summaryParams.delete("fresh");
+            // Resolve dates before caching: default ranges must not survive a month change.
+            summaryParams.set("from", from);
+            summaryParams.set("to", to);
+            const [bundle, ledgerRowsRes] = await Promise.all([
+              getServerReadCached({
+                key: buildFinanceServerCacheKey(
+                  "income-summary-v2",
+                  perfil.rol,
+                  scope,
+                  summaryParams
                 ),
-                pool.query<IncomeLedgerSqlRow>(
-                  `
+                ttlMs: CACHE_TTL_MS,
+                tags: buildFinanceCacheTags("income", scope),
+                bypass: cacheBypass,
+                loader: loadSummary,
+              }),
+              pool.query<IncomeLedgerSqlRow>(
+                `
                   ${cte}
                   select
                     id::text as id,
@@ -173,25 +186,26 @@ export async function GET(request: Request) {
                   order by fecha desc, created_at desc
                   limit $${parts.values.length + 1} offset $${parts.values.length + 2}
                 `,
-                  [...parts.values, String(pageSize), String(offset)]
-                ),
-              ]);
+                [...parts.values, String(pageSize), String(offset)]
+              ),
+            ]);
+            const { summaryRes, receivablesRes, byCategoryRes, byMethodRes } = bundle;
 
-            const summary = summaryRes.rows[0];
-            const receivablesSummary = receivablesRes.rows[0];
+            const summary = summaryRes[0];
+            const receivablesSummary = receivablesRes[0];
 
             return {
               generatedAt: new Date().toISOString(),
               filters: { from, to, page, pageSize },
               summary: buildIncomeSummary(summary, receivablesSummary),
               breakdown: {
-                ingresosPorCategoria: byCategoryRes.rows.map((row) => ({
+                ingresosPorCategoria: byCategoryRes.map((row) => ({
                   categoria: row.categoria,
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),
                 })),
                 ingresosPorLinea: [],
-                ingresosPorMetodo: byMethodRes.rows.map((row) => ({
+                ingresosPorMetodo: byMethodRes.map((row) => ({
                   metodo_pago: row.metodo_pago,
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),

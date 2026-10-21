@@ -1,7 +1,31 @@
 import { NextResponse } from "next/server";
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, parseJsonBody } from "@/lib/api-auth";
+import type { PoolClient } from "pg";
+import { z } from "zod";
 import { getServerDbPool } from "@/lib/server-db";
 import { getDashboardSchoolIdFromRequest } from "@/lib/dashboard-scope";
+
+const settingsSchema = z
+  .object({
+    configuracion: z.record(z.string(), z.string().max(2000).nullable()).optional(),
+    plantillas: z
+      .array(
+        z
+          .object({
+            tipo_plantilla: z.enum(["moto", "vehiculo", "combo"]),
+            titulo: z.string().max(200).optional(),
+            html_plantilla: z.string().trim().min(1).max(60000),
+          })
+          .strict()
+      )
+      .max(3)
+      .optional(),
+  })
+  .strict()
+  .refine((body) => {
+    const types = body.plantillas?.map((p) => p.tipo_plantilla) ?? [];
+    return new Set(types).size === types.length;
+  }, "No repitas tipos de plantilla.");
 
 /* ------------------------------------------------------------------ */
 /*  GET  /api/contratos/configuracion                                  */
@@ -37,6 +61,7 @@ export async function GET(request: Request) {
     ]);
 
     return NextResponse.json({
+      escuelaId,
       configuracion: configRes.rows[0] || null,
       plantillas: plantillasRes.rows,
     });
@@ -51,7 +76,7 @@ export async function GET(request: Request) {
 /*  Upsert config de contrato de la escuela                            */
 /* ------------------------------------------------------------------ */
 export async function PUT(request: Request) {
-  const authz = await authorizeApiRequest(["super_admin", "admin_escuela"]);
+  const authz = await authorizeApiRequest(["super_admin", "admin_escuela"], request);
   if (!authz.ok) return authz.response;
 
   const escuelaId =
@@ -63,14 +88,19 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Escuela no seleccionada." }, { status: 400 });
   }
 
+  const parsed = await parseJsonBody(request, settingsSchema);
+  if (!parsed.ok) return parsed.response;
+  let client: PoolClient | undefined;
   try {
-    const body = await request.json();
+    const body = parsed.data;
     const pool = getServerDbPool();
+    client = await pool.connect();
+    await client.query("BEGIN");
 
     // Upsert configuracion_contratos_escuela
     if (body.configuracion) {
       const c = body.configuracion;
-      await pool.query(
+      await client.query(
         `insert into configuracion_contratos_escuela (
           escuela_id, nombre_legal_escuela, nit_escuela,
           representante_legal_nombre, representante_legal_tipo_documento,
@@ -116,7 +146,7 @@ export async function PUT(request: Request) {
     if (body.plantillas && Array.isArray(body.plantillas)) {
       for (const p of body.plantillas) {
         if (!p.tipo_plantilla || !p.html_plantilla) continue;
-        await pool.query(
+        await client.query(
           `insert into plantillas_contrato_escuela (escuela_id, tipo_plantilla, titulo, html_plantilla, updated_at)
            values ($1, $2, $3, $4, now())
            on conflict (escuela_id, tipo_plantilla) do update set
@@ -128,9 +158,13 @@ export async function PUT(request: Request) {
       }
     }
 
+    await client.query("COMMIT");
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (client) await client.query("ROLLBACK");
     console.error("Error al guardar configuración de contratos:", error);
     return NextResponse.json({ error: "No se pudo guardar la configuración." }, { status: 500 });
+  } finally {
+    client?.release();
   }
 }

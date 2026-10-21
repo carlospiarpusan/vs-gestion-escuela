@@ -29,7 +29,7 @@
  * @prop currentPage      - Página actual controlada externamente (server-side)
  *
  * Dependencias: lucide-react (iconos)
- * Usado por: alumnos, instructores, vehiculos, clases, examenes,
+ * Usado por: alumnos, instructores, vehiculos, examenes,
  *            ingresos, gastos, mantenimiento
  * ============================================================
  */

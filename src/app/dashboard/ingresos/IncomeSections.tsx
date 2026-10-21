@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { ArrowDownCircle, ChevronDown, ChevronUp, Clock3, Filter, X } from "lucide-react";
+import StudentSearch from "@/components/dashboard/StudentSearch";
 import DataTable from "@/components/dashboard/DataTable";
 import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
 import {
@@ -13,9 +14,7 @@ import { formatCompactDate } from "@/lib/accounting-dashboard";
 import type { IncomeDashboardResponse, IncomeLedgerRow, IncomeSummary } from "@/lib/finance/types";
 import type { IncomeView } from "@/lib/income-view";
 import {
-  AlumnoOption,
   categorias,
-  formatAlumnoOptionLabel,
   estadosIngreso,
   formatIncomeText,
   getIncomeStatusClasses,
@@ -42,7 +41,6 @@ type IncomeFiltersSectionProps = {
   filtroMes: string;
   mesesDelAno: Array<{ value: string; label: string }>;
   filtroAlumno: string;
-  alumnos: AlumnoOption[];
   filtroMetodo: string;
   filtroCategoria: string;
   filtroEstado: string;
@@ -198,7 +196,6 @@ export function IncomeFiltersSection({
   filtroMes,
   mesesDelAno,
   filtroAlumno,
-  alumnos,
   filtroMetodo,
   filtroCategoria,
   filtroEstado,
@@ -248,21 +245,7 @@ export function IncomeFiltersSection({
             ))}
           </select>
         </div>
-        <div>
-          <label className={labelCls}>Alumno</label>
-          <select
-            value={filtroAlumno}
-            onChange={(e) => onAlumnoChange(e.target.value)}
-            className={inputCls}
-          >
-            <option value="">Todos</option>
-            {alumnos.map((alumno) => (
-              <option key={alumno.id} value={alumno.id}>
-                {formatAlumnoOptionLabel(alumno)}
-              </option>
-            ))}
-          </select>
-        </div>
+        <StudentSearch value={filtroAlumno} onChange={onAlumnoChange} emptyLabel="Todos" />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">

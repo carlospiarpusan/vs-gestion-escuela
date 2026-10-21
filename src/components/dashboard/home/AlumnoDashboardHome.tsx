@@ -65,7 +65,7 @@ export default function AlumnoDashboardHome() {
           scope: cacheScope,
           loader: async () => {
             const response = await fetch("/api/dashboard/alumno-summary", {
-              cache: "default",
+              cache: "no-store",
             });
             const payload = await response.json();
 

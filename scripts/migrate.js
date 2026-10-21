@@ -33,7 +33,9 @@ async function migrate() {
   if (!databaseUrl) {
     console.error("❌ Falta DATABASE_URL en .env.local");
     console.error("   Agrégala así:");
-    console.error("   DATABASE_URL=postgresql://postgres:[password]@db.[project-ref].supabase.co:5432/postgres");
+    console.error(
+      "   DATABASE_URL=postgresql://postgres:[password]@db.[project-ref].supabase.co:5432/postgres"
+    );
     process.exit(1);
   }
 
@@ -43,10 +45,14 @@ async function migrate() {
 
   // Crear tabla de control de migraciones si no existe
   await client.query(`
-    CREATE TABLE IF NOT EXISTS _migraciones (
+    CREATE TABLE IF NOT EXISTS public._migraciones (
       nombre TEXT PRIMARY KEY,
       aplicada_en TIMESTAMPTZ DEFAULT NOW()
     )
+  `);
+  await client.query(`
+    ALTER TABLE public._migraciones ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE public._migraciones FROM PUBLIC, anon, authenticated;
   `);
 
   // Leer archivos de migración ordenados

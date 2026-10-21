@@ -14,7 +14,10 @@ import { normalizeStoredCourseCategories } from "@/lib/course-categories";
 import { getServerDbPool } from "@/lib/server-db";
 import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
 import { getServerReadCached, revalidateServerReadCache } from "@/lib/server-read-cache";
-import { buildDashboardListCacheTags } from "@/lib/server-cache-tags";
+import {
+  buildDashboardListCacheTags,
+  buildDashboardListInvalidationTags,
+} from "@/lib/server-cache-tags";
 
 type EscuelaEnriquecida = {
   id: string;
@@ -38,7 +41,6 @@ type EscuelaEnriquecida = {
   admin_email: string | null;
   admin_ultimo_acceso: string | null;
   ingresos_mes: number;
-  clases_mes: number;
 };
 
 /* ------------------------------------------------------------------ */
@@ -103,15 +105,6 @@ export async function GET() {
               and fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
               and fecha < date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) + interval '1 month'
             group by escuela_id
-          ),
-          clases_agg as (
-            select
-              escuela_id,
-              count(*)::int as clases_mes
-            from public.clases
-            where fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
-              and fecha < date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) + interval '1 month'
-            group by escuela_id
           )
           select
             e.id,
@@ -134,15 +127,13 @@ export async function GET() {
             ad.admin_nombre,
             ad.admin_email,
             ad.admin_ultimo_acceso::text,
-            coalesce(ing.ingresos_mes, 0)::numeric as ingresos_mes,
-            coalesce(cl.clases_mes, 0)::int as clases_mes
+            coalesce(ing.ingresos_mes, 0)::numeric as ingresos_mes
           from public.escuelas e
           left join sedes_agg s on s.escuela_id = e.id
           left join alumnos_agg al on al.escuela_id = e.id
           left join instructores_agg i on i.escuela_id = e.id
           left join admin_agg ad on ad.escuela_id = e.id
           left join ingresos_agg ing on ing.escuela_id = e.id
-          left join clases_agg cl on cl.escuela_id = e.id
           order by e.created_at desc
           `
         );
@@ -156,7 +147,6 @@ export async function GET() {
           sedes_total: Number(r.sedes_total),
           instructores_activos: Number(r.instructores_activos),
           ingresos_mes: Number(r.ingresos_mes),
-          clases_mes: Number(r.clases_mes),
         }));
       },
     });
@@ -222,7 +212,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Escuela no encontrada." }, { status: 404 });
     }
 
-    revalidateServerReadCache([...buildDashboardListCacheTags("escuelas"), "superadmin"]);
+    revalidateServerReadCache([...buildDashboardListInvalidationTags("escuelas"), "superadmin"]);
 
     return NextResponse.json({ success: true });
   } catch (error) {

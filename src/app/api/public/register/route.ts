@@ -12,7 +12,10 @@ import { publicRegisterSchema } from "@/lib/schemas";
 import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
 import { getServerDbPool } from "@/lib/server-db";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
-import { buildDashboardCacheTags, buildDashboardListCacheTags } from "@/lib/server-cache-tags";
+import {
+  buildDashboardInvalidationTags,
+  buildDashboardListInvalidationTags,
+} from "@/lib/server-cache-tags";
 
 type ProfessionalPlanDefaultsRow = {
   max_alumnos_default: number | string | null;
@@ -233,9 +236,9 @@ export async function POST(request: Request) {
       await client.query("COMMIT");
 
       revalidateServerReadCache([
-        ...buildDashboardListCacheTags("escuelas"),
-        ...buildDashboardListCacheTags("subscriptions"),
-        ...buildDashboardCacheTags("superadmin"),
+        ...buildDashboardListInvalidationTags("escuelas"),
+        ...buildDashboardListInvalidationTags("subscriptions"),
+        ...buildDashboardInvalidationTags("superadmin"),
       ]);
 
       return NextResponse.json({ success: true, escuela_id: schoolId });

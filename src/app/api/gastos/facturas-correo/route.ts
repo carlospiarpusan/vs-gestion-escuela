@@ -3,11 +3,14 @@ import { z } from "zod";
 import {
   authorizeApiRequest,
   ensureSchoolScope,
+  getStaffReadSedeScope,
   ensureSedeScope,
   parseJsonBody,
   resolveEscuelaIdForRequest,
 } from "@/lib/api-auth";
 import {
+  assertEmailInvoiceSedeScope,
+  EmailInvoiceScopeError,
   deleteEmailInvoiceIntegration,
   getEmailInvoiceIntegrationState,
   saveEmailInvoiceIntegration,
@@ -45,6 +48,8 @@ export async function GET(request: Request) {
   if (!authorization.ok) return authorization.response;
 
   const { perfil } = authorization;
+  const scope = getStaffReadSedeScope(perfil);
+  if (scope.error) return NextResponse.json({ error: scope.error }, { status: 403 });
   const url = new URL(request.url);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
@@ -61,7 +66,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const payload = await getEmailInvoiceIntegrationState(escuelaId);
+    const payload = await getEmailInvoiceIntegrationState(escuelaId, scope.sedeId);
     return NextResponse.json(payload);
   } catch (error) {
     return NextResponse.json(
@@ -69,7 +74,7 @@ export async function GET(request: Request) {
         error:
           error instanceof Error ? error.message : "No se pudo cargar la integracion de correo.",
       },
-      { status: 500 }
+      { status: error instanceof EmailInvoiceScopeError ? 403 : 500 }
     );
   }
 }
@@ -79,6 +84,8 @@ export async function POST(request: Request) {
   if (!authorization.ok) return authorization.response;
 
   const { perfil } = authorization;
+  const scope = getStaffReadSedeScope(perfil);
+  if (scope.error) return NextResponse.json({ error: scope.error }, { status: 403 });
   const parsed = await parseJsonBody(request, integrationSchema);
   if (!parsed.ok) return parsed.response;
 
@@ -101,6 +108,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertEmailInvoiceSedeScope(escuelaId, scope.sedeId);
     const integration = await saveEmailInvoiceIntegration({
       escuelaId,
       actorId: perfil.id,
@@ -126,7 +134,7 @@ export async function POST(request: Request) {
         error:
           error instanceof Error ? error.message : "No se pudo guardar la integracion de correo.",
       },
-      { status: 500 }
+      { status: error instanceof EmailInvoiceScopeError ? 403 : 500 }
     );
   }
 }
@@ -136,6 +144,8 @@ export async function DELETE(request: Request) {
   if (!authorization.ok) return authorization.response;
 
   const { perfil } = authorization;
+  const scope = getStaffReadSedeScope(perfil);
+  if (scope.error) return NextResponse.json({ error: scope.error }, { status: 403 });
   const url = new URL(request.url);
   const escuelaId = resolveEscuelaIdForRequest(request, perfil, url.searchParams.get("escuela_id"));
 
@@ -152,6 +162,7 @@ export async function DELETE(request: Request) {
   }
 
   try {
+    await assertEmailInvoiceSedeScope(escuelaId, scope.sedeId);
     await deleteEmailInvoiceIntegration(escuelaId);
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -160,7 +171,7 @@ export async function DELETE(request: Request) {
         error:
           error instanceof Error ? error.message : "No se pudo eliminar la integracion de correo.",
       },
-      { status: 500 }
+      { status: error instanceof EmailInvoiceScopeError ? 403 : 500 }
     );
   }
 }

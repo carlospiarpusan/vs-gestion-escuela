@@ -8,12 +8,7 @@ import {
 } from "@/lib/api-auth";
 import { normalizeContractSequencePrefix } from "@/lib/contracts";
 import { getContractSchemaCapabilities } from "@/lib/contracts-server";
-import {
-  buildDashboardCacheTags,
-  buildDashboardListCacheTags,
-  buildFinanceCacheTags,
-} from "@/lib/server-cache-tags";
-import { revalidateServerReadCache } from "@/lib/server-read-cache";
+import { invalidateStudentRecordCaches } from "@/lib/student-records-server";
 import { getServerDbPool } from "@/lib/server-db";
 import type { Rol } from "@/types/database";
 
@@ -192,18 +187,7 @@ export async function POST(request: Request) {
 
     await client.query("COMMIT");
 
-    try {
-      const scope = { escuelaId: alumno.escuela_id, sedeId: alumno.sede_id };
-      revalidateServerReadCache([
-        ...buildDashboardListCacheTags("alumnos", scope),
-        ...buildDashboardListCacheTags("cartera", scope),
-        ...buildDashboardListCacheTags("contratos", scope),
-        ...buildFinanceCacheTags("portfolio", scope),
-        ...buildDashboardCacheTags("admin", scope),
-      ]);
-    } catch {
-      // Un fallo de caché después de guardar no debe revertir ni presentar la cancelación como fallida
-    }
+    invalidateStudentRecordCaches(alumno.escuela_id, alumno.sede_id);
 
     return NextResponse.json({
       ok: true,

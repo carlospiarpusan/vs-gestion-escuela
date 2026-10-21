@@ -1,6 +1,7 @@
 "use client";
 
-import { memo, useMemo, type Dispatch, type SetStateAction } from "react";
+import { useMemo, type Dispatch, type SetStateAction } from "react";
+import StudentSearch from "@/components/dashboard/StudentSearch";
 import Modal from "@/components/dashboard/Modal";
 import type { IncomeLedgerRow } from "@/lib/finance/types";
 import type { CategoriaIngreso, EstadoIngreso, MetodoPago } from "@/types/database";
@@ -8,7 +9,6 @@ import {
   AlumnoOption,
   categorias,
   estadosIngreso,
-  formatAlumnoOptionLabel,
   formatMatriculaLabel,
   getAlumnoFullName,
   IngresoFormData,
@@ -32,37 +32,6 @@ type IngresoModalProps = {
   onClose: () => void;
   onSave: () => void;
 };
-
-const AlumnoSelect = memo(function AlumnoSelect({
-  alumnos,
-  value,
-  onChange,
-}: {
-  alumnos: AlumnoOption[];
-  value: string;
-  onChange: (id: string) => void;
-}) {
-  return (
-    <div>
-      <label htmlFor="income-student" className={labelCls}>
-        Alumno
-      </label>
-      <select
-        id="income-student"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className={inputCls}
-      >
-        <option value="">Sin alumno</option>
-        {alumnos.map((alumno) => (
-          <option key={alumno.id} value={alumno.id}>
-            {formatAlumnoOptionLabel(alumno)}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-});
 
 export default function IngresoModal({
   open,
@@ -103,7 +72,7 @@ export default function IngresoModal({
       <div className="space-y-4">
         {catalogsLoading && (
           <p className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[#66707a] dark:text-[#aeb6bf]">
-            Cargando alumnos y matrículas disponibles...
+            Cargando matrícula del alumno...
           </p>
         )}
 
@@ -128,7 +97,7 @@ export default function IngresoModal({
               ))}
             </select>
           </div>
-          <AlumnoSelect alumnos={alumnos} value={form.alumno_id} onChange={onAlumnoChange} />
+          <StudentSearch value={form.alumno_id} onChange={onAlumnoChange} />
         </div>
 
         <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-muted)] p-4">
@@ -306,7 +275,7 @@ export default function IngresoModal({
           </button>
           <button
             onClick={onSave}
-            disabled={saving}
+            disabled={saving || catalogsLoading}
             className="rounded-lg bg-[#0071e3] px-4 py-2 text-sm text-white transition-colors hover:bg-[#0077ED] disabled:opacity-50"
           >
             {saving ? "Guardando..." : editing ? "Guardar cambios" : "Crear ingreso"}

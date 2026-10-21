@@ -309,6 +309,7 @@ for (const actor of [101, 102, 103, 104, 107, 108])
     const first = await request("create_student", payload, actor);
     assert.equal(first.status, 200, JSON.stringify(first.body));
     assert.equal(first.body.row.escuela_id, uid(1));
+    assert.equal(first.body.row.estado, "pre_registrado");
     assert.notEqual(first.body.row.user_id, uid(actor));
     const replay = await request(
       "create_student",
@@ -994,4 +995,11 @@ test("a fingerprint from another private key cannot be replayed or overwritten",
   assert.deepEqual(state.db.mobile_command_log, [command]);
   noAccountsCreated();
   assertPasswordFreeCommandLogs([payload.password]);
+});
+
+test("mandatory password change uses trusted metadata before any create operation",async()=>{
+  state.auth.get(uid(102)).app_metadata={debe_cambiar_password:true};
+  state.auth.get(uid(102)).user_metadata={debe_cambiar_password:false};
+  rejected(await request("create_student",student()),/Cambia tu contraseña/);
+  assert.equal(state.createdUsers.length,0);
 });

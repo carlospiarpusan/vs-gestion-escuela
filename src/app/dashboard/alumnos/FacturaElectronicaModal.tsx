@@ -15,10 +15,15 @@ import {
 } from "lucide-react";
 import Modal from "@/components/dashboard/Modal";
 import { getTodayDateString } from "@/lib/date-utils";
+import { getAnsvProductAmount, readAnsvSnapshot, type AnsvSnapshot } from "@/lib/ansv";
+import { getStudentInvoiceDefaults } from "@/lib/vs-billing/invoice-defaults";
 import {
   INVOICE_STATES,
   invoiceStudent,
   quoteMatchesStudent,
+  invoicePaymentDateIssue,
+  invoiceCollectionIssues,
+  invoiceQuotePaymentIssue,
   type ContractInvoice,
   type FacturaxCatalog,
   type FacturaxQuote,
@@ -35,6 +40,10 @@ import {
   type InvoiceDataIssue,
 } from "@/lib/vs-billing/student-invoice-data";
 import InvoiceContactEditor from "./InvoiceContactEditor";
+import InvoiceAnsvCalculator from "./InvoiceAnsvCalculator";
+import type { InvoiceAnsvContext } from "@/lib/vs-billing/invoice-ansv";
+import InvoiceBusinessStatus from "./InvoiceBusinessStatus";
+import InvoiceCollectionFields, { type CollectionState } from "./InvoiceCollectionFields";
 import {
   createBillingProductSearch,
   readBillingProductUsage,
@@ -42,6 +51,11 @@ import {
 } from "@/lib/vs-billing/product-usage";
 
 const API = "/api/alumnos/factura-electronica";
+type BillingCatalog = FacturaxCatalog & {
+  ansv?: AnsvSnapshot | null;
+  ansvContext?: InvoiceAnsvContext | null;
+  contractCategories?: string[];
+};
 const invoiceCurrencyFormatter = new Intl.NumberFormat("es-CO", {
   style: "currency",
   currency: "COP",
@@ -68,7 +82,17 @@ async function request<T>(body: unknown): Promise<T> {
   if (!response.ok) {
     const issues = invoiceDataIssuesSchema.safeParse(result.issues);
     if (result.code === INVOICE_DATA_CODE && issues.success)
-      throw new InvoiceDataIncompleteError(issues.data, result.error);
+      throw new InvoiceDataIncompleteError(
+        issues.data,
+        [
+          result.error,
+          ...issues.data
+            .filter((issue) => !issue.field.startsWith("student."))
+            .map((issue) => issue.message),
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
     throw new Error(result.error ?? "No se pudo completar la operacion.");
   }
   return result;
@@ -104,8 +128,11 @@ export default function FacturaElectronicaModal({
   const [editingContact, setEditingContact] = useState(false);
   const [contactRevision, setContactRevision] = useState(0);
   const handleIncomplete = useCallback((nextIssues: InvoiceDataIssue[]) => {
-    setRemoteIssues(nextIssues);
-    setEditingContact(true);
+    const contactIssues = nextIssues.filter((issue) => issue.field.startsWith("student."));
+    if (contactIssues.length) {
+      setRemoteIssues(contactIssues);
+      setEditingContact(true);
+    }
   }, []);
   const [enabled, setEnabled] = useState(false),
     [loading, setLoading] = useState(true),
@@ -332,7 +359,7 @@ function InvoiceForm({
   currentContact: InvoiceContactSnapshot | null;
   onIncomplete: (issues: InvoiceDataIssue[]) => void;
 }) {
-  const [catalog, setCatalog] = useState<FacturaxCatalog | null>(null),
+  const [catalog, setCatalog] = useState<BillingCatalog | null>(null),
     [error, setError] = useState("");
   const [busy, setBusy] = useState(false),
     lock = useRef(false);
@@ -340,10 +367,46 @@ function InvoiceForm({
     [quantities, setQuantities] = useState<Record<string, string>>({});
   const [productUsage, setProductUsage] = useState(() => readBillingProductUsage(userId));
   const [prices, setPrices] = useState<Record<string, string>>({});
+  const automaticPrices = useRef<Record<string, string>>({});
+  const [calculatedAnsv, setCalculatedAnsv] = useState<AnsvSnapshot | null | undefined>();
+  const applyAnsvPrices = useCallback(
+    (products: FacturaxCatalog["products"], snapshot: AnsvSnapshot | null) => {
+      const previous = automaticPrices.current;
+      const automatic: Record<string, string> = {};
+      for (const product of products) {
+        const amount = getAnsvProductAmount(product, snapshot);
+        if (amount && product.priceEditable) automatic[product.id] = String(amount.valorPesos);
+      }
+      automaticPrices.current = automatic;
+      setPrices((current) => {
+        const next = { ...current };
+        for (const product of products) {
+          if (current[product.id] !== undefined && current[product.id] !== previous[product.id])
+            continue;
+          if (automatic[product.id] !== undefined) next[product.id] = automatic[product.id];
+          else if (previous[product.id] !== undefined) delete next[product.id];
+        }
+        return next;
+      });
+    },
+    []
+  );
+  const onAnsvCalculated = useCallback(
+    (snapshot: AnsvSnapshot | null) => {
+      setCalculatedAnsv(snapshot);
+      if (catalog) applyAnsvPrices(catalog.products, snapshot);
+    },
+    [catalog, applyAnsvPrices]
+  );
+  const initializedDefaults = useRef(false);
+  const [defaultIssues, setDefaultIssues] = useState<string[]>([]);
   const [taxChoices, setTaxChoices] = useState<Record<string, string>>({});
   const [method, setMethod] = useState(""),
     [condition, setCondition] = useState<"contado" | "credito">("contado"),
     [dueDate, setDueDate] = useState(getTodayDateString());
+  const [collectionChoice, setCollectionChoice] = useState<CollectionState>("");
+  const [collectionAccount, setCollectionAccount] = useState("");
+  const [collectionConfirmed, setCollectionConfirmed] = useState(false);
   const [delivery, setDelivery] = useState<"email" | "physical">(
     alumno.email ? "email" : "physical"
   );
@@ -354,7 +417,7 @@ function InvoiceForm({
   useEffect(() => {
     if (invoiceId || cancelled) return;
     let mounted = true;
-    void request<FacturaxCatalog>({
+    void request<BillingCatalog>({
       action: "catalog",
       alumnoId: alumno.id,
       contratoId: contractId,
@@ -362,6 +425,21 @@ function InvoiceForm({
       .then((data) => {
         if (mounted) {
           setCatalog(data);
+          if (
+            !initializedDefaults.current &&
+            alumno.tipo_registro === "regular" &&
+            data.contractCategories
+          ) {
+            const defaults = getStudentInvoiceDefaults(
+              data.products,
+              data.contractCategories,
+              readAnsvSnapshot(data.ansv)
+            );
+            setQuantities(defaults.quantities);
+            setDefaultIssues(defaults.issues);
+            initializedDefaults.current = true;
+          }
+          applyAnsvPrices(data.products, readAnsvSnapshot(data.ansv));
           setMethod((current) =>
             data.paymentMethods.includes(current)
               ? current
@@ -369,6 +447,13 @@ function InvoiceForm({
                 ? "Efectivo"
                 : ""
           );
+          if (
+            data.capabilities?.paymentCollection &&
+            data.canConfirmCollections === true &&
+            data.paymentMethods.includes("Efectivo")
+          ) {
+            setCollectionChoice((current) => current || "received");
+          }
           setError("");
           if (data.customerIssues?.length) onIncomplete(data.customerIssues);
         }
@@ -382,7 +467,15 @@ function InvoiceForm({
     return () => {
       mounted = false;
     };
-  }, [alumno.id, contractId, invoiceId, cancelled, onIncomplete]);
+  }, [
+    alumno.id,
+    alumno.tipo_registro,
+    contractId,
+    invoiceId,
+    cancelled,
+    onIncomplete,
+    applyAnsvPrices,
+  ]);
   async function run(action: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true;
@@ -431,6 +524,8 @@ function InvoiceForm({
     () => catalog?.products.filter((product) => product.available).length ?? 0,
     [catalog]
   );
+  const effectiveAnsv = calculatedAnsv === undefined ? (catalog?.ansv ?? null) : calculatedAnsv;
+  const secondAnsv = getAnsvProductAmount({ code: "ANSV2" }, effectiveAnsv);
   return (
     <div className="space-y-4">
       {error && (
@@ -468,6 +563,7 @@ function InvoiceForm({
               }
             </p>
           )}
+          {invoice.status?.business && <InvoiceBusinessStatus business={invoice.status.business} />}
           <div className="flex flex-wrap gap-2">
             <button
               disabled={busy}
@@ -546,6 +642,45 @@ function InvoiceForm({
           )}
           {catalog && (
             <>
+              {defaultIssues.length > 0 && (
+                <ul role="alert" className="space-y-1 text-sm text-amber-700">
+                  {defaultIssues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              )}
+              {catalog.ansvContext &&
+                catalog.products.some((product) =>
+                  ["ANSV", "ANSV2"].includes(product.code.trim().toUpperCase())
+                ) && (
+                  <InvoiceAnsvCalculator
+                    context={catalog.ansvContext}
+                    onCalculated={onAnsvCalculated}
+                    disabled={busy}
+                  />
+                )}
+              {effectiveAnsv && (
+                <p className="text-sm" role="status">
+                  {effectiveAnsv.valorPesos
+                    ? `ANSV ${catalog.ansvContext ? "para esta factura" : "del contrato"}: ${money(effectiveAnsv.valorPesos * 100)} · ${effectiveAnsv.categoria} · ${effectiveAnsv.edad} años · ${effectiveAnsv.vigencia}`
+                    : effectiveAnsv.motivo}
+                </p>
+              )}
+              {(effectiveAnsv?.alternativas?.length ?? 0) > 1 && (
+                <p className="text-xs text-[var(--gray-500)]">
+                  {effectiveAnsv?.alternativas
+                    ?.map(
+                      (item) =>
+                        `${item.categoria}: ${item.valorPesos ? money(item.valorPesos * 100) : "Por revisar"}`
+                    )
+                    .join(" · ")}
+                </p>
+              )}
+              {secondAnsv && (
+                <p className="text-sm">
+                  ANSV2: {money(secondAnsv.valorPesos * 100)} · {secondAnsv.categoria}
+                </p>
+              )}
               {catalog.customerIssue && (
                 <p role="alert" className="text-sm text-amber-700">
                   {catalog.customerIssue}
@@ -742,7 +877,20 @@ function InvoiceForm({
                   <select
                     className={`${control} mt-1`}
                     value={method}
-                    onChange={(e) => setMethod(e.target.value)}
+                    onChange={(e) => {
+                      setMethod(e.target.value);
+                      if (e.target.value === "Instrumento no definido") {
+                        setCollectionChoice("");
+                      } else if (
+                        e.target.value &&
+                        condition === "contado" &&
+                        catalog.canConfirmCollections === true
+                      ) {
+                        setCollectionChoice((current) => current || "received");
+                      }
+                      setCollectionAccount("");
+                      setCollectionConfirmed(false);
+                    }}
                     disabled={busy}
                   >
                     <option value="">Seleccionar</option>
@@ -759,6 +907,15 @@ function InvoiceForm({
                     onChange={(e) => {
                       setCondition(e.target.value as typeof condition);
                       setDueDate(getTodayDateString());
+                      setCollectionChoice(
+                        e.target.value === "contado" &&
+                          method &&
+                          method !== "Instrumento no definido" &&
+                          catalog.canConfirmCollections === true
+                          ? "received"
+                          : ""
+                      );
+                      setCollectionConfirmed(false);
                     }}
                     disabled={busy}
                   >
@@ -794,10 +951,45 @@ function InvoiceForm({
                   </select>
                 </label>
               </div>
+              <InvoiceCollectionFields
+                catalog={catalog}
+                method={method}
+                condition={condition}
+                choice={collectionChoice}
+                account={collectionAccount}
+                confirmed={collectionConfirmed}
+                disabled={busy}
+                onChoice={(value) => {
+                  setCollectionChoice(value);
+                  setCollectionConfirmed(false);
+                }}
+                onAccount={(value) => {
+                  setCollectionAccount(value);
+                  setCollectionConfirmed(false);
+                }}
+                onConfirm={setCollectionConfirmed}
+              />
+              {catalog.capabilities?.accountingPreflight && catalog.accounting?.ready !== true && (
+                <div role="alert" className="text-sm text-amber-700 dark:text-amber-300">
+                  {(catalog.accounting?.issues.length
+                    ? catalog.accounting.issues.map((issue) => issue.message)
+                    : ["Completa la configuración contable en FacturaX antes de emitir."]
+                  ).join(" ")}
+                </div>
+              )}
               <button
                 className="apple-button-primary"
                 disabled={
-                  busy || !selected.length || !method || !!catalog.customerIssue || !contactComplete
+                  busy ||
+                  !selected.length ||
+                  !method ||
+                  !!catalog.customerIssue ||
+                  !contactComplete ||
+                  (catalog.capabilities?.accountingPreflight &&
+                    catalog.accounting?.ready !== true) ||
+                  (catalog.capabilities?.paymentCollection &&
+                    (!collectionChoice ||
+                      (collectionChoice === "received" && !collectionConfirmed)))
                 }
                 onClick={() =>
                   run(async () => {
@@ -829,17 +1021,48 @@ function InvoiceForm({
                         ...(product.requiresTaxChoice ? { taxChoice: taxChoices[productId] } : {}),
                       };
                     });
+                    const accountDefaults =
+                      catalog.defaultCollectionAccounts?.filter(
+                        (entry) => entry.method === method
+                      ) ?? [];
+                    const selectedAccount =
+                      collectionAccount ||
+                      (accountDefaults.length === 1 ? accountDefaults[0].accountCode : "");
+                    const payment = {
+                      method,
+                      condition,
+                      dueDate: condition === "contado" ? getTodayDateString() : dueDate,
+                      ...(catalog.capabilities?.paymentCollection && collectionChoice
+                        ? {
+                            collection:
+                              collectionChoice === "pending"
+                                ? { state: "pending" as const }
+                                : {
+                                    state: "received" as const,
+                                    confirmed: true as const,
+                                    ...(selectedAccount
+                                      ? { cashAccountCode: selectedAccount }
+                                      : {}),
+                                  },
+                          }
+                        : {}),
+                    };
+                    if (payment.collection?.state === "received" && !collectionConfirmed)
+                      throw new Error("Confirma que recibiste el total de la factura.");
+                    const paymentIssue = invoicePaymentDateIssue(payment);
+                    if (paymentIssue) throw new Error(paymentIssue);
+                    const collectionIssues = invoiceCollectionIssues(catalog, payment);
+                    if (collectionIssues.length)
+                      throw new Error(collectionIssues.map((issue) => issue.message).join(" "));
                     const prepared = await request<FacturaxQuote>({
                       action: "quote",
                       ...ids,
                       items,
-                      payment: {
-                        method,
-                        condition,
-                        dueDate: condition === "contado" ? getTodayDateString() : dueDate,
-                      },
+                      payment,
                       delivery,
                     });
+                    const quotePaymentIssue = invoiceQuotePaymentIssue(prepared, payment);
+                    if (quotePaymentIssue) throw new Error(quotePaymentIssue);
                     setQuote(prepared);
                     setProductUsage(
                       rememberBillingProducts(
@@ -865,6 +1088,11 @@ function InvoiceForm({
           <h4 className="font-semibold">
             {pendingReview ? "Revision antes de emitir" : "Datos de la factura"}
           </h4>
+          {pendingReview && invoiceQuotePaymentIssue(review) && (
+            <p role="alert" className="text-sm text-red-600">
+              {invoiceQuotePaymentIssue(review)}
+            </p>
+          )}
           {pendingReview && reviewedContactChanged && (
             <p role="alert" className="text-sm text-red-600">
               Los datos del alumno cambiaron. Genera una revision nueva antes de emitir.
@@ -944,6 +1172,13 @@ function InvoiceForm({
             {review.payment.condition === "contado" ? "Contado" : "Credito"} ·{" "}
             {review.payment.method} · Vence {review.payment.dueDate}
           </p>
+          {review.payment.collection && (
+            <p className="text-sm">
+              {review.payment.collection.state === "pending"
+                ? "Recaudo pendiente de recibir"
+                : `Recaudo confirmado: ${money(review.payment.collection.amount)} · Cuenta ${review.payment.collection.cashAccountCode} · ${review.payment.collection.date}`}
+            </p>
+          )}
           {alumno.facturado && (
             <p className="text-sm text-amber-700">
               La ficha del alumno tiene una factura previa
@@ -984,6 +1219,7 @@ function InvoiceForm({
                     cancelled ||
                     !contactComplete ||
                     reviewedContactChanged ||
+                    !!invoiceQuotePaymentIssue(review) ||
                     !review.sourceStudent ||
                     getQuotedCustomerIssues(review.customer).length > 0
                   }

@@ -25,23 +25,47 @@ export default function DeferredIncomeChart({ data }: { data: AdminDashboardDail
     if (!container) return;
     const showChart = () => {
       const { width, height } = container.getBoundingClientRect();
-      setInitialDimension({ width, height });
+      if (width > 0 && height > 0) {
+        setInitialDimension((current) =>
+          current?.width === width && current?.height === height ? current : { width, height }
+        );
+      }
+    };
+    let resizeObserver: ResizeObserver | undefined;
+    const startChart = () => {
+      showChart();
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(showChart);
+        resizeObserver.observe(container);
+      } else {
+        window.addEventListener("resize", showChart);
+      }
+    };
+    const cleanup = () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", showChart);
     };
     if (typeof IntersectionObserver === "undefined") {
-      const frame = window.requestAnimationFrame(showChart);
-      return () => window.cancelAnimationFrame(frame);
+      const frame = window.requestAnimationFrame(startChart);
+      return () => {
+        window.cancelAnimationFrame(frame);
+        cleanup();
+      };
     }
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          showChart();
+          startChart();
           observer.disconnect();
         }
       },
       { rootMargin: "240px" }
     );
     observer.observe(container);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cleanup();
+    };
   }, []);
 
   return (

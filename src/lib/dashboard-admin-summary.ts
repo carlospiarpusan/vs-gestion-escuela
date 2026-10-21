@@ -5,7 +5,6 @@ import { getDateTimeFormatter } from "@/lib/intl-formatters";
 export interface AdminDashboardStats {
   alumnos: number;
   cursosNuevosMes: number;
-  clasesHoy: number;
   examenesPendientes: number;
   ingresosMes: number;
   lineasMesMoto: number;
@@ -108,6 +107,12 @@ export const DASHBOARD_TIME_ZONE = "America/Bogota";
 export const DASHBOARD_SUMMARY_CACHE_TTL_MS = 120 * 1000;
 export const DASHBOARD_CATALOG_CACHE_TTL_MS = 300 * 1000;
 
+export type AdminDashboardInitialSummary = {
+  key: string;
+  data: AdminDashboardSummaryResponse;
+  expiresAt: number;
+};
+
 function formatDateOnly(year: number, month: number, day: number) {
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
@@ -150,7 +155,6 @@ export function createEmptyAdminDashboardSummary(): AdminDashboardSummaryRespons
     stats: {
       alumnos: 0,
       cursosNuevosMes: 0,
-      clasesHoy: 0,
       examenesPendientes: 0,
       ingresosMes: 0,
       lineasMesMoto: 0,

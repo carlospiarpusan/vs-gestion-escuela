@@ -43,6 +43,13 @@ function canRevalidateTag(tag: string, perfil: MinimalPerfil) {
     return tag.length <= 160;
   }
 
+  if (perfil.escuela_id && tag.endsWith(`:school:${perfil.escuela_id}`)) {
+    const domain = tag.slice(0, -`:school:${perfil.escuela_id}`.length);
+    return /^(finance(?::(?:income|expense|portfolio|cash|reports))?|dashboard(?::(?:admin|alumno|list:[a-z-]+))?)$/.test(
+      domain
+    );
+  }
+
   if (tag === `scope:school:${perfil.escuela_id}`) {
     return true;
   }

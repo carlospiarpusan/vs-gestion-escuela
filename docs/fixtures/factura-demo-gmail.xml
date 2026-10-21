@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+ xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+ xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2">
+  <cbc:ID>DEMO-GMAIL-20261019</cbc:ID>
+  <cbc:IssueDate>2026-10-19</cbc:IssueDate>
+  <cbc:Note>DOCUMENTO FICTICIO PARA DEMOSTRACIÓN. SIN VALIDEZ FISCAL. SOLO PARA UNA ESCUELA Y SEDE DE PRUEBAS.</cbc:Note>
+  <cbc:DocumentCurrencyCode>COP</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty>
+    <cac:Party><cac:PartyLegalEntity>
+      <cbc:RegistrationName>Proveedor ficticio DEMO - sin validez fiscal</cbc:RegistrationName>
+    </cac:PartyLegalEntity></cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:TaxTotal><cbc:TaxAmount currencyID="COP">19000</cbc:TaxAmount></cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="COP">100000</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="COP">100000</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="COP">119000</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="COP">119000</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="EA">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="COP">100000</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Description>Servicio ficticio para demostrar importación de correo</cbc:Description></cac:Item>
+  </cac:InvoiceLine>
+</Invoice>

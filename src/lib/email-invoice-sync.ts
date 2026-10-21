@@ -1,3 +1,12 @@
+import {
+  exchangeMailToken,
+  isMailOAuthProvider,
+  listInvoiceMessages,
+  readInvoiceMessage,
+  mailOAuthAvailable,
+  MailMessageTooLargeError,
+  type MailOAuthProvider,
+} from "@/lib/email-oauth-providers";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import {
   ImapFlow,
@@ -7,8 +16,16 @@ import {
 } from "imapflow";
 import { simpleParser, type SimpleParserOptions } from "mailparser";
 import { buildSupabaseAdminClient } from "@/lib/api-auth";
-import { buildElectronicInvoiceNote, parseElectronicInvoiceBinary } from "@/lib/electronic-invoice";
+import {
+  assertInvoiceCanBecomeExpense,
+  buildElectronicInvoiceIdentity,
+  buildElectronicInvoiceNote,
+  parseElectronicInvoiceBinary,
+  normalizeInvoiceTaxId,
+} from "@/lib/electronic-invoice";
 import { normalizeExpenseCategory } from "@/lib/expense-category";
+import { buildExpenseMutationInvalidationTags } from "@/lib/server-cache-tags";
+import { revalidateServerReadCache } from "@/lib/server-read-cache";
 import type {
   CategoriaGasto,
   FacturaCorreoImportacion,
@@ -19,6 +36,18 @@ import type {
 type IntegrationRow = FacturaCorreoIntegracion & {
   imap_password_encrypted: string | null;
   oauth_refresh_token_encrypted: string | null;
+  oauth_sync_state?: Partial<
+    Record<
+      "incremental" | "historical",
+      {
+        since: string;
+        monthsBack: number;
+        pendingIds: string[];
+        pageToken: string | null;
+      }
+    >
+  >;
+  sync_locked_until?: string | null;
 };
 
 type SaveIntegrationInput = {
@@ -64,6 +93,7 @@ export type EmailInvoiceSyncOptions = {
   mode?: "incremental" | "historical";
   monthsBack?: number;
   maxMessages?: number;
+  maxDurationMs?: number;
 };
 
 const DEFAULT_MAILBOX = "INBOX";
@@ -192,7 +222,7 @@ function getConfiguredDecryptionSeeds() {
   return seeds;
 }
 
-function encryptSecret(value: string) {
+export function encryptSecret(value: string) {
   const seed = getDedicatedEncryptionSeed();
   const fingerprint = fingerprintEncryptionSeed(seed);
   const iv = randomBytes(12);
@@ -283,7 +313,7 @@ function decryptSecretDetailed(value: string): DecryptedSecretResult {
   );
 }
 
-function decryptSecret(value: string) {
+export function decryptSecret(value: string) {
   const decrypted = decryptSecretDetailed(value);
   if (!decrypted.value) {
     throw new Error("La credencial cifrada del correo no es valida.");
@@ -332,10 +362,12 @@ export const __emailInvoiceSyncInternals = {
 };
 
 function sanitizeIntegration(row: IntegrationRow | null): EmailInvoiceIntegrationView | null {
-  if (!row || row.provider !== MANUAL_IMAP_PROVIDER) return null;
+  if (!row) return null;
   const rest = { ...row };
   delete (rest as Partial<IntegrationRow>).imap_password_encrypted;
   delete (rest as Partial<IntegrationRow>).oauth_refresh_token_encrypted;
+  delete (rest as Partial<IntegrationRow>).oauth_sync_state;
+  delete (rest as Partial<IntegrationRow>).sync_locked_until;
   return {
     ...rest,
     last_uid: row.last_uid === null || row.last_uid === undefined ? null : String(row.last_uid),
@@ -480,6 +512,9 @@ function createImapClient(config: ImapConnectionConfig, loginMethod?: "LOGIN") {
       ...(loginMethod ? { loginMethod } : {}),
     },
     logger: false,
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 30_000,
   });
 }
 
@@ -529,9 +564,10 @@ async function getIntegrationBySchool(
 async function listRecentImports(
   escuelaId: string,
   limit = 12,
-  supabaseAdmin: SupabaseAdminClient = buildSupabaseAdminClient()
+  supabaseAdmin: SupabaseAdminClient = buildSupabaseAdminClient(),
+  sedeId?: string | null
 ) {
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from("facturas_correo_importaciones")
     .select(
       "id, integracion_id, escuela_id, sede_id, gasto_id, imap_uid, message_id, message_date, remitente, asunto, attachment_name, invoice_number, supplier_name, total, currency, status, detail, created_at"
@@ -539,6 +575,8 @@ async function listRecentImports(
     .eq("escuela_id", escuelaId)
     .order("created_at", { ascending: false })
     .limit(limit);
+  if (sedeId) query = query.eq("sede_id", sedeId);
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`No se pudo consultar el historial de facturas por correo: ${error.message}`);
@@ -551,13 +589,31 @@ async function listRecentImports(
   }));
 }
 
-export async function getEmailInvoiceIntegrationState(escuelaId: string) {
+export class EmailInvoiceScopeError extends Error {}
+
+export async function assertEmailInvoiceSedeScope(escuelaId: string, sedeId?: string | null) {
+  if (!sedeId) return;
+  const integration = await getIntegrationBySchool(escuelaId);
+  if (integration && integration.sede_id !== sedeId) {
+    throw new EmailInvoiceScopeError(
+      "La conexión de correo pertenece a otra sede. Solicita la gestión al administrador de la escuela."
+    );
+  }
+}
+
+export async function getEmailInvoiceIntegrationState(escuelaId: string, sedeId?: string | null) {
   const supabaseAdmin = buildSupabaseAdminClient();
   const integration = await getIntegrationBySchool(escuelaId, supabaseAdmin);
-  const history = await listRecentImports(escuelaId, 12, supabaseAdmin);
+  const history = await listRecentImports(escuelaId, 12, supabaseAdmin, sedeId);
   return {
-    integration: sanitizeIntegration(integration),
+    integration: sanitizeIntegration(
+      sedeId && integration?.sede_id !== sedeId ? null : integration
+    ),
     history,
+    providers: {
+      gmail_google: mailOAuthAvailable("gmail_google"),
+      outlook_microsoft: mailOAuthAvailable("outlook_microsoft"),
+    },
   };
 }
 
@@ -627,6 +683,7 @@ export async function saveEmailInvoiceIntegration(input: SaveIntegrationInput) {
       ? encryptSecret(input.imapPassword)
       : migratedEncryptedPassword || current?.imap_password_encrypted,
     oauth_refresh_token_encrypted: null,
+    oauth_sync_state: {},
     mailbox: normalizeMailbox(input.mailbox),
     from_filter: optionalText(input.fromFilter),
     subject_filter: optionalText(input.subjectFilter),
@@ -792,7 +849,8 @@ async function listImportedAttachmentNames(
     .from("facturas_correo_importaciones")
     .select("attachment_name")
     .eq("integracion_id", integrationId)
-    .in("attachment_name", uniqueNames);
+    .in("attachment_name", uniqueNames)
+    .in("status", ["importada", "duplicada", "omitida"]);
 
   if (messageId) {
     query = query.eq("message_id", messageId);
@@ -834,7 +892,7 @@ async function createImportLog(input: {
   detail?: string | null;
   supabaseAdmin: SupabaseAdminClient;
 }) {
-  const { error } = await input.supabaseAdmin.from("facturas_correo_importaciones").insert({
+  const payload = {
     integracion_id: input.integrationId,
     escuela_id: input.escuelaId,
     sede_id: input.sedeId,
@@ -851,7 +909,22 @@ async function createImportLog(input: {
     currency: input.currency ?? null,
     status: input.status,
     detail: input.detail ?? null,
-  });
+  };
+  // A transient import error can be retried. Replace that diagnostic row rather
+  // than colliding with the unique message/attachment index on the next run.
+  let previous = input.supabaseAdmin
+    .from("facturas_correo_importaciones")
+    .update(payload)
+    .eq("integracion_id", input.integrationId)
+    .eq("attachment_name", input.attachmentName)
+    .eq("status", "error");
+  if (input.messageId) previous = previous.eq("message_id", input.messageId);
+  else if (input.imapUid) previous = previous.eq("imap_uid", input.imapUid);
+  const retried =
+    input.messageId || input.imapUid ? await previous.select("id").maybeSingle() : null;
+  if (retried?.error) throw new Error("No se pudo actualizar el historial de facturas del correo.");
+  if (retried?.data) return;
+  const { error } = await input.supabaseAdmin.from("facturas_correo_importaciones").insert(payload);
 
   if (error) {
     throw new Error(`No se pudo registrar la importacion de factura por correo: ${error.message}`);
@@ -862,11 +935,12 @@ async function findDuplicateExpense(
   escuelaId: string,
   invoiceNumber: string,
   supplierName: string,
-  supabaseAdmin: SupabaseAdminClient
+  supabaseAdmin: SupabaseAdminClient,
+  identity: string | null = null
 ) {
   const { data, error } = await supabaseAdmin
     .from("gastos")
-    .select("id, proveedor, numero_factura")
+    .select("id, proveedor, numero_factura, factura_identidad, notas")
     .eq("escuela_id", escuelaId)
     .eq("numero_factura", invoiceNumber)
     .limit(20);
@@ -876,10 +950,21 @@ async function findDuplicateExpense(
   }
 
   const normalizedSupplier = supplierName.trim().toLowerCase();
+  const supplierTaxId = identity?.startsWith("[") ? (JSON.parse(identity)[0] as string) : null;
   return (
-    ((data as Array<{ id: string; proveedor?: string | null }> | null) || []).find(
-      (row) => (row.proveedor || "").trim().toLowerCase() === normalizedSupplier
-    ) || null
+    (
+      (data as Array<{
+        id: string;
+        proveedor?: string | null;
+        factura_identidad?: string | null;
+        notas?: string | null;
+      }> | null) || []
+    ).find((row) => {
+      if (identity && row.factura_identidad) return row.factura_identidad === identity;
+      const priorTaxId = normalizeInvoiceTaxId(row.notas?.match(/^NIT proveedor:\s*(.+)$/m)?.[1]);
+      if (supplierTaxId && priorTaxId) return supplierTaxId === priorTaxId;
+      return (row.proveedor || "").trim().toLowerCase() === normalizedSupplier;
+    }) || null
   );
 }
 
@@ -887,6 +972,8 @@ async function insertExpenseFromPreview(input: {
   integration: IntegrationRow;
   invoiceNumber: string;
   issueDate: string;
+  dueDate: string | null;
+  identity: string | null;
   supplierName: string;
   categorySuggestion: CategoriaGasto;
   conceptSuggestion: string;
@@ -914,7 +1001,10 @@ async function insertExpenseFromPreview(input: {
       metodo_pago: input.paymentMethodSuggestion,
       proveedor: input.supplierName,
       numero_factura: input.invoiceNumber,
+      factura_identidad: input.identity,
       fecha: input.issueDate,
+      fecha_vencimiento: input.dueDate || input.issueDate,
+      estado_pago: "pendiente",
       recurrente: false,
       notas: input.notes,
     })
@@ -922,12 +1012,21 @@ async function insertExpenseFromPreview(input: {
     .single();
 
   if (error || !data) {
+    if (error?.code === "23505" && input.identity) {
+      const { data: existing } = await input.supabaseAdmin
+        .from("gastos")
+        .select("id")
+        .eq("escuela_id", input.integration.escuela_id)
+        .eq("factura_identidad", input.identity)
+        .maybeSingle();
+      if (existing) return { id: existing.id as string, duplicated: true };
+    }
     throw new Error(
       `No se pudo registrar el gasto importado desde correo: ${error?.message || "sin detalle"}`
     );
   }
 
-  return data.id as string;
+  return { id: data.id as string, duplicated: false };
 }
 
 function extractSenderAddress(
@@ -947,6 +1046,9 @@ function classifyInvoiceAttachmentError(error: unknown) {
   const message =
     error instanceof Error ? error.message : "No se pudo procesar el adjunto de factura.";
   const normalized = message.toLowerCase();
+
+  if (normalized.startsWith("requiere revisión:"))
+    return { status: "omitida" as const, detail: message };
 
   if (
     normalized.includes("no corresponde a una factura electronica compatible") ||
@@ -969,11 +1071,47 @@ async function syncSingleIntegration(
   rawOptions: EmailInvoiceSyncOptions = {},
   supabaseAdmin: SupabaseAdminClient = buildSupabaseAdminClient()
 ): Promise<EmailInvoiceSyncSummary> {
+  const lockUntil = new Date(Date.now() + 360_000).toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("facturas_correo_integraciones")
+    .update({ sync_locked_until: lockUntil })
+    .eq("id", integration.id)
+    .or(`sync_locked_until.is.null,sync_locked_until.lt.${new Date().toISOString()}`)
+    .select("id")
+    .maybeSingle();
+  if (error)
+    throw new Error(
+      "No se pudo reservar la lectura de correo. Comprueba la actualización de la integración."
+    );
+  if (!data)
+    throw new Error("Ya se está revisando este buzón. Espera a que termine la sincronización.");
+  try {
+    // Re-read after acquiring the lease: another request may have just rotated
+    // the refresh token or advanced the checkpoint.
+    const current = await getIntegrationBySchool(integration.escuela_id, supabaseAdmin);
+    if (!current || !current.activa) throw new Error("La conexión de correo ya no está activa.");
+    return await syncSingleIntegrationUnlocked(current, rawOptions, supabaseAdmin);
+  } finally {
+    await supabaseAdmin
+      .from("facturas_correo_integraciones")
+      .update({ sync_locked_until: null })
+      .eq("id", integration.id)
+      .eq("sync_locked_until", lockUntil);
+  }
+}
+
+async function syncSingleIntegrationUnlocked(
+  integration: IntegrationRow,
+  rawOptions: EmailInvoiceSyncOptions = {},
+  supabaseAdmin: SupabaseAdminClient = buildSupabaseAdminClient()
+): Promise<EmailInvoiceSyncSummary> {
   const options: Required<EmailInvoiceSyncOptions> = {
     mode: rawOptions.mode || "incremental",
     monthsBack: Math.min(Math.max(rawOptions.monthsBack || 24, 1), 120),
     maxMessages: Math.min(Math.max(rawOptions.maxMessages || 400, 1), 2000),
+    maxDurationMs: Math.min(Math.max(rawOptions.maxDurationMs || 200_000, 1000), 200_000),
   };
+  const started = Date.now();
   const summary: EmailInvoiceSyncSummary = {
     mode: options.mode,
     imported: 0,
@@ -989,16 +1127,334 @@ async function syncSingleIntegration(
   };
 
   let maxUid = Number(integration.last_uid || 0);
+  let retryFromUid: number | null = null;
   let client: ImapFlow | null = null;
   let releaseLock: (() => void) | null = null;
   const processedAttachmentKeys = new Set<string>();
   const duplicateExpenseCache = new Map<string, { id: string } | null>();
+  const { data: school, error: schoolError } = await supabaseAdmin
+    .from("escuelas")
+    .select("cif")
+    .eq("id", integration.escuela_id)
+    .maybeSingle();
+  if (schoolError || !school)
+    throw new Error("No se pudo comprobar la empresa receptora de las facturas.");
+
+  const processSource = async (
+    source: Buffer,
+    uid: number,
+    envelopeMessageId: string | null,
+    importedHintNames: Set<string>,
+    message: { envelope?: FetchMessageObject["envelope"]; internalDate?: Date } = {}
+  ) => {
+    const parsed = await simpleParser(source, SIMPLE_PARSER_OPTIONS);
+    const messageId = optionalText(parsed.messageId) || envelopeMessageId;
+    const remitente =
+      extractSenderAddress(parsed.from) || optionalText(message.envelope?.from?.[0]?.address);
+    const asunto = optionalText(parsed.subject) || optionalText(message.envelope?.subject);
+    const messageDate = toIsoDateTime(parsed.date || message.internalDate);
+
+    const attachments = parsed.attachments.filter((attachment) => {
+      const lowerName = attachmentFileName(attachment.filename, uid).toLowerCase();
+      return lowerName.endsWith(".xml") || lowerName.endsWith(".zip");
+    });
+
+    if (attachments.length === 0) {
+      summary.skipped += 1;
+      return;
+    }
+
+    const attachmentNames = uniqueNonEmptyStrings(
+      attachments.map((attachment) => attachmentFileName(attachment.filename, uid))
+    );
+    const importedAttachmentNames =
+      messageId === envelopeMessageId && uid > 0
+        ? importedHintNames
+        : await listImportedAttachmentNames(
+            integration.id,
+            messageId,
+            uid || null,
+            attachmentNames,
+            supabaseAdmin
+          );
+    const seenMessageAttachmentNames = new Set<string>();
+
+    for (const attachment of attachments) {
+      const attachmentName = attachmentFileName(attachment.filename, uid);
+      const normalizedAttachmentName = attachmentName.toLowerCase();
+      const attachmentIdentity = buildAttachmentIdentity(messageId, uid, attachmentName);
+
+      if (seenMessageAttachmentNames.has(normalizedAttachmentName)) {
+        summary.skipped += 1;
+        continue;
+      }
+      seenMessageAttachmentNames.add(normalizedAttachmentName);
+
+      if (
+        processedAttachmentKeys.has(attachmentIdentity) ||
+        importedAttachmentNames.has(normalizedAttachmentName)
+      ) {
+        processedAttachmentKeys.add(attachmentIdentity);
+        summary.skipped += 1;
+        continue;
+      }
+
+      summary.processedAttachments += 1;
+
+      try {
+        const preview = await parseElectronicInvoiceBinary({
+          fileName: attachmentName,
+          content: attachment.content,
+        });
+        assertInvoiceCanBecomeExpense(preview, school.cif);
+        const identity = buildElectronicInvoiceIdentity(preview);
+        const duplicateCacheKey =
+          identity || `${preview.invoiceNumber}:${preview.supplierName}`.trim().toLowerCase();
+        let duplicate = duplicateExpenseCache.get(duplicateCacheKey);
+        if (duplicate === undefined) {
+          duplicate = await findDuplicateExpense(
+            integration.escuela_id,
+            preview.invoiceNumber,
+            preview.supplierName,
+            supabaseAdmin,
+            identity
+          );
+          duplicateExpenseCache.set(duplicateCacheKey, duplicate);
+        }
+
+        if (duplicate) {
+          processedAttachmentKeys.add(attachmentIdentity);
+          summary.duplicated += 1;
+          await createImportLog({
+            integrationId: integration.id,
+            escuelaId: integration.escuela_id,
+            sedeId: integration.sede_id,
+            gastoId: duplicate.id,
+            imapUid: uid || null,
+            messageId,
+            messageDate,
+            remitente,
+            asunto,
+            attachmentName,
+            invoiceNumber: preview.invoiceNumber,
+            supplierName: preview.supplierName,
+            total: preview.payableAmount,
+            currency: preview.currency,
+            status: "duplicada",
+            detail: `La factura ${preview.invoiceNumber} ya existia en gastos para ${preview.supplierName}.`,
+            supabaseAdmin,
+          });
+          continue;
+        }
+
+        const notes = [
+          buildElectronicInvoiceNote(preview),
+          `Correo origen: ${remitente || integration.correo}`,
+          asunto ? `Asunto: ${asunto}` : "",
+          messageId ? `Message-ID: ${messageId}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        const expense = await insertExpenseFromPreview({
+          integration,
+          invoiceNumber: preview.invoiceNumber,
+          issueDate: preview.issueDate,
+          dueDate: preview.dueDate,
+          identity,
+          supplierName: preview.supplierName,
+          categorySuggestion: preview.categorySuggestion,
+          conceptSuggestion: preview.conceptSuggestion,
+          payableAmount: preview.payableAmount,
+          paymentMethodSuggestion: preview.paymentMethodSuggestion,
+          notes,
+          supabaseAdmin,
+        });
+
+        processedAttachmentKeys.add(attachmentIdentity);
+        duplicateExpenseCache.set(duplicateCacheKey, { id: expense.id });
+        if (expense.duplicated) summary.duplicated += 1;
+        else summary.imported += 1;
+        await createImportLog({
+          integrationId: integration.id,
+          escuelaId: integration.escuela_id,
+          sedeId: integration.sede_id,
+          gastoId: expense.id,
+          imapUid: uid || null,
+          messageId,
+          messageDate,
+          remitente,
+          asunto,
+          attachmentName,
+          invoiceNumber: preview.invoiceNumber,
+          supplierName: preview.supplierName,
+          total: preview.payableAmount,
+          currency: preview.currency,
+          status: expense.duplicated ? "duplicada" : "importada",
+          detail: expense.duplicated
+            ? `La factura ${preview.invoiceNumber} ya estaba registrada.`
+            : `Factura ${preview.invoiceNumber} importada automaticamente desde correo.`,
+          supabaseAdmin,
+        });
+      } catch (error) {
+        processedAttachmentKeys.add(attachmentIdentity);
+        const failure = classifyInvoiceAttachmentError(error);
+        if (failure.status === "omitida") {
+          summary.skipped += 1;
+        } else {
+          summary.errors += 1;
+        }
+        await createImportLog({
+          integrationId: integration.id,
+          escuelaId: integration.escuela_id,
+          sedeId: integration.sede_id,
+          imapUid: uid || null,
+          messageId,
+          messageDate,
+          remitente,
+          asunto,
+          attachmentName,
+          status: failure.status,
+          detail: failure.detail,
+          supabaseAdmin,
+        });
+      }
+    }
+  };
 
   try {
-    if (integration.provider !== MANUAL_IMAP_PROVIDER) {
-      throw new Error(
-        "La integracion actual ya no es compatible. Vuelve a conectar el correo usando IMAP manual."
-      );
+    if (isMailOAuthProvider(integration.provider)) {
+      if (!integration.oauth_refresh_token_encrypted)
+        throw new Error("Vuelve a conectar la cuenta para permitir la lectura de facturas.");
+      const token = await exchangeMailToken(integration.provider, {
+        refreshToken: decryptSecret(integration.oauth_refresh_token_encrypted),
+      });
+      if (token.refreshToken) {
+        const { error } = await supabaseAdmin
+          .from("facturas_correo_integraciones")
+          .update({ oauth_refresh_token_encrypted: encryptSecret(token.refreshToken) })
+          .eq("id", integration.id);
+        if (error) throw new Error("No se pudo renovar la conexión del correo.");
+      }
+      const checkpoint = integration.oauth_sync_state?.[options.mode];
+      const resume =
+        checkpoint &&
+        checkpoint.monthsBack === options.monthsBack &&
+        (checkpoint.pendingIds.length > 0 || checkpoint.pageToken)
+          ? checkpoint
+          : null;
+      const since = resume ? new Date(resume.since) : new Date();
+      if (!resume)
+        since.setUTCMonth(
+          since.getUTCMonth() - (options.mode === "historical" ? options.monthsBack : 1)
+        );
+      let pendingIds = resume?.pendingIds || [];
+      let pageToken = resume?.pageToken || null;
+      // Resume pending MIME downloads before requesting another provider page.
+      if (pendingIds.length === 0) {
+        const listed = await listInvoiceMessages(integration.provider, token.accessToken, {
+          since,
+          onlyUnread: options.mode === "incremental" && integration.import_only_unseen,
+          from: integration.from_filter,
+          subject: integration.subject_filter,
+          maxMessages: options.maxMessages,
+          pageToken,
+        });
+        pendingIds = listed.ids;
+        pageToken = listed.nextPageToken || null;
+      }
+      summary.matchedMessages = pendingIds.length;
+      const oversizedAttachmentName = "(correo mayor de 30 MB)";
+      const oversizedMessageIds = new Set<string>();
+      // Keep query URLs bounded even when the requested batch has 2,000 ids.
+      for (let offset = 0; offset < pendingIds.length; offset += 100) {
+        const { data, error } = await supabaseAdmin
+          .from("facturas_correo_importaciones")
+          .select("message_id")
+          .eq("integracion_id", integration.id)
+          .eq("attachment_name", oversizedAttachmentName)
+          .eq("status", "omitida")
+          .in(
+            "message_id",
+            pendingIds.slice(offset, offset + 100).map((id) => `${integration.provider}:${id}`)
+          );
+        if (error) throw new Error("No se pudo revisar el historial de correos omitidos.");
+        for (const row of data || []) {
+          if (row.message_id) oversizedMessageIds.add(row.message_id);
+        }
+      }
+      let processed = 0;
+      const retryIds: string[] = [];
+      try {
+        for (const id of pendingIds) {
+          if (processed >= options.maxMessages || Date.now() - started > options.maxDurationMs)
+            break;
+          const sourceId = `${integration.provider}:${id}`;
+          if (oversizedMessageIds.has(sourceId)) {
+            summary.skipped += 1;
+            summary.processedMessages += 1;
+            processed += 1;
+            continue;
+          }
+          let source: Buffer;
+          try {
+            source = await readInvoiceMessage(integration.provider, token.accessToken, id);
+          } catch (error) {
+            if (!(error instanceof MailMessageTooLargeError)) throw error;
+            await createImportLog({
+              integrationId: integration.id,
+              escuelaId: integration.escuela_id,
+              sedeId: integration.sede_id,
+              messageId: sourceId,
+              attachmentName: oversizedAttachmentName,
+              status: "omitida",
+              detail:
+                "El correo supera los 30 MB y se omitió. Las demás facturas continúan procesándose. Importa su XML o ZIP compatible manualmente desde Gastos.",
+              supabaseAdmin,
+            });
+            oversizedMessageIds.add(sourceId);
+            summary.skipped += 1;
+            summary.processedMessages += 1;
+            processed += 1;
+            continue;
+          }
+          summary.processedMessages += 1;
+          const errorsBefore = summary.errors;
+          await processSource(source, 0, sourceId, new Set());
+          if (summary.errors > errorsBefore) retryIds.push(id);
+          processed += 1;
+        }
+      } finally {
+        // A provider failure must not restart thousands of already-read emails.
+        pendingIds = [...retryIds, ...pendingIds.slice(processed)];
+        const { error } = await supabaseAdmin
+          .from("facturas_correo_integraciones")
+          .update({
+            oauth_sync_state: {
+              ...integration.oauth_sync_state,
+              [options.mode]: {
+                since: since.toISOString(),
+                monthsBack: options.monthsBack,
+                pendingIds,
+                pageToken,
+              },
+            },
+          })
+          .eq("id", integration.id);
+        if (error) throw new Error("No se pudo guardar el avance de la lectura de correo.");
+      }
+      summary.truncated = pendingIds.length > 0 || Boolean(pageToken);
+      const nowIso = new Date().toISOString();
+      const { error } = await supabaseAdmin
+        .from("facturas_correo_integraciones")
+        .update({
+          last_synced_at: nowIso,
+          last_error: null,
+        })
+        .eq("id", integration.id);
+      if (error) throw new Error("No se pudo actualizar el estado de la lectura de correo.");
+      summary.lastSyncedAt = nowIso;
+      return summary;
     }
 
     if (!integration.imap_password_encrypted) {
@@ -1062,7 +1518,7 @@ async function syncSingleIntegration(
       summary.matchedMessages = orderedUids.length;
       summary.truncated = selectedUids.length < orderedUids.length;
 
-      for (const uidBatch of chunkArray(selectedUids, IMAP_METADATA_BATCH_SIZE)) {
+      metadataBatches: for (const uidBatch of chunkArray(selectedUids, IMAP_METADATA_BATCH_SIZE)) {
         for await (const message of client.fetch(
           uidBatch,
           {
@@ -1073,6 +1529,13 @@ async function syncSingleIntegration(
           },
           { uid: true }
         )) {
+          if (
+            summary.processedMessages >= options.maxMessages ||
+            Date.now() - started > options.maxDurationMs
+          ) {
+            summary.truncated = true;
+            break metadataBatches;
+          }
           const uid = Number(message.uid || 0);
           if (uid > maxUid) maxUid = uid;
           summary.processedMessages += 1;
@@ -1122,6 +1585,7 @@ async function syncSingleIntegration(
           );
 
           if (!fullMessage || !fullMessage.source) {
+            retryFromUid = Math.min(retryFromUid ?? uid, uid);
             summary.errors += 1;
             await createImportLog({
               integrationId: integration.id,
@@ -1140,171 +1604,12 @@ async function syncSingleIntegration(
             continue;
           }
 
-          const parsed = await simpleParser(fullMessage.source, SIMPLE_PARSER_OPTIONS);
-          const messageId = optionalText(parsed.messageId) || envelopeMessageId;
-          const remitente =
-            extractSenderAddress(parsed.from) || optionalText(message.envelope?.from?.[0]?.address);
-          const asunto = optionalText(parsed.subject) || optionalText(message.envelope?.subject);
-          const messageDate = toIsoDateTime(parsed.date || message.internalDate);
-
-          const attachments = parsed.attachments.filter((attachment) => {
-            const lowerName = attachmentFileName(attachment.filename, uid).toLowerCase();
-            return lowerName.endsWith(".xml") || lowerName.endsWith(".zip");
+          const previousErrors = summary.errors;
+          await processSource(fullMessage.source, uid, envelopeMessageId, importedHintNames, {
+            envelope: message.envelope,
+            internalDate: message.internalDate instanceof Date ? message.internalDate : undefined,
           });
-
-          if (attachments.length === 0) {
-            summary.skipped += 1;
-            continue;
-          }
-
-          const attachmentNames = uniqueNonEmptyStrings(
-            attachments.map((attachment) => attachmentFileName(attachment.filename, uid))
-          );
-          const importedAttachmentNames =
-            messageId === envelopeMessageId
-              ? importedHintNames
-              : await listImportedAttachmentNames(
-                  integration.id,
-                  messageId,
-                  uid,
-                  attachmentNames,
-                  supabaseAdmin
-                );
-          const seenMessageAttachmentNames = new Set<string>();
-
-          for (const attachment of attachments) {
-            const attachmentName = attachmentFileName(attachment.filename, uid);
-            const normalizedAttachmentName = attachmentName.toLowerCase();
-            const attachmentIdentity = buildAttachmentIdentity(messageId, uid, attachmentName);
-
-            if (seenMessageAttachmentNames.has(normalizedAttachmentName)) {
-              summary.skipped += 1;
-              continue;
-            }
-            seenMessageAttachmentNames.add(normalizedAttachmentName);
-
-            if (
-              processedAttachmentKeys.has(attachmentIdentity) ||
-              importedAttachmentNames.has(normalizedAttachmentName)
-            ) {
-              processedAttachmentKeys.add(attachmentIdentity);
-              summary.skipped += 1;
-              continue;
-            }
-
-            summary.processedAttachments += 1;
-
-            try {
-              const preview = await parseElectronicInvoiceBinary({
-                fileName: attachmentName,
-                content: attachment.content,
-              });
-              const duplicateCacheKey = `${preview.invoiceNumber}:${preview.supplierName}`
-                .trim()
-                .toLowerCase();
-              let duplicate = duplicateExpenseCache.get(duplicateCacheKey);
-              if (duplicate === undefined) {
-                duplicate = await findDuplicateExpense(
-                  integration.escuela_id,
-                  preview.invoiceNumber,
-                  preview.supplierName,
-                  supabaseAdmin
-                );
-                duplicateExpenseCache.set(duplicateCacheKey, duplicate);
-              }
-
-              if (duplicate) {
-                processedAttachmentKeys.add(attachmentIdentity);
-                summary.duplicated += 1;
-                await createImportLog({
-                  integrationId: integration.id,
-                  escuelaId: integration.escuela_id,
-                  sedeId: integration.sede_id,
-                  gastoId: duplicate.id,
-                  imapUid: uid,
-                  messageId,
-                  messageDate,
-                  remitente,
-                  asunto,
-                  attachmentName,
-                  invoiceNumber: preview.invoiceNumber,
-                  supplierName: preview.supplierName,
-                  total: preview.payableAmount,
-                  currency: preview.currency,
-                  status: "duplicada",
-                  detail: `La factura ${preview.invoiceNumber} ya existia en gastos para ${preview.supplierName}.`,
-                  supabaseAdmin,
-                });
-                continue;
-              }
-
-              const notes = [
-                buildElectronicInvoiceNote(preview),
-                `Correo origen: ${remitente || integration.correo}`,
-                asunto ? `Asunto: ${asunto}` : "",
-                messageId ? `Message-ID: ${messageId}` : "",
-              ]
-                .filter(Boolean)
-                .join("\n");
-
-              const gastoId = await insertExpenseFromPreview({
-                integration,
-                invoiceNumber: preview.invoiceNumber,
-                issueDate: preview.issueDate,
-                supplierName: preview.supplierName,
-                categorySuggestion: preview.categorySuggestion,
-                conceptSuggestion: preview.conceptSuggestion,
-                payableAmount: preview.payableAmount,
-                paymentMethodSuggestion: preview.paymentMethodSuggestion,
-                notes,
-                supabaseAdmin,
-              });
-
-              processedAttachmentKeys.add(attachmentIdentity);
-              summary.imported += 1;
-              await createImportLog({
-                integrationId: integration.id,
-                escuelaId: integration.escuela_id,
-                sedeId: integration.sede_id,
-                gastoId,
-                imapUid: uid,
-                messageId,
-                messageDate,
-                remitente,
-                asunto,
-                attachmentName,
-                invoiceNumber: preview.invoiceNumber,
-                supplierName: preview.supplierName,
-                total: preview.payableAmount,
-                currency: preview.currency,
-                status: "importada",
-                detail: `Factura ${preview.invoiceNumber} importada automaticamente desde correo.`,
-                supabaseAdmin,
-              });
-            } catch (error) {
-              processedAttachmentKeys.add(attachmentIdentity);
-              const failure = classifyInvoiceAttachmentError(error);
-              if (failure.status === "omitida") {
-                summary.skipped += 1;
-              } else {
-                summary.errors += 1;
-              }
-              await createImportLog({
-                integrationId: integration.id,
-                escuelaId: integration.escuela_id,
-                sedeId: integration.sede_id,
-                imapUid: uid,
-                messageId,
-                messageDate,
-                remitente,
-                asunto,
-                attachmentName,
-                status: failure.status,
-                detail: failure.detail,
-                supabaseAdmin,
-              });
-            }
-          }
+          if (summary.errors > previousErrors) retryFromUid = Math.min(retryFromUid ?? uid, uid);
         }
       }
     } finally {
@@ -1315,7 +1620,8 @@ async function syncSingleIntegration(
     await supabaseAdmin
       .from("facturas_correo_integraciones")
       .update({
-        last_uid: maxUid || integration.last_uid,
+        last_uid:
+          retryFromUid === null ? maxUid || integration.last_uid : Math.max(0, retryFromUid - 1),
         last_synced_at: nowIso,
         last_error: null,
       })
@@ -1333,9 +1639,16 @@ async function syncSingleIntegration(
         last_synced_at: new Date().toISOString(),
       })
       .eq("id", integration.id);
-    throw new Error(message);
+    throw error instanceof Error ? error : new Error(message);
   } finally {
     await client?.logout().catch(() => undefined);
+    // Imports can succeed before a later mailbox read fails. Refresh the saved
+    // expenses for manual runs and cron, including those partially completed runs.
+    if (summary.imported > 0) {
+      revalidateServerReadCache(
+        buildExpenseMutationInvalidationTags({ escuelaId: integration.escuela_id })
+      );
+    }
   }
 }
 
@@ -1359,7 +1672,7 @@ export async function syncAllActiveEmailInvoiceIntegrations() {
     .select("*")
     .eq("activa", true)
     .eq("auto_sync", true)
-    .eq("provider", MANUAL_IMAP_PROVIDER);
+    .order("last_synced_at", { ascending: true, nullsFirst: true });
 
   if (error) {
     throw new Error(
@@ -1373,26 +1686,88 @@ export async function syncAllActiveEmailInvoiceIntegrations() {
     imported: number;
     duplicated: number;
     errors: number;
+    deferred?: boolean;
   }> = [];
-
-  for (const row of rows) {
-    try {
-      const summary = await syncSingleIntegration(row, undefined, supabaseAdmin);
-      results.push({
-        escuelaId: row.escuela_id,
-        imported: summary.imported,
-        duplicated: summary.duplicated,
-        errors: summary.errors,
-      });
-    } catch {
-      results.push({
-        escuelaId: row.escuela_id,
-        imported: 0,
-        duplicated: 0,
-        errors: 1,
-      });
+  const deadline = Date.now() + 240_000;
+  const pending = [...rows];
+  const worker = async () => {
+    while (pending.length > 0 && Date.now() < deadline - 5000) {
+      const row = pending.shift()!;
+      try {
+        const summary = await syncSingleIntegration(
+          row,
+          { maxDurationMs: Math.min(45_000, deadline - Date.now() - 5000) },
+          supabaseAdmin
+        );
+        results.push({
+          escuelaId: row.escuela_id,
+          imported: summary.imported,
+          duplicated: summary.duplicated,
+          errors: summary.errors,
+        });
+      } catch {
+        results.push({
+          escuelaId: row.escuela_id,
+          imported: 0,
+          duplicated: 0,
+          errors: 1,
+        });
+      }
     }
-  }
+  };
+  await Promise.all([worker(), worker()]);
+  for (const row of pending)
+    results.push({
+      escuelaId: row.escuela_id,
+      imported: 0,
+      duplicated: 0,
+      errors: 0,
+      deferred: true,
+    });
 
   return results;
+}
+
+export async function saveOAuthEmailIntegration(input: {
+  escuelaId: string;
+  sedeId: string;
+  actorId: string;
+  provider: MailOAuthProvider;
+  correo: string;
+  refreshToken: string;
+  fromFilter: string | null;
+  subjectFilter: string | null;
+  importOnlyUnseen: boolean;
+  autoSync: boolean;
+}) {
+  const supabaseAdmin = buildSupabaseAdminClient();
+  const current = await getIntegrationBySchool(input.escuelaId, supabaseAdmin);
+  const { error } = await supabaseAdmin.from("facturas_correo_integraciones").upsert(
+    {
+      escuela_id: input.escuelaId,
+      sede_id: input.sedeId,
+      created_by: current?.created_by || input.actorId,
+      updated_by: input.actorId,
+      provider: input.provider,
+      correo: input.correo,
+      imap_host: input.provider === "gmail_google" ? "imap.gmail.com" : "outlook.office365.com",
+      imap_port: 993,
+      imap_secure: true,
+      imap_user: input.correo,
+      imap_password_encrypted: null,
+      oauth_refresh_token_encrypted: encryptSecret(input.refreshToken),
+      oauth_sync_state: {},
+      mailbox: "INBOX",
+      from_filter: input.fromFilter,
+      subject_filter: input.subjectFilter,
+      import_only_unseen: input.importOnlyUnseen,
+      auto_sync: input.autoSync,
+      activa: true,
+      last_uid: null,
+      last_synced_at: null,
+      last_error: null,
+    },
+    { onConflict: "escuela_id" }
+  );
+  if (error) throw new Error("No se pudo guardar la conexión de correo.");
 }

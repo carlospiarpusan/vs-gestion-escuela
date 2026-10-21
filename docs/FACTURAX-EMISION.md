@@ -1,5 +1,86 @@
 # Facturación desde Alumnos mediante FacturaX
 
+## Ampliacion contable coordinada: 20/10/2026
+
+Publicada en produccion el 20/10/2026, con autorizacion especifica del titular.
+La API conserva `schemaVersion: 1`
+y negocia las capacidades `paymentCollection`, `accountingPreflight` y
+`businessStatus` del catalogo. No se debe desplegar el consumidor suponiendo
+que una capacidad ya existe en el receptor.
+
+- Catalogo: `collectionAccounts: [{code,name}]`,
+  `defaultCollectionAccounts: [{method,accountCode}]`, `canConfirmCollections`
+  y `accounting: {ready,issues}`. Las cuentas proceden exclusivamente de FacturaX.
+- Con capacidad de recaudo, el formulario exige elegir pendiente o recibido
+  completo, sin preseleccionar ni inferir un cobro por ser contado/efectivo.
+  Recibido exige casilla de confirmacion y cuenta receptora valida. Cambiar
+  medio, forma o cuenta invalida esa confirmacion. Credito solo admite pendiente;
+  sus abonos se registran desde Cartera de FacturaX.
+- Solicitud `payment.collection`: `{state: "pending"}` o
+  `{state: "received", confirmed: true, cashAccountCode?: string}`. No contiene
+  importe ni fecha de recaudo. FacturaX los determina con su total y fecha de
+  factura, y devuelve la eleccion canonica con `amount`, `date` y cuenta.
+- El servidor vuelve a consultar el catalogo antes de preparar la revision,
+  comprueba capacidad, configuracion contable, permiso de recaudo y cuenta.
+  La confirmacion debe corresponder a una cuenta explicita o a una unica
+  predeterminada valida para el medio. Nunca se supone caja para transferencias.
+- Los vencimientos se validan en Bogota: contado vence hoy y credito no puede
+  vencer antes de hoy. Se rechazan revisiones que cambian el pago, la cuenta o
+  la eleccion de recaudo; el recaudo revisado debe coincidir con el total.
+- Errores 422 `INVOICE_DATA_INCOMPLETE` conservan `issues` y `missingFields`.
+  Solo `student.*` abre el editor de contacto. `payment.*`, `items.*` y
+  `accounting.*` se muestran en la factura y no obligan a editar al alumno.
+- `business.accounting` distingue pendiente, contabilizada y no aplica; conserva
+  referencia y aviso. `business.collection` distingue sin registro, pendiente,
+  parcial, pagado y no aplica; conserva saldo/recaudado en centavos COP y recibos.
+  Saldo nulo no se presenta como cero. Validada por DIAN no significa contabilizada
+  ni pagada. No se duplican ingresos o abonos locales al recibir estos estados.
+- Respuestas antiguas sin campos nuevos siguen siendo legibles. La API de
+  ConduSoft devuelve el estado persistido si una respuesta atrasada no puede
+  sustituir el documento/numero fiscal ya guardado. No se agregan reintentos
+  automaticos a emision, envio de correo o recaudo; consultar la solicitud existente.
+
+El contrato receptor se mantiene en
+`/Users/carlos/Desktop/vs-facturacion/docs/CONDUSOFT-API.md`. La coordinacion
+se realiza sin compartir claves, datos de alumnos ni informacion fiscal real.
+No se emitieron facturas, registraron recaudos o enviaron correos de prueba.
+No requiere cambios de esquema en ConduSoft: el estado aditivo se guarda en el
+JSON de solicitud existente. Se publico FacturaX primero y ConduSoft despues,
+tras las pruebas y la autorizacion especifica de produccion.
+
+Verificacion local: suite completa 105 archivos / 1.085 pruebas aprobadas;
+130 pruebas dirigidas de pagos, ruta, persistencia y formulario aprobadas.
+Lint, TypeScript y compilacion de produccion (108 rutas) correctos. Una prueba
+cruzada en memoria contra los esquemas reales de FacturaX verifica solicitudes
+legacy/pending/received, respuesta canonica y rechazo de credito recibido, sin
+red ni mutaciones. La revision visual no se pudo ejecutar: el navegador local
+esta desactivado en Work. Cambios concurrentes de la calculadora ANSV se
+conservan; los fixtures SQL incorporan las columnas reales consultadas.
+
+La copia aislada de publicacion se preparo sobre `dpl_ADoqTx8m1aXFaEkQFxhvaoqTTRka`,
+conservando su calculadora ANSV y dejando fuera los cambios pendientes de correo.
+Esa copia paso 105 archivos / 1.070 pruebas, lint y TypeScript. Sus 470 archivos
+de fuente coinciden por SHA-1 con la entrega preparada
+`dpl_9nF1YL34mRbtBYgSwwe1AJmN4xn2`, promovida despues del receptor. Los aliases
+`condusoft.co`, `www.condusoft.co` y `vs-gestion-escuela.vercel.app` apuntan
+exactamente a esta version.
+
+El receptor se preparo tambien desde este chat, coordinando con el chat de
+FacturaX para evitar publicaciones simultaneas. Base productiva:
+`dpl_DAZzV8mUbKnjeMEKrsdhYdRP8Qyy`. Copia aislada: 611/611 pruebas aprobadas,
+27 pruebas dirigidas, lint y TypeScript correctos. Cinco archivos de pruebas de
+modulos aun no publicados se conservaron fuera de esta entrega; no se incluyeron
+sus cambios de almacenamiento ni de transporte. La comprobacion final de fuentes
+del receptor `dpl_iwNmQDXY8dJSBKFhXLr4HACspZaK` valida 691 archivos sin diferencias
+ni archivos extra. No se aplicaron migraciones.
+
+El receptor quedo `READY` y promovido a `facturax.co` y `www.facturax.co`, ambos
+aliases verificados contra `dpl_iwNmQDXY8dJSBKFhXLr4HACspZaK`. El consumidor
+tambien quedo `READY`. El control inmediato de registros de error de los ultimos
+cinco minutos no encontro registros en el receptor; no sustituye una prueba de
+emision real ni seguimiento de trafico posterior. No se emitieron documentos,
+registraron cobros o enviaron correos reales durante esta publicacion.
+
 Implementación publicada para Escuela de Conducción Sin Fronteras S.A.S., NIT
 901171550-0. La emisión utiliza el motor existente de FacturaX: firma, certificado,
 numeración de producción, validación DIAN, PDF, XML y correo.

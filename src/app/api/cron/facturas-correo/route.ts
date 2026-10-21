@@ -3,6 +3,7 @@ import { getServerDbPool } from "@/lib/server-db";
 import { syncAllActiveEmailInvoiceIntegrations } from "@/lib/email-invoice-sync";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const CRON_LOCK_KEY = 36036;
 

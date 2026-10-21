@@ -53,7 +53,7 @@ export const HOME_KEYWORDS = [
 ];
 
 export const heroHighlights = [
-  "ConduSoft centraliza alumnos, matrículas, clases y horas operativas en una sola vista.",
+  "ConduSoft centraliza alumnos, matrículas y horas operativas en una sola vista.",
   "Separa ingresos, cartera, caja diaria y gastos para entender la realidad financiera de tu escuela.",
   "Controla vehículos, mantenimientos, sedes y automatización sin depender de hojas sueltas o chats.",
   "Documenta consentimiento, ARCO, retención, backups, incidentes y evidencia interna desde el mismo sistema.",
@@ -63,11 +63,11 @@ export const availableFeatures: PublicFeatureArea[] = [
   {
     id: "operacion",
     eyebrow: "Tranquilidad Operativa",
-    title: "Gestiona alumnos, agendas y clases sin el caos del papel",
+    title: "Gestiona alumnos, matrículas y horas sin el caos del papel",
     description:
       "Toma el control total de los expedientes, contratos, horarios e instructores. Olvídate de perseguir hojas sueltas.",
     outcome: "Visibilidad inmediata de cada alumno y cero dolores de cabeza administrativos.",
-    modules: ["Alumnos", "Matrículas", "Clases", "Horas", "Exámenes", "Instructores"],
+    modules: ["Alumnos", "Matrículas", "Horas", "Exámenes", "Instructores"],
   },
   {
     id: "cale",
@@ -124,8 +124,8 @@ export const platformCapabilityGroups: PublicCapabilityGroup[] = [
     id: "operacion-academica",
     title: "Operación académica y seguimiento del alumno",
     description:
-      "La plataforma organiza el recorrido diario de la escuela desde el registro del alumno hasta sus clases, horas y evaluaciones.",
-    modules: ["Alumnos", "Matrículas", "Clases", "Horas", "Exámenes", "Instructores"],
+      "La plataforma organiza el recorrido diario de la escuela desde el registro del alumno hasta sus horas y evaluaciones.",
+    modules: ["Alumnos", "Matrículas", "Horas", "Exámenes", "Instructores"],
   },
   {
     id: "finanzas",
@@ -223,7 +223,7 @@ export const faqItems: PublicFaqItem[] = [
   {
     question: "¿Para qué tipo de autoescuela sirve ConduSoft?",
     answer:
-      "ConduSoft está pensado para autoescuelas, CEA y escuelas de conducción en Colombia que necesitan controlar alumnos, clases, pagos, cartera, gastos, flota y operación diaria desde una sola plataforma.",
+      "ConduSoft está pensado para autoescuelas, CEA y escuelas de conducción en Colombia que necesitan controlar alumnos, horas, pagos, cartera, gastos, flota y operación diaria desde una sola plataforma.",
   },
   {
     question: "¿ConduSoft ayuda con preparación CALE?",

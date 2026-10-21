@@ -79,7 +79,7 @@ export async function GET(request: Request) {
       "expense_json",
       () =>
         getServerReadCached({
-          key: buildFinanceServerCacheKey("expense", perfil.rol, scope, url.searchParams),
+          key: buildFinanceServerCacheKey("expense-v2", perfil.rol, scope, url.searchParams),
           ttlMs: CACHE_TTL_MS,
           tags: buildFinanceCacheTags("expense", scope),
           bypass: cacheBypass,
@@ -89,80 +89,56 @@ export async function GET(request: Request) {
             // buildQueryParts comparte un solo arreglo de valores para ingresos, gastos
             // y obligaciones. Incluimos todos los CTE para que los placeholders
             // declarados coincidan con los parametros enviados.
-            const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`;
+            const cte =
+              `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`.replace(
+                "filtered_gastos AS (",
+                "filtered_gastos AS MATERIALIZED ("
+              );
 
-            const [
-              summaryRes,
-              byCategoryRes,
-              byMethodRes,
-              topConceptsRes,
-              topProvidersRes,
-              topTramitadoresRes,
-              payablesBucketsRes,
-              payablesTramitadoresRes,
-              payablesTopRes,
-              tramitadorPortfolioRes,
-            ] = await Promise.all([
-              pool.query<ExpenseSummarySqlRow>(
-                `
-                  ${cte}
-                  select
+            const loadSummary = async () => {
+              const {
+                rows: [bundle],
+              } = await pool.query<{
+                summaryRes: ExpenseSummarySqlRow[];
+                byCategoryRes: AggregateRow[];
+                byMethodRes: AggregateRow[];
+                topConceptsRes: AggregateRow[];
+                topProvidersRes: AggregateRow[];
+                topTramitadoresRes: NamedAggregateRow[];
+                payablesBucketsRes: AgingBucketRow[];
+                payablesTramitadoresRes: CounterpartyAggregateRow[];
+                payablesTopRes: CounterpartyAggregateRow[];
+                tramitadorPortfolioRes: TramitadorPortfolioRow[];
+              }>(
+                `${cte}
+select
+(select coalesce(json_agg(result), '[]'::json) from (select
                     coalesce(sum(monto), 0) as gastos_totales,
                     coalesce(avg(monto), 0) as gasto_promedio,
                     count(*)::int as total_gastos,
                     coalesce(sum(monto) filter (where recurrente = true), 0) as gastos_recurrentes_total,
                     (count(*) filter (where recurrente = true))::int as gastos_recurrentes_count
-                  from filtered_gastos
-                `,
-                parts.values
-              ),
-              pool.query<AggregateRow>(
-                `
-                  ${cte}
-                  select categoria, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
+                  from filtered_gastos) result) as "summaryRes",
+(select coalesce(json_agg(result), '[]'::json) from (select categoria, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
                   from filtered_gastos
                   group by categoria
-                  order by total desc, categoria asc
-                `,
-                parts.values
-              ),
-              pool.query<AggregateRow>(
-                `
-                  ${cte}
-                  select metodo_pago, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
+                  order by total desc, categoria asc) result) as "byCategoryRes",
+(select coalesce(json_agg(result), '[]'::json) from (select metodo_pago, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
                   from filtered_gastos
                   group by metodo_pago
-                  order by total desc, metodo_pago asc
-                `,
-                parts.values
-              ),
-              pool.query<AggregateRow>(
-                `
-                  ${cte}
-                  select concepto, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
+                  order by total desc, metodo_pago asc) result) as "byMethodRes",
+(select coalesce(json_agg(result), '[]'::json) from (select concepto, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
                   from filtered_gastos
                   group by concepto
                   order by total desc, cantidad desc, concepto asc
-                  limit 8
-                `,
-                parts.values
-              ),
-              pool.query<AggregateRow>(
-                `
-                  ${cte}
-                  select contraparte as concepto, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
+                  limit 8) result) as "topConceptsRes",
+(select coalesce(json_agg(result), '[]'::json) from (select contraparte as concepto, count(*)::int as cantidad, coalesce(sum(monto), 0) as total
                   from filtered_gastos
                   where contraparte is not null and categoria != 'tramitador'
                   group by contraparte
                   order by total desc, cantidad desc, contraparte asc
-                  limit 8
-                `,
-                parts.values
-              ),
-              pool.query<NamedAggregateRow>(
-                `
-                  ${cte}
-                  select
+                  limit 8) result) as "topProvidersRes",
+(select coalesce(json_agg(result), '[]'::json) from (select
                     coalesce(contraparte, 'Sin tramitador') as nombre,
                     count(*)::int as cantidad,
                     coalesce(sum(monto), 0) as total
@@ -170,14 +146,8 @@ export async function GET(request: Request) {
                   where categoria = 'tramitador'
                   group by 1
                   order by total desc, cantidad desc, nombre asc
-                  limit 12
-                `,
-                parts.values
-              ),
-              pool.query<AgingBucketRow>(
-                `
-                  ${cte}
-                  select
+                  limit 12) result) as "topTramitadoresRes",
+(select coalesce(json_agg(result), '[]'::json) from (select
                     case
                       when fecha_vencimiento < ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) then '${PAYABLE_BUCKET_LABELS.overdue}'
                       when fecha_vencimiento <= ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date) + interval '7 day' then '${PAYABLE_BUCKET_LABELS.dueSoon}'
@@ -188,14 +158,8 @@ export async function GET(request: Request) {
                   from filtered_gastos
                   where estado = 'pendiente'
                   group by 1
-                  order by min(fecha_vencimiento) asc
-                `,
-                parts.values
-              ),
-              pool.query<CounterpartyAggregateRow>(
-                `
-                  ${cte}
-                  select
+                  order by min(fecha_vencimiento) asc) result) as "payablesBucketsRes",
+(select coalesce(json_agg(result), '[]'::json) from (select
                     coalesce(contraparte, 'Sin tramitador') as nombre,
                     count(*)::int as cantidad,
                     coalesce(sum(monto), 0) as total
@@ -203,14 +167,8 @@ export async function GET(request: Request) {
                   where estado = 'pendiente' and categoria = 'tramitador'
                   group by 1
                   order by total desc, cantidad desc, nombre asc
-                  limit 12
-                `,
-                parts.values
-              ),
-              pool.query<CounterpartyAggregateRow>(
-                `
-                  ${cte}
-                  select
+                  limit 12) result) as "payablesTramitadoresRes",
+(select coalesce(json_agg(result), '[]'::json) from (select
                     coalesce(contraparte, 'Sin proveedor') as nombre,
                     count(*)::int as cantidad,
                     coalesce(sum(monto), 0) as total
@@ -218,14 +176,8 @@ export async function GET(request: Request) {
                   where estado = 'pendiente'
                   group by 1
                   order by total desc, cantidad desc, nombre asc
-                  limit 8
-                `,
-                parts.values
-              ),
-              pool.query<TramitadorPortfolioRow>(
-                `
-                  ${cte}
-                  select
+                  limit 8) result) as "payablesTopRes",
+(select coalesce(json_agg(result), '[]'::json) from (select
                     coalesce(contraparte, 'Sin tramitador') as nombre,
                     count(*)::int as movimientos,
                     coalesce(sum(case when estado = 'pagado' then monto else 0 end), 0) as pagado,
@@ -257,14 +209,26 @@ export async function GET(request: Request) {
                   where categoria = 'tramitador'
                   group by 1
                   order by pendiente desc, pagado desc, movimientos desc, nombre asc
-                  limit 12
-                `,
+                  limit 12) result) as "tramitadorPortfolioRes"`,
                 parts.values
-              ),
-            ]);
+              );
+              return bundle;
+            };
+            const {
+              summaryRes,
+              byCategoryRes,
+              byMethodRes,
+              topConceptsRes,
+              topProvidersRes,
+              topTramitadoresRes,
+              payablesBucketsRes,
+              payablesTramitadoresRes,
+              payablesTopRes,
+              tramitadorPortfolioRes,
+            } = await loadSummary();
 
-            const summary = summaryRes.rows[0];
-            const payablesBuckets = payablesBucketsRes.rows.map((row) => ({
+            const summary = summaryRes[0];
+            const payablesBuckets = payablesBucketsRes.map((row) => ({
               bucket: row.bucket,
               cantidad: Number(row.cantidad || 0),
               total: toNumber(row.total),
@@ -281,32 +245,32 @@ export async function GET(request: Request) {
                 gastosRecurrentesCount: Number(summary?.gastos_recurrentes_count || 0),
               },
               breakdown: {
-                gastosPorCategoria: byCategoryRes.rows.map((row) => ({
+                gastosPorCategoria: byCategoryRes.map((row) => ({
                   categoria: row.categoria,
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),
                 })),
-                gastosPorMetodo: byMethodRes.rows.map((row) => ({
+                gastosPorMetodo: byMethodRes.map((row) => ({
                   metodo_pago: row.metodo_pago,
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),
                 })),
-                topConceptosGasto: topConceptsRes.rows.map((row) => ({
+                topConceptosGasto: topConceptsRes.map((row) => ({
                   concepto: row.concepto,
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),
                 })),
-                topProveedoresGasto: topProvidersRes.rows.map((row) => ({
+                topProveedoresGasto: topProvidersRes.map((row) => ({
                   concepto: row.concepto,
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),
                 })),
-                topTramitadoresGasto: topTramitadoresRes.rows.map((row) => ({
+                topTramitadoresGasto: topTramitadoresRes.map((row) => ({
                   nombre: row.nombre || "Sin tramitador",
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),
                 })),
-                tramitadorPortfolio: tramitadorPortfolioRes.rows.map((row) => ({
+                tramitadorPortfolio: tramitadorPortfolioRes.map((row) => ({
                   nombre: row.nombre || "Sin tramitador",
                   movimientos: Number(row.movimientos || 0),
                   pagado: toNumber(row.pagado),
@@ -323,12 +287,12 @@ export async function GET(request: Request) {
                 vencePronto: sumBucketTotal(payablesBuckets, PAYABLE_BUCKET_LABELS.dueSoon),
                 alDia: sumBucketTotal(payablesBuckets, PAYABLE_BUCKET_LABELS.current),
                 buckets: payablesBuckets,
-                topProveedores: payablesTopRes.rows.map((row) => ({
+                topProveedores: payablesTopRes.map((row) => ({
                   nombre: row.nombre || "Sin proveedor",
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),
                 })),
-                topTramitadores: payablesTramitadoresRes.rows.map((row) => ({
+                topTramitadores: payablesTramitadoresRes.map((row) => ({
                   nombre: row.nombre || "Sin tramitador",
                   cantidad: Number(row.cantidad || 0),
                   total: toNumber(row.total),

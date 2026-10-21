@@ -20,7 +20,7 @@ import {
 import { fetchJsonWithRetry } from "@/lib/retry";
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
 import {
-  buildDashboardListCacheTags,
+  buildDashboardListInvalidationTags,
   buildScopedMutationRevalidationTags,
 } from "@/lib/server-cache-tags";
 import {
@@ -656,7 +656,7 @@ export default function HorasPage() {
 
   const buildHorasRevalidationTags = useCallback(
     () =>
-      buildDashboardListCacheTags("horas-dashboard", {
+      buildDashboardListInvalidationTags("horas-dashboard", {
         escuelaId: perfil?.escuela_id,
         sedeId: perfil?.sede_id,
       }),

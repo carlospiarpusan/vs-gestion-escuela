@@ -6,7 +6,7 @@ import { getServerDbPool } from "@/lib/server-db";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
 import {
   buildBroadDashboardInvalidationTags,
-  buildDashboardListCacheTags,
+  buildDashboardListInvalidationTags,
 } from "@/lib/server-cache-tags";
 
 const deleteEscuelaSchema = z.object({
@@ -130,7 +130,7 @@ export async function POST(request: Request) {
     }
 
     revalidateServerReadCache([
-      ...buildDashboardListCacheTags("escuelas"),
+      ...buildDashboardListInvalidationTags("escuelas"),
       ...buildBroadDashboardInvalidationTags(),
       "superadmin",
       "analytics",

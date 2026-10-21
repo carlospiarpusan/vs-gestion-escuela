@@ -144,6 +144,17 @@ export default function AbonoModal({
                   <span className="ml-3 shrink-0 text-sm font-semibold text-green-600 dark:text-green-400">
                     +${ingreso.monto.toLocaleString("es-CO")}
                   </span>
+                  {ingreso.estado === "cobrado" && (
+                    <a
+                      href={`/print/recibo/${ingreso.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Ver recibo de ${ingreso.concepto}`}
+                      className="ml-3 shrink-0 text-xs font-medium text-[#0071e3] underline-offset-4 hover:underline focus-visible:outline-2"
+                    >
+                      Recibo
+                    </a>
+                  )}
                 </div>
               ))}
             </div>

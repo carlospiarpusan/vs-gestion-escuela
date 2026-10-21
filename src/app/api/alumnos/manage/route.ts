@@ -25,8 +25,11 @@ import {
   inferTipoPermisoFromCategories,
   normalizeStoredCourseCategories,
 } from "@/lib/course-categories";
-import { getTodayDateString, isValidDateOnly } from "@/lib/date-utils";
+import { extractDateOnly, getTodayDateString, isValidDateOnly } from "@/lib/date-utils";
 import { getServerDbPool } from "@/lib/server-db";
+import { invalidateStudentRecordCaches } from "@/lib/student-records-server";
+import { ansvSexSchema, calculateEnrollmentAnsv, validateEnrollmentBirthDate } from "@/lib/ansv";
+import { saveContractAnsv } from "@/lib/ansv-server";
 import {
   studentBillingProfileSchema,
   studentBillingContactSchema,
@@ -44,6 +47,8 @@ const ALLOWED_ROLES: Rol[] = [
 const manageAlumnoSchema = z
   .object({
     alumno_id: z.string().uuid().optional(),
+    solo_ficha: z.boolean().default(false),
+    consentimiento_datos: z.boolean().optional(),
     sede_id: z.string().uuid(),
     tipo_registro: z.enum(["regular", "aptitud_conductor", "practica_adicional"]),
     nombre: z.string().trim().min(1).max(200),
@@ -51,9 +56,11 @@ const manageAlumnoSchema = z
     dni: z.string().trim().min(5).max(30),
     tipo_documento: z.enum(["CC", "CE", "TI", "PAS"]),
     email: z.string().email().optional().nullable(),
-    telefono: z.string().trim().min(1).max(80),
-    lugar_expedicion_documento: z.string().trim().min(1).max(160),
+    telefono: z.string().trim().max(80),
+    lugar_expedicion_documento: z.string().trim().max(160),
     fecha_nacimiento: z.string().refine(isValidDateOnly, "Fecha inválida.").optional().nullable(),
+    sexo: ansvSexSchema.optional().nullable(),
+    ansv_categoria: z.string().trim().max(10).optional().nullable(),
     direccion: z.string().trim().max(500).optional().nullable(),
     ciudad: z.string().trim().max(160).optional().nullable(),
     departamento: z.string().trim().max(160).optional().nullable(),
@@ -110,6 +117,8 @@ const deleteAlumnoSchema = z.object({
 });
 
 type ExistingAlumnoRow = {
+  fecha_nacimiento: string | Date | null;
+  sexo: string | null;
   id: string;
   user_id: string;
   escuela_id: string;
@@ -124,6 +133,9 @@ type ExistingAlumnoRow = {
 };
 
 type ExistingMatriculaRow = {
+  ansv: unknown;
+  categorias: string[];
+  fecha_inscripcion: string | Date | null;
   id: string;
   notas: string | null;
   numero_contrato: string | null;
@@ -331,7 +343,7 @@ async function loadExistingAlumno(alumnoId: string) {
   const contractCapabilities = await getContractSchemaCapabilities(pool);
   const alumnoRes = await pool.query<ExistingAlumnoRow>(
     `
-      select id, user_id, escuela_id, sede_id, numero_contrato, tipo_permiso, categorias, valor_total, fecha_inscripcion, estado, tipo_registro
+      select id, user_id, escuela_id, sede_id, numero_contrato, tipo_permiso, categorias, valor_total, fecha_inscripcion, estado, tipo_registro, fecha_nacimiento, sexo
       from public.alumnos
       where id = $1
       limit 1
@@ -348,6 +360,7 @@ async function loadExistingAlumno(alumnoId: string) {
           select
             id,
             notas,
+            ansv, categorias, fecha_inscripcion,
             numero_contrato,
             ${contractCapabilities.matriculaPrefix ? "prefijo_contrato" : "null::text as prefijo_contrato"},
             ${contractCapabilities.matriculaConsecutive ? "consecutivo_contrato" : "null::bigint as consecutivo_contrato"},
@@ -362,6 +375,7 @@ async function loadExistingAlumno(alumnoId: string) {
           select
             id,
             notas,
+            ansv, categorias, fecha_inscripcion,
             numero_contrato,
             null::text as prefijo_contrato,
             null as consecutivo_contrato,
@@ -395,6 +409,29 @@ async function handleMutation(request: Request, mode: "create" | "update") {
   const dni = normalizeCedula(payload.dni);
   const email = normalizeEmail(payload.email ?? null);
   if (mode === "create") {
+    if (payload.consentimiento_datos !== true)
+      return NextResponse.json(
+        { error: "Debes confirmar la autorización de tratamiento de datos." },
+        { status: 400 }
+      );
+    if (!payload.fecha_inscripcion || payload.fecha_inscripcion > getToday())
+      return NextResponse.json(
+        { error: "Selecciona una fecha de inscripción o servicio válida, no futura." },
+        { status: 400 }
+      );
+    if (payload.fecha_nacimiento && payload.fecha_nacimiento > payload.fecha_inscripcion)
+      return NextResponse.json(
+        {
+          error:
+            "La fecha de nacimiento no puede ser posterior a la fecha de inscripción o servicio.",
+        },
+        { status: 400 }
+      );
+    if (!payload.lugar_expedicion_documento)
+      return NextResponse.json(
+        { error: "Debes indicar el lugar de expedición del documento." },
+        { status: 400 }
+      );
     const contact = studentBillingContactSchema.safeParse(payload);
     if (!contact.success)
       return NextResponse.json(
@@ -417,7 +454,24 @@ async function handleMutation(request: Request, mode: "create" | "update") {
 
   const isAptitud = payload.tipo_registro === "aptitud_conductor";
   const isPractice = payload.tipo_registro === "practica_adicional";
-  if (!isPractice && payload.categorias.length === 0) {
+  if (mode === "create" && !isAptitud && !isPractice) {
+    try {
+      calculateEnrollmentAnsv({
+        fechaNacimiento: payload.fecha_nacimiento,
+        sexo: payload.sexo,
+        fechaMatricula: payload.fecha_inscripcion,
+        categorias: payload.categorias,
+        categoria: payload.ansv_categoria,
+      });
+    } catch (error) {
+      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+    }
+  }
+  if (
+    !isPractice &&
+    !(mode === "update" && payload.solo_ficha && payload.tipo_registro === "regular") &&
+    payload.categorias.length === 0
+  ) {
     return NextResponse.json(
       {
         error: isAptitud
@@ -470,6 +524,14 @@ async function handleMutation(request: Request, mode: "create" | "update") {
   }
 
   if (existing) {
+    if (existing.alumno.tipo_registro !== payload.tipo_registro)
+      return NextResponse.json(
+        {
+          error:
+            "El tipo de registro no se puede cambiar. Crea un registro nuevo para otro servicio.",
+        },
+        { status: 400 }
+      );
     const currentSedeScopeError = ensureSedeScope(authz.perfil, existing.alumno.sede_id);
     if (currentSedeScopeError) {
       return NextResponse.json({ error: currentSedeScopeError }, { status: 403 });
@@ -479,6 +541,17 @@ async function handleMutation(request: Request, mode: "create" | "update") {
   const nextSedeScopeError = ensureSedeScope(authz.perfil, payload.sede_id);
   if (nextSedeScopeError) {
     return NextResponse.json({ error: nextSedeScopeError }, { status: 403 });
+  }
+
+  if (existing?.alumno.tipo_registro === "regular") {
+    try {
+      if ((payload.fecha_nacimiento ?? null) !== extractDateOnly(existing.alumno.fecha_nacimiento))
+        validateEnrollmentBirthDate(payload.fecha_nacimiento);
+      if (existing.alumno.sexo && payload.sexo === null)
+        throw new Error("El sexo es obligatorio para ANSV; no borres el dato guardado.");
+    } catch (error) {
+      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+    }
   }
 
   const validSede = await ensureSedeBelongsToSchool(schoolId, payload.sede_id);
@@ -506,7 +579,10 @@ async function handleMutation(request: Request, mode: "create" | "update") {
   }
 
   const gestionaMatricula =
-    !isAptitud && !isPractice && (!existing || existing.matriculas.length <= 1);
+    !isAptitud &&
+    !isPractice &&
+    !(mode === "update" && payload.solo_ficha) &&
+    (!existing || existing.matriculas.length <= 1);
   const editingMatricula =
     existing && existing.matriculas.length === 1 ? existing.matriculas[0] : null;
   const categoriaPrincipal = isAptitud ? payload.categorias.slice(0, 1) : [];
@@ -595,7 +671,33 @@ async function handleMutation(request: Request, mode: "create" | "update") {
       let alumnoId = payload.alumno_id ?? null;
       failureStage = "alumno";
 
-      if (mode === "update" && existing) {
+      if (mode === "update" && existing && payload.solo_ficha && !isAptitud && !isPractice) {
+        const result = await client.query<{ id: string }>(
+          `update public.alumnos set
+          nombre=$2, apellidos=$3, dni=$4, tipo_documento=$5, email=$6, telefono=$7,
+          lugar_expedicion_documento=$8, fecha_nacimiento=$9, direccion=$10, ciudad=$11,
+          departamento=$12, estado=$13, notas=$14, user_id=$15
+          where id=$1 returning id`,
+          [
+            existing.alumno.id,
+            payload.nombre,
+            payload.apellidos,
+            dni,
+            payload.tipo_documento,
+            email,
+            payload.telefono,
+            payload.lugar_expedicion_documento,
+            payload.fecha_nacimiento || null,
+            payload.direccion || null,
+            payload.ciudad || null,
+            payload.departamento || null,
+            payload.estado,
+            payload.notas || null,
+            alumnoUserId,
+          ]
+        );
+        alumnoId = result.rows[0]?.id ?? null;
+      } else if (mode === "update" && existing) {
         const updateRes = await client.query<{ id: string }>(
           `
             update public.alumnos
@@ -760,9 +862,29 @@ async function handleMutation(request: Request, mode: "create" | "update") {
 
       let matriculaId: string | null = null;
       let numeroContratoEspejoAlumno: string | null = null;
+      if (alumnoId && payload.sexo !== undefined) {
+        await client.query("update public.alumnos set sexo=$1 where id=$2 and escuela_id=$3", [
+          payload.sexo,
+          alumnoId,
+          schoolId,
+        ]);
+      }
       failureStage = "contrato";
       if (gestionaMatricula) {
         if (editingMatricula) {
+          if (
+            editingMatricula.ansv &&
+            (JSON.stringify(normalizeStoredCourseCategories(editingMatricula.categorias)) !==
+              JSON.stringify(payload.categorias) ||
+              String(
+                editingMatricula.fecha_inscripcion instanceof Date
+                  ? editingMatricula.fecha_inscripcion.toISOString().slice(0, 10)
+                  : editingMatricula.fecha_inscripcion
+              ) !== (payload.fecha_inscripcion || hoy))
+          )
+            throw new Error(
+              "Edita las categorías y la fecha desde Editar matrícula para actualizar el aporte ANSV de forma segura."
+            );
           const hadStoredContractNumber = Boolean(editingMatricula.numero_contrato?.trim());
           const canPersistHistoricalPrefix =
             contractCapabilities.matriculaPrefix &&
@@ -1077,6 +1199,15 @@ async function handleMutation(request: Request, mode: "create" | "update") {
                     ]
           );
           matriculaId = matriculaRes.rows[0]?.id ?? null;
+          if (!matriculaId || !alumnoId) throw new Error("No se pudo guardar el contrato ANSV.");
+          await saveContractAnsv(client, {
+            alumnoId,
+            escuelaId: schoolId,
+            contratoId: matriculaId,
+            categorias: payload.categorias,
+            fechaMatricula: payload.fecha_inscripcion || hoy,
+            categoria: payload.ansv_categoria,
+          });
 
           if (payload.tiene_tramitador && (payload.tramitador_valor ?? 0) > 0) {
             await client.query(
@@ -1160,6 +1291,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
 
       failureStage = "confirmacion";
       await client.query("COMMIT");
+      invalidateStudentRecordCaches(schoolId, payload.sede_id);
       return NextResponse.json({ ok: true });
     } catch (error) {
       await client.query("ROLLBACK");
@@ -1278,6 +1410,7 @@ async function handleDelete(request: Request) {
       await client.query("COMMIT");
     }
 
+    invalidateStudentRecordCaches(existing.alumno.escuela_id, existing.alumno.sede_id);
     return NextResponse.json({ ok: true });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);

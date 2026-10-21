@@ -72,7 +72,7 @@ export default function SuperAdminDashboardHome() {
           ttlMs: SUPERADMIN_SUMMARY_CACHE_TTL_MS,
           loader: async () => {
             const response = await fetch("/api/dashboard/superadmin-summary", {
-              cache: "default",
+              cache: "no-store",
             });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload?.error || "Error cargando dashboard central");

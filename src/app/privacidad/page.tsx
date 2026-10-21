@@ -85,6 +85,29 @@ export default function PrivacidadPage() {
       </section>
 
       <section>
+        <h2 className="text-foreground text-lg font-semibold">Conexión de correos para facturas</h2>
+        <p className="mt-2">
+          La conexión de Google o Microsoft es opcional y requiere la autorización del titular del
+          buzón. ConduSoft solicita permisos de lectura para identificar la cuenta, buscar correos
+          con adjuntos y extraer facturas electrónicas XML o ZIP. No envía, elimina ni modifica
+          mensajes del buzón. Las búsquedas pueden limitarse por remitente, asunto y mensajes no
+          leídos.
+        </p>
+        <p className="mt-2">
+          Los datos de la factura y la referencia al correo de origen se guardan en los gastos de la
+          escuela y su sede contable. Las credenciales de conexión se almacenan cifradas en el
+          servidor y no se muestran en el navegador. Los datos del correo no se utilizan para
+          publicidad ni para entrenar modelos de inteligencia artificial.
+        </p>
+        <p className="mt-2">
+          Puedes desconectar el buzón desde Gastos para eliminar las credenciales almacenadas y
+          detener nuevas sincronizaciones. Los gastos que ya se hayan importado permanecen en la
+          contabilidad de la escuela. También puedes revocar el permiso desde tu cuenta de Google o
+          Microsoft.
+        </p>
+      </section>
+
+      <section>
         <h2 className="text-foreground text-lg font-semibold">
           Aplicacion Android y proveedores tecnicos
         </h2>

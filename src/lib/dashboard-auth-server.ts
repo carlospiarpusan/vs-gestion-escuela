@@ -28,11 +28,13 @@ function toUserSnapshot(user: {
   id: string;
   email?: string | null;
   user_metadata?: Record<string, unknown>;
+  app_metadata?: Record<string, unknown>;
 }) {
   return {
     id: user.id,
     email: user.email ?? undefined,
     user_metadata: user.user_metadata ?? {},
+    app_metadata: { debe_cambiar_password: user.app_metadata?.debe_cambiar_password === true },
   };
 }
 

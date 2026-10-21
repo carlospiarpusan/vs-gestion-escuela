@@ -85,7 +85,7 @@ export default function DashboardClientLayout({
 
   useEffect(() => {
     if (!user) return;
-    if (user.user_metadata?.debe_cambiar_password === true) {
+    if (user.app_metadata?.debe_cambiar_password === true) {
       setCambioOpen(true);
     } else if (user.user_metadata?.debe_completar_perfil === true && perfil?.rol === "alumno") {
       void abrirCompletarPerfil();

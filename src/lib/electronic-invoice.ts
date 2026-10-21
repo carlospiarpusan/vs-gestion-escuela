@@ -1,6 +1,7 @@
 import { DOMParser as XmlDomParser } from "@xmldom/xmldom";
 import type { Element as XmlDomElement } from "@xmldom/xmldom";
-import JSZip from "jszip";
+import type JSZip from "jszip";
+import { isValidDateOnly } from "@/lib/date-utils";
 import { isTramitadorExpenseText } from "@/lib/expense-category";
 import type { CategoriaGasto, MetodoPagoGasto } from "@/types/database";
 
@@ -13,11 +14,14 @@ export interface ElectronicInvoicePreview {
   xmlEntryName: string;
   pdfEntryName: string | null;
   invoiceNumber: string;
+  documentType: "invoice" | "credit_note";
+  documentId: string | null;
   issueDate: string;
   dueDate: string | null;
   supplierName: string;
   supplierTaxId: string | null;
   customerName: string | null;
+  customerTaxId: string | null;
   payableAmount: number;
   subtotalAmount: number | null;
   taxAmount: number | null;
@@ -31,7 +35,13 @@ export interface ElectronicInvoicePreview {
 const MAX_ELECTRONIC_XML_BYTES = 5 * 1024 * 1024;
 const MAX_ELECTRONIC_ZIP_BYTES = 12 * 1024 * 1024;
 const INVOICE_XML_SIGNATURE =
-  /<(?:[a-z0-9_]+:)?(Invoice|CreditNote|AttachedDocument|ApplicationResponse)\b/i;
+  /<(?:[^\s<>/:]+:)?(Invoice|CreditNote|AttachedDocument|ApplicationResponse)\b/i;
+
+class UnsupportedElectronicInvoiceError extends Error {
+  constructor() {
+    super("El XML no corresponde a una factura electronica compatible.");
+  }
+}
 
 function normalizeText(value: string | null | undefined) {
   return (value || "").replace(/\s+/g, " ").trim();
@@ -154,7 +164,7 @@ function assertBinaryWithinLimit(
 
 function assertXmlLooksLikeInvoice(xmlContent: string) {
   if (!INVOICE_XML_SIGNATURE.test(xmlContent)) {
-    throw new Error("El XML no corresponde a una factura electronica compatible.");
+    throw new UnsupportedElectronicInvoiceError();
   }
 }
 
@@ -177,11 +187,11 @@ function extractEmbeddedInvoiceXml(root: XmlDomElement) {
   for (const description of descriptions) {
     const raw = normalizeText(description.textContent);
     if (!raw) continue;
-    if (!/<(Invoice|CreditNote)\b/i.test(raw)) continue;
+    if (!/<(?:[^\s<>/:]+:)?(Invoice|CreditNote)\b/i.test(raw)) continue;
 
     try {
       const embeddedRoot = parseXmlRoot(raw);
-      if (/(invoice|creditnote)/i.test(normalizeText(embeddedRoot.localName))) {
+      if (/^(invoice|creditnote)$/i.test(normalizeText(embeddedRoot.localName))) {
         return embeddedRoot;
       }
     } catch {
@@ -318,6 +328,8 @@ export function buildElectronicInvoiceNote(preview: ElectronicInvoicePreview) {
     preview.pdfEntryName ? `PDF detectado: ${preview.pdfEntryName}` : "",
     `Proveedor: ${preview.supplierName}`,
     preview.supplierTaxId ? `NIT proveedor: ${preview.supplierTaxId}` : "",
+    preview.customerTaxId ? `NIT adquirente: ${preview.customerTaxId}` : "",
+    preview.documentId ? `CUFE/CUDE: ${preview.documentId}` : "",
     `Moneda: ${preview.currency}`,
     preview.subtotalAmount !== null ? `Subtotal: ${preview.subtotalAmount}` : "",
     preview.taxAmount !== null ? `Impuestos: ${preview.taxAmount}` : "",
@@ -325,6 +337,51 @@ export function buildElectronicInvoiceNote(preview: ElectronicInvoicePreview) {
   ].filter(Boolean);
 
   return lines.join("\n");
+}
+
+export function normalizeInvoiceTaxId(value: string | null | undefined) {
+  // DIAN stores the verification digit separately; school configuration may include it.
+  return (value || "")
+    .trim()
+    .replace(/-\s*\d$/, "")
+    .replace(/\D/g, "");
+}
+
+export function buildElectronicInvoiceIdentity(preview: ElectronicInvoicePreview) {
+  const supplier = normalizeInvoiceTaxId(preview.supplierTaxId);
+  if (supplier) return JSON.stringify([supplier, preview.invoiceNumber.trim().toUpperCase()]);
+  return preview.documentId ? `cufe:${preview.documentId.trim().toLowerCase()}` : null;
+}
+
+export function assertInvoiceCanBecomeExpense(
+  preview: ElectronicInvoicePreview,
+  receiverTaxId: string | null
+) {
+  if (preview.documentType !== "invoice") {
+    throw new Error(
+      "Requiere revisión: la nota crédito debe aplicarse a su factura original, no registrarse como otro gasto."
+    );
+  }
+  if (preview.currency.toUpperCase() !== "COP") {
+    throw new Error(
+      `Requiere revisión: la factura está en ${preview.currency}; debes definir su valor en COP antes de registrar el gasto.`
+    );
+  }
+  const expected = normalizeInvoiceTaxId(receiverTaxId);
+  if (!normalizeInvoiceTaxId(preview.supplierTaxId)) {
+    throw new Error(
+      "Requiere revisión: falta el NIT del proveedor para identificar la factura sin duplicarla."
+    );
+  }
+  const received = normalizeInvoiceTaxId(preview.customerTaxId);
+  if (!expected || !received) {
+    throw new Error(
+      "Requiere revisión: falta el NIT de la empresa o del adquirente para comprobar a quién corresponde la factura."
+    );
+  }
+  if (received !== expected) {
+    throw new Error("Requiere revisión: el NIT del adquirente no corresponde a esta empresa.");
+  }
 }
 
 function scoreXmlEntry(name: string) {
@@ -337,22 +394,51 @@ function scoreXmlEntry(name: string) {
   return score;
 }
 
-function pickZipEntry(zip: JSZip, extension: string, scorer?: (name: string) => number) {
-  let bestEntry: JSZip.JSZipObject | null = null;
-  let bestScore = Number.NEGATIVE_INFINITY;
+function pickZipEntry(zip: JSZip, extension: string) {
+  return (
+    Object.values(zip.files).find(
+      (entry) => !entry.dir && entry.name.toLowerCase().endsWith(extension)
+    ) || null
+  );
+}
 
-  for (const entry of Object.values(zip.files)) {
-    if (entry.dir || !entry.name.toLowerCase().endsWith(extension)) continue;
-    if (!scorer) return entry;
-
-    const score = scorer(entry.name);
-    if (!bestEntry || score > bestScore) {
-      bestEntry = entry;
-      bestScore = score;
+function readZipXml(entry: JSZip.JSZipObject, remainingBytes: number) {
+  // JSZip documents this streaming API, but its bundled ZipObject types omit it.
+  const stream = (
+    entry as JSZip.JSZipObject & {
+      internalStream(type: "uint8array"): JSZip.JSZipStreamHelper<Uint8Array>;
     }
-  }
-
-  return bestEntry;
+  ).internalStream("uint8array");
+  return new Promise<{ xml: string; bytes: number }>((resolve, reject) => {
+    const decoder = new TextDecoder("utf-8");
+    const parts: string[] = [];
+    let bytes = 0;
+    let finished = false;
+    stream
+      .on("data", (chunk) => {
+        if (finished) return;
+        bytes += chunk.byteLength;
+        if (bytes > MAX_ELECTRONIC_XML_BYTES || bytes > remainingBytes) {
+          finished = true;
+          stream.pause();
+          reject(
+            new Error(
+              `El XML ${entry.name} supera el tamaño máximo permitido para importación automática.`
+            )
+          );
+          return;
+        }
+        parts.push(decoder.decode(chunk, { stream: true }));
+      })
+      .on("error", reject)
+      .on("end", () => {
+        if (finished) return;
+        finished = true;
+        parts.push(decoder.decode());
+        resolve({ xml: parts.join(""), bytes });
+      })
+      .resume();
+  });
 }
 
 function parseElectronicInvoiceXmlContent(
@@ -382,7 +468,7 @@ function parseElectronicInvoiceXmlContent(
   const descendantTextIndex = buildDescendantTextIndex(effectiveRoot);
 
   if (!["invoice", "creditnote"].includes(effectiveRootName)) {
-    throw new Error("El XML no corresponde a una factura electronica compatible.");
+    throw new UnsupportedElectronicInvoiceError();
   }
 
   const invoiceNumber =
@@ -392,7 +478,7 @@ function parseElectronicInvoiceXmlContent(
     findTextByPaths(effectiveRoot, [[["IssueDate"]]]) ||
     findDescendantTextFromIndex(descendantTextIndex, ["IssueDate"]);
   const dueDate =
-    findTextByPaths(effectiveRoot, [[["DueDate"]]]) ||
+    findTextByPaths(effectiveRoot, [[["DueDate"]], [["PaymentMeans"], ["PaymentDueDate"]]]) ||
     findDescendantTextFromIndex(descendantTextIndex, ["DueDate"]);
   const supplierName =
     findTextByPaths(effectiveRoot, [
@@ -402,17 +488,21 @@ function parseElectronicInvoiceXmlContent(
     ]) ||
     findDescendantTextFromIndex(descendantTextIndex, ["RegistrationName", "Name"]) ||
     "Proveedor sin nombre";
-  const supplierTaxId =
-    findTextByPaths(effectiveRoot, [
-      [["AccountingSupplierParty"], ["Party"], ["PartyTaxScheme"], ["CompanyID"]],
-      [["AccountingSupplierParty"], ["Party"], ["PartyLegalEntity"], ["CompanyID"]],
-      [["AccountingSupplierParty"], ["Party"], ["PartyIdentification"], ["ID"]],
-    ]) || findDescendantTextFromIndex(descendantTextIndex, ["CompanyID"]);
+  const supplierTaxId = findTextByPaths(effectiveRoot, [
+    [["AccountingSupplierParty"], ["Party"], ["PartyTaxScheme"], ["CompanyID"]],
+    [["AccountingSupplierParty"], ["Party"], ["PartyLegalEntity"], ["CompanyID"]],
+    [["AccountingSupplierParty"], ["Party"], ["PartyIdentification"], ["ID"]],
+  ]);
   const customerName =
     findTextByPaths(effectiveRoot, [
       [["AccountingCustomerParty"], ["Party"], ["PartyLegalEntity"], ["RegistrationName"]],
       [["AccountingCustomerParty"], ["Party"], ["PartyName"], ["Name"]],
     ]) || findDescendantTextFromIndex(descendantTextIndex, ["AccountingCustomerParty"]);
+  const customerTaxId = findTextByPaths(effectiveRoot, [
+    [["AccountingCustomerParty"], ["Party"], ["PartyTaxScheme"], ["CompanyID"]],
+    [["AccountingCustomerParty"], ["Party"], ["PartyLegalEntity"], ["CompanyID"]],
+    [["AccountingCustomerParty"], ["Party"], ["PartyIdentification"], ["ID"]],
+  ]);
   const payableAmount =
     parseAmount(
       findTextByPaths(effectiveRoot, [
@@ -464,9 +554,11 @@ function parseElectronicInvoiceXmlContent(
     throw new Error("No se encontro el numero de factura en el XML.");
   }
 
-  if (!issueDate) {
-    throw new Error("No se encontro la fecha de expedicion en el XML.");
+  if (!issueDate || !isValidDateOnly(issueDate)) {
+    throw new Error("No se encontro una fecha de expedicion valida en el XML.");
   }
+  if (dueDate && !isValidDateOnly(dueDate))
+    throw new Error("La fecha de vencimiento del XML no es valida.");
 
   if (!payableAmount || payableAmount <= 0) {
     throw new Error("No se encontro un valor total valido en la factura electronica.");
@@ -478,11 +570,14 @@ function parseElectronicInvoiceXmlContent(
     xmlEntryName: metadata.xmlEntryName || metadata.fileName || "factura.xml",
     pdfEntryName: metadata.pdfEntryName ?? null,
     invoiceNumber,
+    documentType: effectiveRootName === "creditnote" ? "credit_note" : "invoice",
+    documentId: findTextByPaths(effectiveRoot, [[["UUID"]]]),
     issueDate,
     dueDate,
     supplierName,
     supplierTaxId,
     customerName,
+    customerTaxId,
     payableAmount,
     subtotalAmount,
     taxAmount,
@@ -526,22 +621,33 @@ export async function parseElectronicInvoiceBinary(input: {
       MAX_ELECTRONIC_ZIP_BYTES,
       "El ZIP"
     );
-    const zip = await JSZip.loadAsync(contentBytes);
-    const xmlEntry = pickZipEntry(zip, ".xml", scoreXmlEntry);
+    const { default: ZipReader } = await import("jszip");
+    const zip = await ZipReader.loadAsync(contentBytes);
+    const xmlEntries = Object.values(zip.files)
+      .filter((entry) => !entry.dir && entry.name.toLowerCase().endsWith(".xml"))
+      .sort((left, right) => scoreXmlEntry(right.name) - scoreXmlEntry(left.name));
 
-    if (!xmlEntry) {
+    if (!xmlEntries.length) {
       throw new Error("El ZIP no contiene un XML de factura electronica.");
     }
 
     const pdfEntry = pickZipEntry(zip, ".pdf");
-    const xmlContent = await xmlEntry.async("text");
-
-    return parseElectronicInvoiceXmlContent(xmlContent, {
-      fileName: input.fileName,
-      sourceFormat: "zip",
-      xmlEntryName: xmlEntry.name,
-      pdfEntryName: pdfEntry?.name || null,
-    });
+    let remainingBytes = MAX_ELECTRONIC_ZIP_BYTES;
+    for (const xmlEntry of xmlEntries) {
+      const content = await readZipXml(xmlEntry, remainingBytes);
+      remainingBytes -= content.bytes;
+      try {
+        return parseElectronicInvoiceXmlContent(content.xml, {
+          fileName: input.fileName,
+          sourceFormat: "zip",
+          xmlEntryName: xmlEntry.name,
+          pdfEntryName: pdfEntry?.name || null,
+        });
+      } catch (error) {
+        if (!(error instanceof UnsupportedElectronicInvoiceError)) throw error;
+      }
+    }
+    throw new UnsupportedElectronicInvoiceError();
   }
 
   if (lowerName.endsWith(".xml")) {

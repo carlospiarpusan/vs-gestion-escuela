@@ -4,6 +4,15 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchJsonWithRetry } from "@/lib/retry";
 import PageScaffold from "@/components/dashboard/PageScaffold";
+import type { TipoPlantillaContratoEscuela } from "@/types/database";
+import {
+  CONTRACT_PAGE_BREAK,
+  CONTRACT_TEMPLATE_LABELS,
+  getSinFronterasTemplates,
+  replaceContractVariables,
+  SIN_FRONTERAS_SCHOOL_ID,
+  splitContractTemplate,
+} from "@/lib/contract-template";
 import {
   Save,
   FileText,
@@ -29,9 +38,18 @@ const VARIABLES_DISPONIBLES = [
   { var: "{{TELEFONO_CEA}}", desc: "Telefono de la escuela", example: "300 123 4567" },
   { var: "{{ALUMNO_NOMBRE}}", desc: "Nombre completo del alumno", example: "Juan Perez Lopez" },
   { var: "{{ALUMNO_DNI}}", desc: "Documento del alumno", example: "1.023.456.789" },
+  { var: "{{ALUMNO_TIPO_DOCUMENTO}}", desc: "Tipo de documento", example: "CC" },
+  { var: "{{ALUMNO_LUGAR_EXPEDICION}}", desc: "Lugar de expedicion", example: "Ipiales" },
   { var: "{{ALUMNO_DIRECCION}}", desc: "Direccion del alumno", example: "Calle 45 #12-34" },
   { var: "{{ALUMNO_TELEFONO}}", desc: "Telefono del alumno", example: "310 987 6543" },
   { var: "{{CATEGORIAS}}", desc: "Categorias inscritas", example: "B1, A2" },
+  { var: "{{NUMERO_CONTRATO}}", desc: "Numero del contrato", example: "COM-0001" },
+  { var: "{{FORMACION_CONDUCCION}}", desc: "Tipo de formacion", example: "motocicleta y vehículo" },
+  {
+    var: "{{REQUISITO_EDAD}}",
+    desc: "Edad requerida por categoria",
+    example: "Tener 16 años cumplidos.",
+  },
   { var: "{{FECHA_CONTRATO}}", desc: "Fecha de emision", example: "30 de marzo de 2026" },
   { var: "{{CIUDAD_FIRMA}}", desc: "Ciudad de firma", example: "Bogota" },
   { var: "{{SEDE_DIRECCION}}", desc: "Direccion de la sede", example: "Av. Principal #5-10" },
@@ -122,11 +140,10 @@ function insertAtCursor(
 
 /* ─── Preview renderer ─── */
 function replaceWithExamples(text: string): string {
-  let result = text;
-  for (const v of VARIABLES_DISPONIBLES) {
-    result = result.replaceAll(v.var, v.example);
-  }
-  return result;
+  return replaceContractVariables(
+    text,
+    Object.fromEntries(VARIABLES_DISPONIBLES.map((v) => [v.var.slice(2, -2), v.example]))
+  );
 }
 
 function ContractPreview({ text }: { text: string }) {
@@ -285,6 +302,7 @@ function ContractEditorSection({
         <div className="p-4">
           {editorMode === "editar" ? (
             <textarea
+              aria-label={pageLabel}
               ref={textareaRef}
               className={`${inputCls} min-h-[420px] resize-y font-mono text-[12px] leading-[1.8] tracking-wide`}
               value={text}
@@ -329,19 +347,62 @@ function ContractEditorSection({
 /* ================================================================== */
 /*  MAIN PAGE                                                         */
 /* ================================================================== */
+type TemplateDraft = { page1: string; page2: string; title: string; dirty: boolean };
+type TemplateDrafts = Record<TipoPlantillaContratoEscuela, TemplateDraft>;
+function defaultTemplateDrafts(schoolId?: string): TemplateDrafts {
+  const official = schoolId === SIN_FRONTERAS_SCHOOL_ID ? getSinFronterasTemplates() : [];
+  return Object.fromEntries(
+    Object.keys(CONTRACT_TEMPLATE_LABELS).map((key) => {
+      const type = key as TipoPlantillaContratoEscuela;
+      const template = official.find((item) => item.tipo_plantilla === type);
+      const [page1, page2] = template
+        ? splitContractTemplate(template.html_plantilla)
+        : [DEFAULT_PAGE1, DEFAULT_PAGE2];
+      return [
+        type,
+        {
+          page1,
+          page2,
+          title: template?.titulo ?? `Contrato ${CONTRACT_TEMPLATE_LABELS[type]}`,
+          dirty: false,
+        },
+      ];
+    })
+  ) as TemplateDrafts;
+}
+
 export default function ContratosPage() {
   const { perfil } = useAuth();
 
   const [tab, setTab] = useState<TabId>("encabezado");
   const [config, setConfig] = useState<ConfigForm>(emptyConfig);
-  const [textoPagina1, setTextoPagina1] = useState(DEFAULT_PAGE1);
-  const [textoPagina2, setTextoPagina2] = useState(DEFAULT_PAGE2);
+  const [schoolId, setSchoolId] = useState<string>();
+  const [templateType, setTemplateType] = useState<TipoPlantillaContratoEscuela>("vehiculo");
+  const [drafts, setDrafts] = useState<TemplateDrafts>(() => defaultTemplateDrafts());
+  const textoPagina1 = drafts[templateType].page1;
+  const textoPagina2 = drafts[templateType].page2;
+  const updateText = (page: "page1" | "page2", value: string | ((previous: string) => string)) => {
+    setDrafts((previous) => ({
+      ...previous,
+      [templateType]: {
+        ...previous[templateType],
+        dirty: true,
+        [page]: typeof value === "function" ? value(previous[templateType][page]) : value,
+      },
+    }));
+  };
+  const setTextoPagina1 = (value: string | ((previous: string) => string)) =>
+    updateText("page1", value);
+  const setTextoPagina2 = (value: string | ((previous: string) => string)) =>
+    updateText("page2", value);
+  const defaultDraft = defaultTemplateDrafts(schoolId)[templateType];
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("editar");
   const [activePage, setActivePage] = useState<1 | 2>(1);
   const [showVarsPanel, setShowVarsPanel] = useState(true);
+  const saveLock = useRef(false);
 
   const textarea1Ref = useRef<HTMLTextAreaElement | null>(null);
   const textarea2Ref = useRef<HTMLTextAreaElement | null>(null);
@@ -384,18 +445,20 @@ export default function ContratosPage() {
           });
         }
 
-        if (res.plantillas?.length) {
-          const p = res.plantillas[0];
-          if (p.html_plantilla) {
-            const parts = p.html_plantilla.split("\n---PAGE_BREAK---\n");
-            if (parts.length >= 2) {
-              setTextoPagina1(parts[0]);
-              setTextoPagina2(parts[1]);
-            } else {
-              setTextoPagina1(p.html_plantilla);
-            }
-          }
+        const loadedSchoolId = res.escuelaId ?? res.configuracion?.escuela_id;
+        setSchoolId(loadedSchoolId);
+        const loaded = defaultTemplateDrafts(loadedSchoolId);
+        for (const p of res.plantillas ?? []) {
+          if (
+            !Object.hasOwn(CONTRACT_TEMPLATE_LABELS, p.tipo_plantilla) ||
+            typeof p.html_plantilla !== "string"
+          )
+            continue;
+          const type = p.tipo_plantilla as TipoPlantillaContratoEscuela;
+          const [page1, page2] = splitContractTemplate(p.html_plantilla);
+          loaded[type] = { page1, page2, title: p.titulo || loaded[type].title, dirty: false };
         }
+        setDrafts(loaded);
       } catch {
         showToast("Error al cargar configuracion", "err");
       } finally {
@@ -409,17 +472,19 @@ export default function ContratosPage() {
   }, [perfil, showToast]);
 
   const handleSave = async () => {
+    if (saveLock.current) return;
+    saveLock.current = true;
     setSaving(true);
     try {
       const body = {
         configuracion: config,
-        plantillas: [
-          {
-            tipo_plantilla: "vehiculo",
-            titulo: "Contrato estandar",
-            html_plantilla: textoPagina1 + "\n---PAGE_BREAK---\n" + textoPagina2,
-          },
-        ],
+        plantillas: (Object.keys(drafts) as TipoPlantillaContratoEscuela[])
+          .filter((type) => type === templateType || drafts[type].dirty)
+          .map((type) => ({
+            tipo_plantilla: type,
+            titulo: drafts[type].title,
+            html_plantilla: drafts[type].page1 + CONTRACT_PAGE_BREAK + drafts[type].page2,
+          })),
       };
 
       await fetchJsonWithRetry("/api/contratos/configuracion", {
@@ -429,9 +494,21 @@ export default function ContratosPage() {
       });
 
       showToast("Configuracion guardada correctamente");
+      setDrafts(
+        (current) =>
+          Object.fromEntries(
+            Object.entries(current).map(([key, draft]) => [
+              key,
+              draft === drafts[key as TipoPlantillaContratoEscuela]
+                ? { ...draft, dirty: false }
+                : draft,
+            ])
+          ) as TemplateDrafts
+      );
     } catch {
       showToast("Error al guardar", "err");
     } finally {
+      saveLock.current = false;
       setSaving(false);
     }
   };
@@ -633,6 +710,23 @@ export default function ContratosPage() {
           {/* ─── TAB: TEXTO DEL CONTRATO ─── */}
           {tab === "texto" && (
             <div className="space-y-5">
+              <label className="apple-label block max-w-xs">
+                Tipo de contrato
+                <select
+                  className="apple-input mt-1"
+                  value={templateType}
+                  disabled={saving}
+                  onChange={(event) =>
+                    setTemplateType(event.target.value as TipoPlantillaContratoEscuela)
+                  }
+                >
+                  {Object.entries(CONTRACT_TEMPLATE_LABELS).map(([type, label]) => (
+                    <option key={type} value={type}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {/* Toolbar */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -707,11 +801,11 @@ export default function ContratosPage() {
               <div className="space-y-4">
                 <div onFocus={() => setActivePage(1)}>
                   <ContractEditorSection
-                    pageLabel="Pagina 1 — Clausulas PRIMERA a SEPTIMA"
+                    pageLabel="Pagina 1"
                     pageNumber={1}
                     text={textoPagina1}
                     setText={setTextoPagina1}
-                    defaultText={DEFAULT_PAGE1}
+                    defaultText={defaultDraft.page1}
                     textareaRef={textarea1Ref}
                     editorMode={editorMode}
                   />
@@ -719,11 +813,11 @@ export default function ContratosPage() {
 
                 <div onFocus={() => setActivePage(2)}>
                   <ContractEditorSection
-                    pageLabel="Pagina 2 — Clausulas OCTAVA a DECIMA TERCERA"
+                    pageLabel="Pagina 2"
                     pageNumber={2}
                     text={textoPagina2}
                     setText={setTextoPagina2}
-                    defaultText={DEFAULT_PAGE2}
+                    defaultText={defaultDraft.page2}
                     textareaRef={textarea2Ref}
                     editorMode={editorMode}
                   />

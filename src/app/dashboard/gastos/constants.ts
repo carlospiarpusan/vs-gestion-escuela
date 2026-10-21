@@ -153,7 +153,7 @@ export const emptyEmailIntegrationForm: EmailInvoiceConfigFormState = {
   mailbox: "INBOX",
   from_filter: "",
   subject_filter: "",
-  import_only_unseen: true,
+  import_only_unseen: false,
   auto_sync: true,
   activa: true,
 };

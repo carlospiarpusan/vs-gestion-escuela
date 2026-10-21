@@ -607,7 +607,7 @@ export function ExpenseFacturasSection({
             <div className="flex items-center gap-2">
               <Mail size={18} className="text-[#0071e3]" />
               <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                Correo de facturas
+                Correo de facturas de la empresa
               </h3>
               <span
                 className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
@@ -620,8 +620,9 @@ export function ExpenseFacturasSection({
               </span>
             </div>
             <p className="mt-2 text-sm text-[#86868b]">
-              Conecta un buzón IMAP para leer adjuntos XML o ZIP y registrar automáticamente las
-              facturas electrónicas en gastos.
+              Conecta el buzón donde los proveedores envían las facturas a tu empresa. El sistema
+              revisa sus adjuntos XML o ZIP y registra las facturas electrónicas como gastos de la
+              sede contable seleccionada.
             </p>
           </div>
 
@@ -670,12 +671,16 @@ export function ExpenseFacturasSection({
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <AutomationStat
-            label="Buzón"
+            label="Buzón de la empresa"
             value={emailLoading ? "Cargando..." : emailIntegration?.correo || "Sin configurar"}
             detail={
               emailIntegration
-                ? `${emailIntegration.imap_host}:${emailIntegration.imap_port}`
-                : "Conecta un correo con IMAP habilitado"
+                ? emailIntegration.provider === "gmail_google"
+                  ? "Google / Gmail"
+                  : emailIntegration.provider === "outlook_microsoft"
+                    ? "Microsoft / Hotmail / Outlook"
+                    : `${emailIntegration.imap_host}:${emailIntegration.imap_port}`
+                : "Conecta Google, Hotmail/Outlook u otro correo"
             }
           />
           <AutomationStat
@@ -684,7 +689,7 @@ export function ExpenseFacturasSection({
             detail={
               emailIntegration?.import_only_unseen
                 ? "Solo correos no leídos"
-                : "Correos nuevos por UID"
+                : "Incluye correos leídos"
             }
           />
           <AutomationStat
@@ -696,11 +701,15 @@ export function ExpenseFacturasSection({
                   })
                 : "Aún no sincronizado"
             }
-            detail={`UID máximo: ${emailIntegration?.last_uid || "—"}`}
+            detail="Registro de la última revisión del buzón"
           />
           <AutomationStat
             label="Modo automático"
-            value={emailIntegration?.auto_sync ? "Cron activo" : "Solo manual"}
+            value={
+              emailIntegration?.activa && emailIntegration.auto_sync
+                ? "Revisión diaria"
+                : "Solo manual"
+            }
             detail={
               emailIntegration?.subject_filter || emailIntegration?.from_filter
                 ? `Filtros: ${emailIntegration?.from_filter || "sin remitente"} / ${emailIntegration?.subject_filter || "sin asunto"}`

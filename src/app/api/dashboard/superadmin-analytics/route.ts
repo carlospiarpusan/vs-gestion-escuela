@@ -22,7 +22,6 @@ type TableVolume = {
 type MonthlyGrowth = {
   mes: string;
   alumnos: number;
-  clases: number;
   ingresos: number;
   gastos: number;
   examenes: number;
@@ -34,7 +33,6 @@ type TopSchool = {
   plan: string;
   estado: string;
   alumnos_activos: number;
-  clases_mes: number;
   ingresos_mes: number;
   instructores_activos: number;
   ultimo_acceso_admin: string | null;
@@ -98,8 +96,6 @@ export async function GET(request: Request) {
             select tabla, registros from (
               select 'alumnos' as tabla, count(*)::int as registros from public.alumnos
               union all
-              select 'clases', count(*)::int from public.clases
-              union all
               select 'instructores', count(*)::int from public.instructores
               union all
               select 'vehiculos', count(*)::int from public.vehiculos
@@ -138,12 +134,6 @@ export async function GET(request: Request) {
               where (created_at AT TIME ZONE '${APP_TIME_ZONE}') >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) - interval '5 months'
               group by 1
             ),
-            clases_m as (
-              select date_trunc('month', fecha)::date as mes, count(*)::int as cnt
-              from public.clases
-              where fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) - interval '5 months'
-              group by 1
-            ),
             ingresos_m as (
               select date_trunc('month', fecha)::date as mes, coalesce(sum(monto),0)::numeric as cnt
               from public.ingresos
@@ -166,13 +156,11 @@ export async function GET(request: Request) {
             select
               to_char(m.mes, 'YYYY-MM') as mes,
               coalesce(a.cnt, 0)::int as alumnos,
-              coalesce(c.cnt, 0)::int as clases,
               coalesce(i.cnt, 0)::numeric as ingresos,
               coalesce(g.cnt, 0)::numeric as gastos,
               coalesce(e.cnt, 0)::int as examenes
             from meses m
             left join alumnos_m a on a.mes = m.mes
-            left join clases_m c on c.mes = m.mes
             left join ingresos_m i on i.mes = m.mes
             left join gastos_m g on g.mes = m.mes
             left join examenes_m e on e.mes = m.mes
@@ -181,14 +169,7 @@ export async function GET(request: Request) {
 
             // ── 4. Top 10 escuelas más activas ──────────────────────
             pool.query<TopSchool>(`
-            with clases_agg as (
-              select escuela_id, count(*)::int as clases_mes
-              from public.clases
-              where fecha >= date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date))
-                and fecha < date_trunc('month', ((now() AT TIME ZONE '${APP_TIME_ZONE}')::date)) + interval '1 month'
-              group by escuela_id
-            ),
-            ingresos_agg as (
+            with ingresos_agg as (
               select escuela_id, coalesce(sum(monto),0)::numeric as ingresos_mes
               from public.ingresos
               where estado = 'cobrado'
@@ -222,18 +203,16 @@ export async function GET(request: Request) {
               e.plan,
               e.estado,
               coalesce(al.alumnos_activos, 0)::int as alumnos_activos,
-              coalesce(cl.clases_mes, 0)::int as clases_mes,
               coalesce(ing.ingresos_mes, 0)::numeric as ingresos_mes,
               coalesce(ins.instructores_activos, 0)::int as instructores_activos,
               ad.ultimo_acceso_admin::text
             from public.escuelas e
-            left join clases_agg cl on cl.escuela_id = e.id
             left join ingresos_agg ing on ing.escuela_id = e.id
             left join alumnos_agg al on al.escuela_id = e.id
             left join instructores_agg ins on ins.escuela_id = e.id
             left join admin_agg ad on ad.escuela_id = e.id
             where e.estado = 'activa'
-            order by coalesce(cl.clases_mes, 0) + coalesce(al.alumnos_activos, 0) desc
+            order by coalesce(al.alumnos_activos, 0) desc, coalesce(ing.ingresos_mes, 0) desc, e.id
             limit 10
           `),
 
@@ -280,7 +259,6 @@ export async function GET(request: Request) {
           monthlyGrowth: monthlyGrowthRes.rows.map((r) => ({
             mes: r.mes,
             alumnos: Number(r.alumnos),
-            clases: Number(r.clases),
             ingresos: Number(r.ingresos),
             gastos: Number(r.gastos),
             examenes: Number(r.examenes),
@@ -288,7 +266,6 @@ export async function GET(request: Request) {
           topSchools: topSchoolsRes.rows.map((r) => ({
             ...r,
             alumnos_activos: Number(r.alumnos_activos),
-            clases_mes: Number(r.clases_mes),
             ingresos_mes: Number(r.ingresos_mes),
             instructores_activos: Number(r.instructores_activos),
           })),

@@ -3,8 +3,8 @@ import { z } from "zod";
 import { applyBillingHubPaymentConfirmation } from "@/lib/school-subscription-service";
 import { getServerDbPool } from "@/lib/server-db";
 import {
-  buildDashboardCacheTags,
-  buildDashboardListCacheTags,
+  buildDashboardInvalidationTags,
+  buildDashboardListInvalidationTags,
   buildScopeCacheTags,
 } from "@/lib/server-cache-tags";
 import { revalidateServerReadCache } from "@/lib/server-read-cache";
@@ -50,8 +50,8 @@ export async function POST(request: Request) {
     await applyBillingHubPaymentConfirmation(getServerDbPool(), parsed.data, parsed.data);
 
     revalidateServerReadCache([
-      ...buildDashboardCacheTags("superadmin", { escuelaId: parsed.data.empresa_id }),
-      ...buildDashboardListCacheTags("subscriptions", { escuelaId: parsed.data.empresa_id }),
+      ...buildDashboardInvalidationTags("superadmin", { escuelaId: parsed.data.empresa_id }),
+      ...buildDashboardListInvalidationTags("subscriptions", { escuelaId: parsed.data.empresa_id }),
       ...buildScopeCacheTags({ escuelaId: parsed.data.empresa_id }),
     ]);
 

@@ -146,6 +146,7 @@ export interface Alumno {
   telefono: string;
   lugar_expedicion_documento: string | null;
   fecha_nacimiento: string | null;
+  sexo?: import("@/lib/ansv").AnsvSex | null;
   direccion: string | null;
   tipo_permiso: TipoPermiso;
   categorias: string[] | null;
@@ -172,6 +173,7 @@ export interface Alumno {
 }
 
 export interface MatriculaAlumno {
+  ansv?: import("@/lib/ansv").AnsvSnapshot | null;
   id: string;
   escuela_id: string;
   sede_id: string;
@@ -362,7 +364,7 @@ export interface Gasto {
   created_at: string;
 }
 
-export type FacturaCorreoProveedor = "imap" | "gmail_google";
+export type FacturaCorreoProveedor = "imap" | "gmail_google" | "outlook_microsoft";
 
 export interface FacturaCorreoIntegracion {
   id: string;

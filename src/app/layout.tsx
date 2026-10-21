@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
+import VercelObservability from "@/components/VercelObservability";
 import PerformanceVitals from "@/components/PerformanceVitals";
 import { DeviceVariantProvider } from "@/contexts/DeviceVariantContext";
 import {
@@ -97,7 +96,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const enableVercelObservability = process.env.VERCEL === "1";
+  const enableVercelObservability =
+    process.env.VERCEL === "1" && process.env.VERCEL_ENV === "production";
 
   return (
     <html lang="es-CO" data-device-variant="desktop" data-scroll-behavior="smooth">
@@ -120,12 +120,7 @@ export default function RootLayout({
         <DeviceVariantProvider initialVariant="desktop">
           {children}
           <PerformanceVitals />
-          {enableVercelObservability ? (
-            <>
-              <Analytics />
-              <SpeedInsights />
-            </>
-          ) : null}
+          {enableVercelObservability ? <VercelObservability /> : null}
         </DeviceVariantProvider>
       </body>
     </html>

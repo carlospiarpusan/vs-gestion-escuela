@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase";
+import { validateEnrollmentBirthDate } from "@/lib/ansv";
 import { useAuth } from "@/hooks/useAuth";
 import { useDraftForm } from "@/hooks/useDraftForm";
 import DataTable from "@/components/dashboard/DataTable";
@@ -17,6 +18,7 @@ import {
 } from "@/lib/course-categories";
 import {
   APP_TIME_ZONE,
+  extractDateOnly,
   formatDateOnlyForDisplay,
   getCurrentYear,
   getTodayDateString,
@@ -25,8 +27,6 @@ import {
   getDashboardListCached,
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
-import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
-import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import type { Ingreso, MetodoPago, TipoRegistroAlumno } from "@/types/database";
 import {
@@ -123,6 +123,7 @@ export default function AlumnosPage() {
   const [editing, setEditing] = useState<AlumnoRow | null>(null);
   const [deleting, setDeleting] = useState<AlumnoRow | null>(null);
   const [saving, setSaving] = useState(false);
+  const [alumnoSaveError, setAlumnoSaveError] = useState("");
   const {
     value: form,
     setValue: setForm,
@@ -135,13 +136,16 @@ export default function AlumnosPage() {
   const [matriculaOpen, setMatriculaOpen] = useState(false);
   const [matriculaAlumno, setMatriculaAlumno] = useState<AlumnoRow | null>(null);
   const [matriculaSaving, setMatriculaSaving] = useState(false);
+  const [matriculaEditing, setMatriculaEditing] = useState<MatriculaResumen | null>(null);
+  const [matriculaSaveError, setMatriculaSaveError] = useState("");
   const {
     value: matriculaForm,
     setValue: setMatriculaForm,
     restoreDraft: restoreMatriculaDraft,
     clearDraft: clearMatriculaDraft,
   } = useDraftForm("dashboard:alumnos:matricula-form", emptyMatriculaForm, {
-    persist: matriculaOpen,
+    persist: matriculaOpen && !matriculaEditing,
+    contextId: matriculaAlumno?.id,
   });
 
   const [abonoOpen, setAbonoOpen] = useState(false);
@@ -155,6 +159,7 @@ export default function AlumnosPage() {
   const [abonoConcepto, setAbonoConcepto] = useState("");
   const [abonoFecha, setAbonoFecha] = useState(getTodayDateString());
   const [abonoSaving, setAbonoSaving] = useState(false);
+  const abonoOperation = useRef<{ signature: string; id: string } | null>(null);
 
   const fetchIdRef = useRef(0);
   const catalogsLoadedRef = useRef(false);
@@ -349,22 +354,41 @@ export default function AlumnosPage() {
   };
 
   const toggleCategoria = (cat: string) => {
-    setForm((prev) => ({
-      ...prev,
-      categorias:
+    setForm((prev) => {
+      const nextCategorias =
         prev.tipo_registro === "aptitud_conductor"
           ? prev.categorias[0] === cat
             ? []
             : [cat]
-          : toggleCourseCategorySelection(prev.categorias, cat),
-    }));
+          : toggleCourseCategorySelection(prev.categorias, cat);
+
+      let nextAnsv = prev.ansv_categoria;
+      if (!nextCategorias.includes(nextAnsv)) {
+        nextAnsv = nextCategorias.length > 0 ? nextCategorias[0] : "";
+      }
+
+      return {
+        ...prev,
+        ansv_categoria: nextAnsv,
+        categorias: nextCategorias,
+      };
+    });
   };
 
   const toggleMatriculaCategoria = (cat: string) => {
-    setMatriculaForm((prev) => ({
-      ...prev,
-      categorias: toggleCourseCategorySelection(prev.categorias, cat),
-    }));
+    setMatriculaForm((prev) => {
+      const nextCategorias = toggleCourseCategorySelection(prev.categorias, cat);
+      let nextAnsv = prev.ansv_categoria;
+      if (!nextCategorias.includes(nextAnsv)) {
+        nextAnsv = nextCategorias.length > 0 ? nextCategorias[0] : "";
+      }
+
+      return {
+        ...prev,
+        ansv_categoria: nextAnsv,
+        categorias: nextCategorias,
+      };
+    });
   };
 
   // ─── Modal openers ──────────────────────────────────────────────────
@@ -372,10 +396,16 @@ export default function AlumnosPage() {
   const openCreate = () => {
     if (!canCreateStudent) return;
     setEditing(null);
+    setAlumnoSaveError("");
     restoreAlumnoDraft(emptyForm);
     setForm((current) => {
       const restored = applyAlumnoBillingDefaults({ ...emptyForm, ...current });
-      return { ...restored, categorias: normalizeStoredCourseCategories(restored.categorias) };
+      const categorias = normalizeStoredCourseCategories(restored.categorias);
+      let ansv_categoria = restored.ansv_categoria || "";
+      if (categorias.length > 0 && (!ansv_categoria || !categorias.includes(ansv_categoria))) {
+        ansv_categoria = categorias[0];
+      }
+      return { ...restored, categorias, ansv_categoria };
     });
     setModalOpen(true);
   };
@@ -383,7 +413,15 @@ export default function AlumnosPage() {
   const openEdit = (alumno: AlumnoRow) => {
     if (!canEditStudent) return;
     const matricula = alumno.matriculas[0] ?? null;
+    const categorias = normalizeStoredCourseCategories(
+      (matricula?.categorias as string[] | undefined) || alumno.categorias_resumen
+    );
+    let ansv_categoria = matricula?.ansv?.categoria || "";
+    if (categorias.length > 0 && (!ansv_categoria || !categorias.includes(ansv_categoria))) {
+      ansv_categoria = categorias[0];
+    }
     setEditing(alumno);
+    setAlumnoSaveError("");
     setForm({
       tipo_registro: alumno.tipo_registro,
       nombre: alumno.nombre,
@@ -392,8 +430,10 @@ export default function AlumnosPage() {
       tipo_documento: alumno.tipo_documento || "CC",
       email: alumno.email || "",
       lugar_expedicion_documento: alumno.lugar_expedicion_documento || "",
-      telefono: alumno.telefono,
-      fecha_nacimiento: alumno.fecha_nacimiento || "",
+      telefono: alumno.telefono || "",
+      fecha_nacimiento: extractDateOnly(alumno.fecha_nacimiento) || "",
+      sexo: alumno.sexo || "",
+      ansv_categoria,
       direccion: alumno.direccion || "",
       ciudad: alumno.ciudad || "",
       departamento: alumno.departamento || "",
@@ -402,21 +442,20 @@ export default function AlumnosPage() {
       regimen_fiscal: alumno.datos_facturacion?.taxRegime || "",
       responsabilidad_fiscal: alumno.datos_facturacion?.responsibilities || "R-99-PN",
       tipo_permiso: alumno.tipo_permiso,
-      categorias: normalizeStoredCourseCategories(
-        (matricula?.categorias as string[] | undefined) || alumno.categorias_resumen
-      ),
+      categorias,
       estado: alumno.estado,
       empresa_convenio: alumno.empresa_convenio || "",
       nota_examen_teorico:
         alumno.nota_examen_teorico !== null ? String(alumno.nota_examen_teorico) : "",
-      fecha_examen_teorico: alumno.fecha_examen_teorico || "",
+      fecha_examen_teorico: extractDateOnly(alumno.fecha_examen_teorico) || "",
       nota_examen_practico:
         alumno.nota_examen_practico !== null ? String(alumno.nota_examen_practico) : "",
-      fecha_examen_practico: alumno.fecha_examen_practico || "",
+      fecha_examen_practico: extractDateOnly(alumno.fecha_examen_practico) || "",
       notas: alumno.notas || "",
       numero_contrato: matricula?.numero_contrato || alumno.numero_contrato || "",
       fecha_inscripcion:
-        matricula?.fecha_inscripcion || alumno.fecha_inscripcion || getTodayDateString(),
+        extractDateOnly(matricula?.fecha_inscripcion || alumno.fecha_inscripcion) ||
+        getTodayDateString(),
       valor_total: matricula?.valor_total
         ? String(matricula.valor_total)
         : alumno.valor_total
@@ -443,14 +482,56 @@ export default function AlumnosPage() {
   const openNewMatricula = (alumno: AlumnoRow) => {
     if (!canEditStudent) return;
     setMatriculaAlumno(alumno);
-    restoreMatriculaDraft({
-      ...emptyMatriculaForm,
-      fecha_inscripcion: getTodayDateString(),
-    });
-    setMatriculaForm((current) => ({
-      ...current,
-      categorias: normalizeStoredCourseCategories(current.categorias),
-    }));
+    setMatriculaEditing(null);
+    setMatriculaSaveError("");
+    restoreMatriculaDraft(
+      {
+        ...emptyMatriculaForm,
+        fecha_inscripcion: getTodayDateString(),
+      },
+      alumno.id
+    );
+    setMatriculaForm((current) => {
+      const categorias = normalizeStoredCourseCategories(current.categorias);
+      let ansv_categoria = current.ansv_categoria || "";
+      if (categorias.length > 0 && (!ansv_categoria || !categorias.includes(ansv_categoria))) {
+        ansv_categoria = categorias[0];
+      }
+      return {
+        ...current,
+        categorias,
+        ansv_categoria,
+      };
+    }, alumno.id);
+    setMatriculaOpen(true);
+  };
+
+  const openEditMatricula = (alumno: AlumnoRow, matricula: MatriculaResumen) => {
+    if (!canEditStudent) return;
+    setMatriculaAlumno(alumno);
+    setMatriculaEditing(matricula);
+    setMatriculaSaveError("");
+    const categorias = normalizeStoredCourseCategories(matricula.categorias || []);
+    let ansv_categoria = matricula.ansv?.categoria || "";
+    if (categorias.length > 0 && (!ansv_categoria || !categorias.includes(ansv_categoria))) {
+      ansv_categoria = categorias[0];
+    }
+    setMatriculaForm(
+      {
+        ...emptyMatriculaForm,
+        estado: matricula.estado,
+        ansv_categoria,
+        fecha_inscripcion: extractDateOnly(matricula.fecha_inscripcion) || getTodayDateString(),
+        categorias,
+        valor_total: matricula.valor_total == null ? "" : String(matricula.valor_total),
+        notas: matricula.notas || "",
+        tiene_tramitador: Boolean(matricula.tiene_tramitador),
+        tramitador_nombre: matricula.tramitador_nombre || "",
+        tramitador_valor:
+          matricula.tramitador_valor == null ? "" : String(matricula.tramitador_valor),
+      },
+      alumno.id
+    );
     setMatriculaOpen(true);
   };
 
@@ -488,14 +569,36 @@ export default function AlumnosPage() {
     if (editing ? !canEditStudent : !canCreateStudent) return;
     if (saving) return;
     setSaving(true);
+    setAlumnoSaveError("");
+    const reportSaveError = (message: string) => {
+      setAlumnoSaveError(message);
+      toast.error(message);
+    };
     try {
-      const { alumnoSchema } = await import("./schemas");
+      const { alumnoSchema, alumnoEditSchema } = await import("./schemas");
       const { studentBillingContactSchema, studentBillingProfileFromForm } =
         await import("@/lib/student-billing-contact");
-      const result = alumnoSchema.safeParse(form);
+      const ansvCategoria =
+        form.ansv_categoria || (form.categorias.length > 0 ? form.categorias[0] : "");
+      const formToValidate = {
+        ...form,
+        ansv_categoria: ansvCategoria,
+      };
+      const result = (editing ? alumnoEditSchema : alumnoSchema).safeParse(formToValidate);
       if (!result.success) {
-        toast.error(result.error.issues[0]?.message || "Error de validación.");
+        reportSaveError(result.error.issues[0]?.message || "Error de validación.");
         return;
+      }
+      if (editing?.tipo_registro === "regular") {
+        try {
+          if ((form.fecha_nacimiento || null) !== extractDateOnly(editing.fecha_nacimiento))
+            validateEnrollmentBirthDate(form.fecha_nacimiento);
+          if (editing.sexo && !form.sexo)
+            throw new Error("El sexo es obligatorio para ANSV; no borres el dato guardado.");
+        } catch (error) {
+          reportSaveError((error as Error).message);
+          return;
+        }
       }
       const billingProfile = studentBillingProfileFromForm(form);
       if (!editing) {
@@ -504,18 +607,32 @@ export default function AlumnosPage() {
           datos_facturacion: billingProfile,
         });
         if (!contact.success) {
-          toast.error(
+          reportSaveError(
             contact.error.issues[0]?.message || "Completa los datos obligatorios de facturación."
           );
           return;
         }
       }
 
+      const isPersonalEdit = editing?.tipo_registro === "regular";
+      const initialBilling = editing
+        ? studentBillingProfileFromForm({
+            pais: editing.datos_facturacion?.country || "CO",
+            municipio_codigo: editing.datos_facturacion?.cityCode || "",
+            regimen_fiscal: editing.datos_facturacion?.taxRegime || "",
+            responsabilidad_fiscal: editing.datos_facturacion?.responsibilities || "R-99-PN",
+          })
+        : null;
+      const fiscalProfileChanged =
+        !initialBilling ||
+        Object.entries(billingProfile).some(
+          ([key, value]) => initialBilling[key as keyof typeof initialBilling] !== value
+        );
       const isAptitud = form.tipo_registro === "aptitud_conductor";
       const isPractice = form.tipo_registro === "practica_adicional";
 
-      if (!isPractice && form.categorias.length === 0) {
-        toast.error(
+      if (!isPractice && !isPersonalEdit && form.categorias.length === 0) {
+        reportSaveError(
           isAptitud
             ? "Debes seleccionar la categoría evaluada."
             : "Debes seleccionar al menos una categoría de curso."
@@ -531,7 +648,7 @@ export default function AlumnosPage() {
         form.nota_examen_practico === "" ? null : parseFloat(String(form.nota_examen_practico));
 
       if (!editing && abonoNum > 0 && valorTotalNum > 0 && abonoNum > valorTotalNum) {
-        toast.error(
+        reportSaveError(
           isAptitud
             ? "El pago inicial no puede ser mayor al valor del servicio."
             : "El abono no puede ser mayor al valor total del curso."
@@ -543,19 +660,22 @@ export default function AlumnosPage() {
         form.tiene_tramitador,
         form.tramitador_nombre
       );
-      if (tramitadorValidationMessage) {
-        toast.error(tramitadorValidationMessage);
+      if (!isPersonalEdit && tramitadorValidationMessage) {
+        reportSaveError(tramitadorValidationMessage);
         return;
       }
 
       if (!perfil?.escuela_id) {
-        toast.error("Tu usuario no tiene escuela asignada. Contacta al administrador.");
+        reportSaveError("Tu usuario no tiene escuela asignada. Contacta al administrador.");
         return;
       }
 
-      const sedeId = defaultSedeId || (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
+      const sedeId =
+        editing?.sede_id ||
+        defaultSedeId ||
+        (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
       if (!sedeId) {
-        toast.error("No se encontró una sede para esta escuela. Crea una sede primero.");
+        reportSaveError("No se encontró una sede para esta escuela. Crea una sede primero.");
         setSaving(false);
         return;
       }
@@ -565,6 +685,7 @@ export default function AlumnosPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           alumno_id: editing?.id,
+          solo_ficha: Boolean(isPersonalEdit),
           sede_id: sedeId,
           tipo_registro: form.tipo_registro,
           nombre: form.nombre.trim(),
@@ -575,11 +696,15 @@ export default function AlumnosPage() {
           email: form.email.trim() || null,
           telefono: form.telefono.trim(),
           fecha_nacimiento: form.fecha_nacimiento || null,
+          sexo: form.sexo || undefined,
+          ansv_categoria: ansvCategoria || undefined,
           direccion: form.direccion.trim() || null,
           ciudad: form.ciudad.trim() || null,
           departamento: form.departamento.trim() || null,
           datos_facturacion:
-            form.municipio_codigo && form.regimen_fiscal ? billingProfile : undefined,
+            fiscalProfileChanged && form.municipio_codigo && form.regimen_fiscal
+              ? billingProfile
+              : undefined,
           categorias: form.categorias,
           estado: form.estado,
           empresa_convenio: form.empresa_convenio.trim() || null,
@@ -593,7 +718,7 @@ export default function AlumnosPage() {
           valor_total: valorTotalNum || null,
           abono: abonoNum,
           metodo_pago_abono: form.metodo_pago_abono,
-          tiene_tramitador: form.tiene_tramitador,
+          tiene_tramitador: isPersonalEdit ? false : form.tiene_tramitador,
           tramitador_nombre: form.tramitador_nombre.trim() || null,
           tramitador_valor: form.tiene_tramitador ? tramitadorValorNum || null : null,
           consentimiento_datos: form.consentimiento_datos,
@@ -605,14 +730,7 @@ export default function AlumnosPage() {
       clearAlumnoDraft(emptyForm);
       setModalOpen(false);
       toast.success(editing ? "Alumno actualizado" : "Alumno registrado");
-      await revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
-          includeFinance: true,
-          includeDashboard: true,
-        })
-      );
-      invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+      invalidateDashboardClientCaches();
       fetchAlumnos(
         currentPage,
         searchTerm,
@@ -628,7 +746,7 @@ export default function AlumnosPage() {
         err instanceof Error
           ? err.message
           : (err as { message?: string })?.message || "Error al guardar";
-      toast.error(message);
+      reportSaveError(message);
     } finally {
       setSaving(false);
     }
@@ -644,18 +762,28 @@ export default function AlumnosPage() {
     }
 
     setMatriculaSaving(true);
+    setMatriculaSaveError("");
+    const reportMatriculaError = (message: string) => {
+      setMatriculaSaveError(message);
+      toast.error(message);
+    };
     try {
       const { matriculaSchema } = await import("./schemas");
+      const ansvCategoria =
+        matriculaForm.ansv_categoria ||
+        (matriculaForm.categorias.length > 0 ? matriculaForm.categorias[0] : "");
       const result = matriculaSchema.safeParse(matriculaForm);
       if (!result.success) {
-        toast.error(result.error.issues[0]?.message || "Verifica los datos del formulario.");
+        reportMatriculaError(
+          result.error.issues[0]?.message || "Verifica los datos del formulario."
+        );
         return;
       }
 
       const valorTotalNum = parseFloat(String(matriculaForm.valor_total)) || 0;
       const abonoNum = parseFloat(String(matriculaForm.abono)) || 0;
-      if (abonoNum > 0 && valorTotalNum > 0 && abonoNum > valorTotalNum) {
-        toast.error("El abono no puede ser mayor al valor total del curso.");
+      if (!matriculaEditing && abonoNum > 0 && valorTotalNum > 0 && abonoNum > valorTotalNum) {
+        reportMatriculaError("El abono no puede ser mayor al valor total del curso.");
         return;
       }
 
@@ -664,7 +792,7 @@ export default function AlumnosPage() {
         matriculaForm.tramitador_nombre
       );
       if (tramitadorValidationMessage) {
-        toast.error(tramitadorValidationMessage);
+        reportMatriculaError(tramitadorValidationMessage);
         return;
       }
 
@@ -673,23 +801,26 @@ export default function AlumnosPage() {
         defaultSedeId ||
         (await resolveSedeId(perfil.escuela_id, perfil.sede_id));
       if (!sedeId) {
-        toast.error("No se encontró una sede para esta escuela.");
+        reportMatriculaError("No se encontró una sede para esta escuela.");
         setMatriculaSaving(false);
         return;
       }
 
       const tramitadorValorNum = parseFloat(matriculaForm.tramitador_valor) || 0;
       await fetchJsonWithRetry("/api/alumnos/matriculas", {
-        method: "POST",
+        method: matriculaEditing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           alumno_id: matriculaAlumno.id,
+          matricula_id: matriculaEditing?.id,
+          estado: matriculaForm.estado,
           sede_id: sedeId,
           fecha_inscripcion: matriculaForm.fecha_inscripcion,
+          ansv_categoria: ansvCategoria || undefined,
           categorias: matriculaForm.categorias,
-          valor_total: valorTotalNum || null,
+          valor_total: matriculaForm.valor_total === "" ? null : valorTotalNum,
           notas: matriculaForm.notas.trim() || null,
-          abono: abonoNum,
+          abono: matriculaEditing ? 0 : abonoNum,
           metodo_pago_abono: matriculaForm.metodo_pago_abono,
           tiene_tramitador: matriculaForm.tiene_tramitador,
           tramitador_nombre: matriculaForm.tramitador_nombre.trim() || null,
@@ -700,15 +831,9 @@ export default function AlumnosPage() {
       setMatriculaOpen(false);
       setMatriculaAlumno(null);
       clearMatriculaDraft(emptyMatriculaForm);
-      toast.success("Matrícula creada correctamente");
-      await revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
-          includeFinance: true,
-          includeDashboard: true,
-        })
-      );
-      invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+      toast.success(matriculaEditing ? "Matrícula actualizada" : "Matrícula creada correctamente");
+      setMatriculaEditing(null);
+      invalidateDashboardClientCaches();
       fetchAlumnos(
         currentPage,
         searchTerm,
@@ -723,8 +848,8 @@ export default function AlumnosPage() {
       const message =
         err instanceof Error
           ? err.message
-          : (err as { message?: string })?.message || "Error al crear la matrícula";
-      toast.error(message);
+          : (err as { message?: string })?.message || "Error al guardar la matrícula";
+      reportMatriculaError(message);
     } finally {
       setMatriculaSaving(false);
     }
@@ -735,6 +860,7 @@ export default function AlumnosPage() {
     if (abonoSaving) return;
     if (!abonoAlumno || !perfil?.escuela_id) return;
 
+    let paymentSaved = false;
     setAbonoSaving(true);
     try {
       const { abonoSchema } = await import("./schemas");
@@ -755,41 +881,45 @@ export default function AlumnosPage() {
         return;
       }
 
+      const payment = {
+        alumno_id: abonoAlumno.id,
+        matricula_id: abonoMatriculaActual?.id || null,
+        monto,
+        metodo_pago: abonoMetodo,
+        concepto: abonoConcepto.trim() || null,
+        fecha: abonoFecha,
+      };
+      const signature = JSON.stringify([perfil.id, perfil.escuela_id, payment]);
+      if (abonoOperation.current?.signature !== signature) {
+        abonoOperation.current = { signature, id: crypto.randomUUID() };
+      }
       await fetchJsonWithRetry("/api/alumnos/abonos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          alumno_id: abonoAlumno.id,
-          matricula_id: abonoMatriculaActual?.id || null,
-          monto,
-          metodo_pago: abonoMetodo,
-          concepto: abonoConcepto.trim() || null,
-          fecha: abonoFecha,
+          ...payment,
+          operacion_id: abonoOperation.current.id,
         }),
       });
+      paymentSaved = true;
+      abonoOperation.current = null;
+      setAbonoMonto("");
+      setAbonoConcepto("");
+      setAbonoFecha(getTodayDateString());
+      toast.success("Abono registrado con éxito");
 
       // Reload ingresos after successful insert
       const supabase = createClient();
-      const { data } = await supabase
+      const { data, error: refreshError } = await supabase
         .from("ingresos")
         .select("*")
         .eq("alumno_id", abonoAlumno.id)
         .order("fecha", { ascending: false })
         .order("created_at", { ascending: false });
 
-      setAbonoIngresos((data as Ingreso[]) || []);
-      setAbonoMonto("");
-      setAbonoConcepto("");
-      setAbonoFecha(getTodayDateString());
-      toast.success("Abono registrado con éxito");
-      await revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
-          includeFinance: true,
-          includeDashboard: true,
-        })
-      );
-      invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+      if (refreshError) toast.warning("El abono quedó guardado. Actualiza la lista para verlo.");
+      else setAbonoIngresos((data as Ingreso[]) || []);
+      invalidateDashboardClientCaches();
       fetchAlumnos(
         currentPage,
         searchTerm,
@@ -805,7 +935,9 @@ export default function AlumnosPage() {
         err instanceof Error
           ? err.message
           : (err as { message?: string })?.message || "Error al registrar";
-      toast.error(message);
+      if (paymentSaved)
+        toast.warning("El abono quedó guardado. Actualiza la página para ver los saldos.");
+      else toast.error(message);
     } finally {
       setAbonoSaving(false);
     }
@@ -828,14 +960,7 @@ export default function AlumnosPage() {
       setDeleteOpen(false);
       setDeleting(null);
       toast.success(tieneContrato ? "Alumno cancelado" : "Alumno eliminado");
-      await revalidateTaggedServerCaches(
-        buildScopedMutationRevalidationTags({
-          scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
-          includeFinance: true,
-          includeDashboard: true,
-        })
-      );
-      invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+      invalidateDashboardClientCaches();
       fetchAlumnos(
         currentPage,
         searchTerm,
@@ -934,7 +1059,7 @@ export default function AlumnosPage() {
             </div>
             {row.matriculas.length > 1 && (
               <p className="mt-1 text-[10px] text-[#86868b]">
-                {row.matriculas.length} matrículas activas
+                {row.matriculas.filter((m) => m.estado === "activo").length} matrículas activas
               </p>
             )}
           </div>
@@ -1440,7 +1565,7 @@ export default function AlumnosPage() {
           }
           onClose={() => {
             setFacturaAlumno(null);
-            invalidateDashboardClientCaches("dashboard-list:alumnos-table:");
+            invalidateDashboardClientCaches();
             void fetchAlumnos(
               currentPage,
               searchTerm,
@@ -1469,6 +1594,8 @@ export default function AlumnosPage() {
           handleSave={handleSave}
           toggleCategoria={toggleCategoria}
           openNewMatricula={openNewMatricula}
+          openEditMatricula={openEditMatricula}
+          formError={alumnoSaveError}
           categoriasEscuela={categoriasEscuela}
           tramitadorOptions={tramitadorOptions}
         />
@@ -1482,6 +1609,9 @@ export default function AlumnosPage() {
           matriculaForm={matriculaForm}
           setMatriculaForm={setMatriculaForm}
           matriculaSaving={matriculaSaving}
+          editingMatricula={matriculaEditing}
+          formError={matriculaSaveError}
+          onEditMatricula={openEditMatricula}
           handleSaveMatricula={handleSaveMatricula}
           toggleMatriculaCategoria={toggleMatriculaCategoria}
           categoriasEscuela={categoriasEscuela}

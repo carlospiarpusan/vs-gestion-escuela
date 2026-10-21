@@ -28,10 +28,32 @@ jobs:
         run: npm run lint
 
       - name: Run Tests
-        run: npm run test -- --run
+        run: npm run test -- --run --maxWorkers=2
 
       - name: Run Type Checking
         run: npx tsc --noEmit
 
       - name: Run Build
         run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-build.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-build-only
+
+  mobile:
+    name: Android Type Check & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix mobile
+      - run: node --test supabase/tests/mobile_admin_users.test.mjs
+      - run: node supabase/tests/mobile_review_fixes.mjs
+      - run: npm run mobile:typecheck
+      - run: npm run mobile:test -- --maxWorkers=2

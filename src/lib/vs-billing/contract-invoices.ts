@@ -7,6 +7,7 @@ import { VS_BILLING_SCHOOL } from "./scope";
 import {
   assertInvoiceIdentity,
   quoteMatchesStudent,
+  invoiceQuotePaymentIssue,
   facturaxStatusSchema,
   type ContractInvoice,
   type FacturaxStatus,
@@ -143,10 +144,16 @@ export async function invoiceContract(studentId: string, contractId: string) {
       ciudad: string | null;
       departamento: string | null;
       datos_facturacion: unknown;
+      ansv: unknown;
+      categorias: string[];
+      fecha_nacimiento: string | Date | null;
+      sexo: string | null;
+      fecha_inscripcion: string | Date | null;
     }>(
       `select a.id,a.nombre,a.apellidos,a.dni,a.tipo_documento,a.email,a.estado as alumno_estado,
         m.id as contrato_id,m.estado,m.sede_id,
-        a.telefono,a.direccion,a.ciudad,a.departamento,a.datos_facturacion
+        a.telefono,a.direccion,a.ciudad,a.departamento,a.datos_facturacion,m.ansv,m.categorias,
+        a.fecha_nacimiento,a.sexo,m.fecha_inscripcion
       from public.alumnos a join public.matriculas_alumno m on m.alumno_id=a.id and m.escuela_id=a.escuela_id
       where a.id=$1 and m.id=$2 and a.escuela_id=$3`,
       [studentId, contractId, VS_BILLING_SCHOOL.id]
@@ -200,18 +207,34 @@ async function saveInvoiceStatus(
   result: FacturaxStatus
 ) {
   assertInvoiceIdentity(result, requestId, studentId);
-  await getServerDbPool().query(
+  const updated = await getServerDbPool().query<{ last_status: unknown }>(
     `update public.facturax_contract_invoices set last_status=$1,updated_at=now()
     where escuela_id=$2 and alumno_id=$3 and contrato_id=$4 and request_id=$5
     and (last_status is null or (
       (last_status->>'documentId' is null or $1::jsonb->>'documentId'=last_status->>'documentId')
       and (last_status->>'state'<>'accepted' or $1::jsonb->>'state'='accepted')
       and (last_status->>'emailState' is distinct from 'sent' or $1::jsonb->>'emailState'='sent')
-    ))`,
+    )) returning last_status`,
     [result, VS_BILLING_SCHOOL.id, studentId, contractId, requestId]
   );
+  const persisted =
+    updated.rows[0]?.last_status ??
+    (
+      await getServerDbPool().query<{ last_status: unknown }>(
+        `select last_status from public.facturax_contract_invoices
+       where escuela_id=$1 and alumno_id=$2 and contrato_id=$3 and request_id=$4`,
+        [VS_BILLING_SCHOOL.id, studentId, contractId, requestId]
+      )
+    ).rows[0]?.last_status;
+  if (!persisted)
+    throw new FacturaxError(
+      "No se pudo confirmar el estado guardado. Consulta la solicitud antes de volver a emitir.",
+      409
+    );
+  const status = facturaxStatusSchema.parse(persisted);
+  assertInvoiceIdentity(status, requestId, studentId);
   revalidateServerReadCache(`scope:school:${VS_BILLING_SCHOOL.id}`);
-  return { contratoId: contractId, requestId, status: result };
+  return { contratoId: contractId, requestId, status };
 }
 export async function emitContractInvoice(
   studentId: string,
@@ -228,6 +251,10 @@ export async function emitContractInvoice(
       409
     );
   if (remote.state === "quoted") {
+    if (remote.quote) {
+      const paymentIssue = invoiceQuotePaymentIssue(remote.quote);
+      if (paymentIssue) throw new FacturaxError(paymentIssue, 409);
+    }
     const customer = remote.quote?.customer;
     const issues = customer
       ? getQuotedCustomerIssues(customer)

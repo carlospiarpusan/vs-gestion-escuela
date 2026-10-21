@@ -11,6 +11,7 @@ const mock = vi.hoisted(() => ({
   release: vi.fn(),
 }));
 
+vi.mock("server-only", () => ({}));
 vi.mock("@/lib/api-auth", async (original) => ({
   ...(await original<typeof import("@/lib/api-auth")>()),
   authorizeApiRequest: mock.auth,

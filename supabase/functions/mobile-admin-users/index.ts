@@ -164,6 +164,10 @@ async function getActor(request: Request) {
     throw new Error("No se pudo validar la sesión móvil.");
   }
 
+  if (user.app_metadata?.debe_cambiar_password === true) {
+    throw new Error("Cambia tu contraseña en ConduSoft web antes de continuar.");
+  }
+
   const { data: profile, error: profileError } = await adminClient
     .from("perfiles")
     .select("id, rol, escuela_id, sede_id, nombre, email, activo, cedula")
@@ -535,7 +539,8 @@ async function createStudent(
   const dni = normalizeCedula(payload.dni);
   const telefono = asString(payload.telefono);
   const providedEmail = normalizeEmail(payload.email);
-  const estado = asString(payload.estado) || "activo";
+  // Legacy offline registrations are pre-registrations; the web creates the validated enrollment.
+  const estado = "pre_registrado";
   const escuelaId = asString(payload.escuela_id) || actor.escuela_id || "";
   const sedeId = asString(payload.sede_id) || actor.sede_id || "";
   const entityId = asString(payload.id) || commandId || crypto.randomUUID();
@@ -631,7 +636,7 @@ async function createStudent(
         escuela_id: escuelaId,
         sede_id: sedeId,
         user_id: userId,
-        tipo_registro: asString(payload.tipo_registro) || "regular",
+        tipo_registro: "regular",
         nombre,
         apellidos,
         dni,

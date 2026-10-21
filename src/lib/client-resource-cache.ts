@@ -15,6 +15,7 @@ const MAX_STORAGE_ENTRIES = 24;
 const MAX_STORAGE_ENTRY_BYTES = 24 * 1024;
 const memoryCache = new Map<string, CachedClientEntry<unknown>>();
 const pendingCache = new Map<string, { promise: Promise<unknown>; forceFresh: boolean }>();
+const invalidatedPrefixes = new Map<string, number>();
 const scheduledStorageWrites = new Map<string, ScheduledStorageHandle>();
 
 function shouldPersistPolicyToSession(policy?: ClientResourceCachePolicy) {
@@ -256,8 +257,23 @@ export async function getClientResourceCached<T>({
   return nextPromise;
 }
 
+// A cached RSC page can remount after a mutation (for example browser Back).
+// Do not let its older server snapshot repopulate invalidated client data.
+export function wasClientResourceInvalidatedSince(key: string, createdAt: number) {
+  return Array.from(invalidatedPrefixes).some(
+    ([prefix, invalidatedAt]) => key.startsWith(prefix) && invalidatedAt > createdAt
+  );
+}
+
 export function invalidateClientResourceCache(prefixes: string | string[]) {
   const targetPrefixes = Array.isArray(prefixes) ? prefixes : [prefixes];
+  for (const prefix of targetPrefixes) {
+    invalidatedPrefixes.delete(prefix);
+    invalidatedPrefixes.set(prefix, Date.now());
+  }
+  while (invalidatedPrefixes.size > MAX_MEMORY_ENTRIES) {
+    invalidatedPrefixes.delete(invalidatedPrefixes.keys().next().value!);
+  }
 
   for (const key of memoryCache.keys()) {
     if (targetPrefixes.some((prefix) => key.startsWith(prefix))) {

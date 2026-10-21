@@ -7,7 +7,7 @@ const outcomes = [
     eyebrow: "Operación diaria",
     title: "Cada alumno sabe qué sigue",
     description:
-      "Concentra matrículas, agenda, clases, horas e instructores para que el equipo no tenga que reconstruir la historia del alumno en cada llamada.",
+      "Concentra matrículas, horas e instructores para que el equipo no tenga que reconstruir la historia del alumno en cada llamada.",
   },
   {
     icon: WalletCards,

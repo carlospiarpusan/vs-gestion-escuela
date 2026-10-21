@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ComponentType, ReactNode } from "react";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import IngresosPage from "./ingresos/page";
 import GastosPage from "./gastos/page";
@@ -11,6 +12,7 @@ const mock = vi.hoisted(() => ({
   income: vi.fn(),
   expenses: vi.fn(),
   params: new URLSearchParams(),
+  queries: [] as Array<{ table: string; calls: Array<[string, unknown[]]> }>,
 }));
 
 vi.mock("next/dynamic", async () => {
@@ -32,7 +34,13 @@ vi.mock("next/dynamic", async () => {
 vi.mock("next/navigation", () => ({ useSearchParams: () => mock.params }));
 vi.mock("@/hooks/useAuth", () => ({
   useAuth: () => ({
-    perfil: { id: "actor", rol: "admin_escuela", escuela_id: "school", sede_id: "branch" },
+    perfil: {
+      id: "actor",
+      rol: "admin_escuela",
+      escuela_id: "school",
+      sede_id: "branch",
+      email: "admin.personal@example.com",
+    },
   }),
 }));
 vi.mock("@/hooks/useDeviceVariant", () => ({ useIsMobileVariant: () => false }));
@@ -61,12 +69,39 @@ vi.mock("./ingresos/IncomeSections", () => ({
 vi.mock("./gastos/GastosSections", () => ({
   buildExpenseColumns: () => [],
   buildExpenseTramitadorOptions: () => [],
-  ExpenseFiltersSection: () => null,
+  ExpenseFiltersSection: ({ onMesChange }: { onMesChange: (value: string) => void }) => (
+    <button onClick={() => onMesChange("01")}>Consultar enero</button>
+  ),
   ExpenseSearchHint: () => null,
   ExpenseSectionPanel: () => null,
   ExpenseStatusBanners: () => null,
-  ExpenseSummarySection: () => null,
-  ExpenseTableSection: () => null,
+  ExpenseSummarySection: ({
+    summary,
+    summaryLoading,
+  }: {
+    summary: { summary?: { gastosTotales?: number } } | null;
+    summaryLoading: boolean;
+  }) => (
+    <output data-testid="expense-summary">
+      {summaryLoading ? "cargando" : (summary?.summary?.gastosTotales ?? "vacio")}
+    </output>
+  ),
+  ExpenseTableSection: ({
+    totalCount,
+    data,
+    onPageChange,
+  }: {
+    totalCount: number;
+    data: unknown[];
+    onPageChange: (page: number) => void;
+  }) => (
+    <>
+      <output data-testid="expense-count">
+        {data.length}/{totalCount}
+      </output>
+      <button onClick={() => onPageChange(1)}>Segunda página de gastos</button>
+    </>
+  ),
   ExpenseFacturasSection: ({
     onOpenImportModal,
     onOpenIntegration,
@@ -87,12 +122,15 @@ vi.mock("./gastos/GastosSections", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mock.renders.length = 0;
+  mock.queries.length = 0;
   mock.params = new URLSearchParams();
   localStorage.clear();
   mock.income.mockResolvedValue({ ledger: { rows: [], totalCount: 0 }, summary: {} });
   mock.expenses.mockResolvedValue({ summary: {}, breakdown: {}, payables: {} });
-  mock.from.mockImplementation(() => {
-    const result = { data: [], count: 0, error: null };
+  mock.from.mockImplementation((table: string) => {
+    const calls: Array<[string, unknown[]]> = [];
+    mock.queries.push({ table, calls });
+    const result = { data: [{ id: "expense-fixture" }], count: 32, error: null };
     const query: Record<string, unknown> = {
       then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
     };
@@ -110,7 +148,10 @@ beforeEach(() => {
       "ilike",
       "is",
     ])
-      query[method] = () => query;
+      query[method] = (...args: unknown[]) => {
+        calls.push([method, args]);
+        return query;
+      };
     for (const method of ["insert", "update", "delete", "upsert"]) query[method] = mock.writes;
     return query;
   });
@@ -183,17 +224,104 @@ describe("finance dialogs are loaded only when opened", () => {
 
   it.each([
     ["Importar XML", "Importar Factura Electronica", "ImportInvoiceModal"],
-    ["Configurar correo", "Conectar Correo de Facturas", "EmailIntegrationModal"],
+    ["Configurar correo", "Conectar correo de la empresa", "EmailIntegrationModal"],
     ["Busqueda historica", "Buscar Facturas Antiguas", "HistoricalSearchModal"],
   ])("opens only the requested invoice tool: %s", async (button, title, moduleName) => {
     mock.params = new URLSearchParams("section=facturas");
     render(<GastosPage />);
     fireEvent.click(screen.getByRole("button", { name: button }));
     const dialog = await screen.findByRole("dialog", { name: title });
+    if (moduleName === "EmailIntegrationModal") {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Usar otro correo (IMAP)" }));
+      expect(dialog.querySelector('input[type="email"]')).toHaveValue("");
+    }
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(mock.renders.length).toBeGreaterThan(0);
     expect(mock.renders.every((name) => name.includes(moduleName))).toBe(true);
     expect(mock.writes).not.toHaveBeenCalled();
   });
+});
+
+describe("expense request efficiency and filter consistency", () => {
+  it.each([
+    ["libro", null],
+    ["nomina", ["categoria", "nominas"]],
+    ["cuentas", ["estado_pago", "pendiente"]],
+    ["tramitadores", ["categoria", "tramitador"]],
+  ])("loads rows and the full count in one request for %s", async (section, forcedFilter) => {
+    mock.params = new URLSearchParams({ section });
+    render(<GastosPage />);
+    await waitFor(() => expect(screen.getByTestId("expense-count")).toHaveTextContent("1/32"));
+    const queries = mock.queries.filter((q) => q.table === "gastos");
+    expect(queries).toHaveLength(1);
+    expect(queries[0].calls.find(([method]) => method === "select")?.[1][1]).toEqual({
+      count: "exact",
+    });
+    if (forcedFilter) expect(queries[0].calls).toContainEqual(["eq", forcedFilter]);
+    expect(queries[0].calls).toContainEqual(["eq", ["escuela_id", "school"]]);
+    fireEvent.click(screen.getByRole("button", { name: "Segunda página de gastos" }));
+    await waitFor(() => expect(mock.queries.filter((q) => q.table === "gastos")).toHaveLength(2));
+    const second = mock.queries.filter((q) => q.table === "gastos")[1];
+    const [from, to] = second.calls.find(([method]) => method === "range")![1] as number[];
+    expect(from).toBeGreaterThan(0);
+    expect(to - from + 1).toBe(from);
+    expect(screen.getByTestId("expense-count")).toHaveTextContent("1/32");
+  });
+
+  it.each(["resolve", "reject"])(
+    "ignores an obsolete summary that finishes with %s",
+    async (outcome) => {
+      let finishOld!: (value: unknown) => void;
+      let failOld!: (error: Error) => void;
+      mock.expenses.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finishOld = resolve;
+            failOld = reject;
+          })
+      );
+      mock.expenses.mockResolvedValue({ summary: { gastosTotales: 200 } });
+      render(<GastosPage />);
+      await waitFor(() => expect(mock.expenses).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByRole("button", { name: "Consultar enero" }));
+      await waitFor(() => expect(screen.getByTestId("expense-summary")).toHaveTextContent("200"));
+      await act(async () => {
+        if (outcome === "resolve") finishOld({ summary: { gastosTotales: 100 } });
+        else failOld(new Error("respuesta antigua"));
+      });
+      expect(screen.getByTestId("expense-summary")).toHaveTextContent("200");
+    }
+  );
+});
+
+it("uses one HTTP GET with exact count and a bounded range through the real Supabase client", async () => {
+  const requests: Array<{ url: URL; headers: Headers; method: string }> = [];
+  const client = createSupabaseClient("https://fixture.supabase.co", "fixture-public-key", {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: {
+      fetch: async (input, init) => {
+        requests.push({
+          url: new URL(String(input)),
+          headers: new Headers(init?.headers),
+          method: init?.method || "GET",
+        });
+        return new Response(JSON.stringify([{ id: "fixture", concepto: "Gasto de prueba" }]), {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Content-Range": "0-14/32" },
+        });
+      },
+    },
+  });
+  mock.from.mockImplementation((table) => client.from(table));
+  mock.params = new URLSearchParams("section=cuentas");
+  render(<GastosPage />);
+  await waitFor(() => expect(screen.getByTestId("expense-count")).toHaveTextContent("1/32"));
+  expect(requests).toHaveLength(1);
+  expect(requests[0].method).toBe("GET");
+  expect(requests[0].headers.get("prefer")).toContain("count=exact");
+  expect(requests[0].url.pathname).toBe("/rest/v1/gastos");
+  expect(requests[0].url.searchParams.get("escuela_id")).toBe("eq.school");
+  expect(requests[0].url.searchParams.get("estado_pago")).toBe("eq.pendiente");
+  expect(Number(requests[0].url.searchParams.get("limit"))).toBeGreaterThan(0);
 });

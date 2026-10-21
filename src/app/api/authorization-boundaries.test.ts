@@ -25,6 +25,7 @@ const routes = [
   },
   { name: "alumnos/abonos", load: () => import("./alumnos/abonos/route"), methods: ["POST"] },
   { name: "alumnos/cancelar", load: () => import("./alumnos/cancelar/route"), methods: ["POST"] },
+  { name: "alumnos/opciones", load: () => import("./alumnos/opciones/route"), methods: ["GET"] },
   { name: "alumnos/catalogos", load: () => import("./alumnos/catalogos/route"), methods: ["GET"] },
   {
     name: "alumnos/manage",
@@ -34,7 +35,7 @@ const routes = [
   {
     name: "alumnos/matriculas",
     load: () => import("./alumnos/matriculas/route"),
-    methods: ["POST"],
+    methods: ["POST", "PUT"],
   },
   { name: "alumnos", load: () => import("./alumnos/route"), methods: ["GET"] },
   { name: "arco", load: () => import("./arco/route"), methods: ["GET", "PATCH"] },

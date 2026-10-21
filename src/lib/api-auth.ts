@@ -143,7 +143,7 @@ export async function authorizeApiRequest(
     };
   }
 
-  if (user.user_metadata?.debe_cambiar_password === true && !options.allowMustChangePassword) {
+  if (user.app_metadata?.debe_cambiar_password === true && !options.allowMustChangePassword) {
     return {
       ok: false,
       response: NextResponse.json(

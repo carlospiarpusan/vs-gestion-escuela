@@ -36,7 +36,7 @@ import {
   invalidateDashboardClientCaches,
 } from "@/lib/dashboard-client-cache";
 import { revalidateTaggedServerCaches } from "@/lib/server-cache-client";
-import { buildScopedMutationRevalidationTags } from "@/lib/server-cache-tags";
+import { buildExpenseMutationInvalidationTags } from "@/lib/server-cache-tags";
 import { canAuditedRolePerformAction, isAuditedRole } from "@/lib/role-capabilities";
 import { fetchExpenseDashboard } from "@/lib/finance/expense-service";
 import type { ExpenseDashboardResponse } from "@/lib/finance/types";
@@ -179,6 +179,10 @@ export default function GastosPage() {
   const [emailHistoryMaxMessages, setEmailHistoryMaxMessages] = useState("500");
   const [emailError, setEmailError] = useState("");
   const [emailNotice, setEmailNotice] = useState("");
+  const [emailOAuthProviders, setEmailOAuthProviders] = useState<{
+    gmail_google: boolean;
+    outlook_microsoft: boolean;
+  }>();
   const [sedesOptions, setSedesOptions] = useState<SedeOption[]>([]);
   const [error, setError] = useState("");
   const [tableError, setTableError] = useState("");
@@ -222,16 +226,21 @@ export default function GastosPage() {
       return {
         ...emptyEmailIntegrationForm,
         sede_id: preferredSede,
-        correo: perfil?.email || "",
-        imap_user: perfil?.email || "",
-        imap_host: perfil?.email ? inferImapHost(perfil.email) : "",
       };
     },
-    [perfil?.email, perfil?.sede_id]
+    [perfil?.sede_id]
   );
 
   useEffect(() => {
     setActiveSection(parseExpenseSection(searchParams.get("section")));
+    if (searchParams.get("mail") === "connected")
+      setEmailNotice(
+        "Buzón de la empresa conectado. Con la importación automática activada, las facturas recibidas se registrarán en Gastos durante la revisión diaria."
+      );
+    if (searchParams.get("mail") === "failed")
+      setEmailNotice(
+        "No se completó la conexión del correo. Abre Conectar correo e inténtalo de nuevo, aceptando el permiso de lectura."
+      );
   }, [searchParams]);
 
   useEffect(() => {
@@ -268,6 +277,7 @@ export default function GastosPage() {
         const integration = (payload.integration as EmailInvoiceIntegrationView | null) || null;
         const history = (payload.history as FacturaCorreoImportacion[]) || [];
         const nextOptions = options || sedesOptionsRef.current;
+        setEmailOAuthProviders(payload.providers);
         setEmailIntegration(integration);
         setEmailImportHistory(history);
         if (!emailModalOpenRef.current) {
@@ -308,6 +318,7 @@ export default function GastosPage() {
       const effectiveCategoria = activeSection === "nomina" ? "nominas" : filtroCategoria;
 
       if (!shouldLoadLedger) {
+        fetchIdRef.current += 1;
         setLoading(false);
         return;
       }
@@ -345,44 +356,14 @@ export default function GastosPage() {
             const supabase = createClient();
             const expenseSearch = parseExpenseSearch(search);
 
-            let countQuery = supabase
-              .from("gastos")
-              .select("id", { count: "exact", head: true })
-              .eq("escuela_id", perfil.escuela_id);
-
-            if (activeSection !== "tramitadores" && effectiveCategoria) {
-              countQuery = countQuery.eq("categoria", effectiveCategoria);
-            }
-            if (filtroMetodo) {
-              countQuery = countQuery.eq("metodo_pago", filtroMetodo);
-            }
-            if (effectiveEstadoPago) {
-              countQuery = countQuery.eq("estado_pago", effectiveEstadoPago);
-            }
-            if (filtroRecurrente) {
-              countQuery = countQuery.eq("recurrente", true);
-            }
-            if (filtroYear) {
-              const range = getMonthDateRange(Number(filtroYear), filtroMes);
-              countQuery = countQuery.gte("fecha", range.from).lte("fecha", range.to);
-            }
-            if (activeSection === "tramitadores") {
-              countQuery = countQuery.eq("categoria", "tramitador");
-              if (selectedTramitador) {
-                countQuery = countQuery.eq("proveedor", selectedTramitador);
-              }
-            } else if (activeSection !== "nomina") {
-              countQuery = applyExpenseViewToSupabaseQuery(countQuery, activeView);
-            }
-            countQuery = applyExpenseSearchToSupabaseQuery(countQuery, expenseSearch);
-
             const from = page * PAGE_SIZE;
             const to = from + PAGE_SIZE - 1;
 
             let dataQuery = supabase
               .from("gastos")
               .select(
-                "id, mantenimiento_id, categoria, concepto, monto, metodo_pago, proveedor, numero_factura, fecha, fecha_vencimiento, estado_pago, recurrente, notas, created_at"
+                "id, mantenimiento_id, categoria, concepto, monto, metodo_pago, proveedor, numero_factura, fecha, fecha_vencimiento, estado_pago, recurrente, notas, created_at",
+                { count: "exact" }
               )
               .eq("escuela_id", perfil.escuela_id)
               .order(activeSection === "cuentas" ? "fecha_vencimiento" : "fecha", {
@@ -417,17 +398,8 @@ export default function GastosPage() {
             }
             dataQuery = applyExpenseSearchToSupabaseQuery(dataQuery, expenseSearch);
 
-            const [{ count, error: countError }, { data, error: dataError }] = await Promise.all([
-              countQuery,
-              dataQuery,
-            ]);
-
-            if (countError) {
-              throw countError;
-            }
-            if (dataError) {
-              throw dataError;
-            }
+            const { count, data, error: queryError } = await dataQuery;
+            if (queryError) throw queryError;
 
             return {
               count: count ?? 0,
@@ -507,6 +479,7 @@ export default function GastosPage() {
       return;
     }
 
+    let cancelled = false;
     const loadSummary = async () => {
       const range = getMonthDateRange(Number(filtroYear), filtroMes);
       const params = new URLSearchParams({
@@ -540,8 +513,9 @@ export default function GastosPage() {
 
       try {
         const payload = await fetchExpenseDashboard(params);
-        setSummary(payload);
+        if (!cancelled) setSummary(payload);
       } catch (summaryErr: unknown) {
+        if (cancelled) return;
         setSummary(null);
         setSummaryError(
           summaryErr instanceof Error
@@ -549,11 +523,14 @@ export default function GastosPage() {
             : "No se pudo cargar el resumen de gastos."
         );
       } finally {
-        setSummaryLoading(false);
+        if (!cancelled) setSummaryLoading(false);
       }
     };
 
     void loadSummary();
+    return () => {
+      cancelled = true;
+    };
   }, [
     perfil?.rol,
     filtroCategoria,
@@ -647,13 +624,13 @@ export default function GastosPage() {
       "dashboard-list:gastos-ledger:",
       "dashboard-catalog:gastos-email-sedes:",
       "finance-expense:",
+      "finance-cash:",
       "finance-reports:",
     ]);
     void revalidateTaggedServerCaches(
-      buildScopedMutationRevalidationTags({
-        scope: { escuelaId: perfil?.escuela_id, sedeId: perfil?.sede_id },
-        includeFinance: true,
-        includeDashboard: true,
+      buildExpenseMutationInvalidationTags({
+        escuelaId: perfil?.escuela_id,
+        sedeId: perfil?.sede_id,
       })
     );
   }, [perfil?.escuela_id, perfil?.sede_id]);
@@ -728,7 +705,7 @@ export default function GastosPage() {
 
       setEmailModalOpen(false);
       setEmailNotice(
-        "Correo conectado correctamente. Ya puedes sincronizar facturas automaticamente."
+        "Buzón de la empresa conectado. Con la importación automática activada, las facturas recibidas se registrarán en Gastos durante la revisión diaria."
       );
       await loadEmailIntegrationState();
     } catch (saveError: unknown) {
@@ -799,12 +776,16 @@ export default function GastosPage() {
       const duplicatedText = `${summary.duplicated} duplicadas`;
       const errorText = `${summary.errors} con error`;
       setEmailNotice(
-        `Sincronizacion completada: ${importedText}, ${duplicatedText}, ${errorText}.`
+        `Sincronizacion completada: ${importedText}, ${duplicatedText}, ${summary.skipped} omitidas, ${errorText}.${summary.truncated ? " Quedan correos pendientes; pulsa Sincronizar para continuar con la siguiente tanda." : ""}`
       );
       invalidateExpenseResources();
       setReloadKey((value) => value + 1);
       await Promise.all([loadEmailIntegrationState(), fetchData(currentPage, searchTerm)]);
     } catch (syncError: unknown) {
+      // A later provider failure does not roll back invoices already imported.
+      invalidateExpenseResources();
+      setReloadKey((value) => value + 1);
+      await loadEmailIntegrationState();
       setEmailError(
         syncError instanceof Error ? syncError.message : "No se pudo sincronizar el correo."
       );
@@ -851,19 +832,22 @@ export default function GastosPage() {
 
       const summary = payload.summary as EmailInvoiceSyncSummary;
       const truncationText = summary.truncated
-        ? ` Se revisaron ${summary.processedMessages} de ${summary.matchedMessages} correos encontrados.`
+        ? ` Se revisaron ${summary.processedMessages} de ${summary.matchedMessages} correos de esta tanda. Vuelve a buscar con el mismo rango para continuar con los pendientes.`
         : summary.mode === "historical"
           ? ` Se revisaron ${summary.processedMessages} correos historicos.`
           : "";
 
       setEmailHistoryModalOpen(false);
       setEmailNotice(
-        `Busqueda historica completada: ${summary.imported} importadas, ${summary.duplicated} duplicadas, ${summary.skipped} omitidas y ${summary.errors} con error.${truncationText}`
+        `Busqueda historica ${summary.truncated ? "parcial" : "completada"}: ${summary.imported} importadas, ${summary.duplicated} duplicadas, ${summary.skipped} omitidas y ${summary.errors} con error.${truncationText}`
       );
       invalidateExpenseResources();
       setReloadKey((value) => value + 1);
       await Promise.all([loadEmailIntegrationState(), fetchData(currentPage, searchTerm)]);
     } catch (syncError: unknown) {
+      invalidateExpenseResources();
+      setReloadKey((value) => value + 1);
+      await loadEmailIntegrationState();
       setEmailError(
         syncError instanceof Error
           ? syncError.message
@@ -883,6 +867,7 @@ export default function GastosPage() {
         metodo_pago: MetodoPagoGasto;
         proveedor: string | null;
         numero_factura: string | null;
+        factura_identidad?: string | null;
         fecha: string;
         fecha_vencimiento: string;
         estado_pago: EstadoPagoGasto;
@@ -1062,9 +1047,19 @@ export default function GastosPage() {
     setInvoicePreview(null);
 
     try {
-      const { parseElectronicInvoiceFile, buildElectronicInvoiceNote } =
-        await import("@/lib/electronic-invoice");
+      const {
+        parseElectronicInvoiceFile,
+        buildElectronicInvoiceNote,
+        assertInvoiceCanBecomeExpense,
+      } = await import("@/lib/electronic-invoice");
       const preview = await parseElectronicInvoiceFile(file);
+      const { data: school, error } = await createClient()
+        .from("escuelas")
+        .select("cif")
+        .eq("id", perfil?.escuela_id)
+        .single();
+      if (error || !school) throw new Error("No se pudo comprobar el NIT de la empresa.");
+      assertInvoiceCanBecomeExpense(preview, school.cif);
 
       setInvoicePreview(preview);
       setInvoiceForm({
@@ -1121,6 +1116,7 @@ export default function GastosPage() {
         );
       }
 
+      const { buildElectronicInvoiceIdentity } = await import("@/lib/electronic-invoice");
       await persistExpense({
         categoria: invoiceForm.categoria,
         concepto: invoiceForm.concepto.trim(),
@@ -1128,6 +1124,10 @@ export default function GastosPage() {
         metodo_pago: invoiceForm.metodo_pago,
         proveedor: invoiceForm.proveedor.trim() || null,
         numero_factura: invoiceForm.numero_factura.trim() || null,
+        factura_identidad: buildElectronicInvoiceIdentity({
+          ...invoicePreview,
+          invoiceNumber: invoiceForm.numero_factura,
+        }),
         fecha: invoiceForm.fecha,
         fecha_vencimiento: invoiceForm.fecha_vencimiento || invoiceForm.fecha,
         estado_pago: invoiceForm.estado_pago,
@@ -1601,6 +1601,7 @@ export default function GastosPage() {
 
       {emailModalOpen && (
         <EmailIntegrationModal
+          oauthProviders={emailOAuthProviders}
           open={emailModalOpen}
           onClose={() => setEmailModalOpen(false)}
           emailIntegration={emailIntegration}

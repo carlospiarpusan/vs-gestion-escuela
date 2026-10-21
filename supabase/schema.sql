@@ -226,6 +226,7 @@ create table public.alumnos (
   telefono text not null,
   lugar_expedicion_documento text,
   fecha_nacimiento date,
+  sexo text check (sexo in ('M', 'F')),
   direccion text,
   tipo_permiso text not null default 'B' check (tipo_permiso in ('AM', 'A1', 'A2', 'A', 'B', 'C', 'D')),
   categorias text[] not null default '{}',
@@ -257,6 +258,7 @@ create table public.matriculas_alumno (
   prefijo_contrato text,
   consecutivo_contrato bigint,
   categorias text[] not null default '{}',
+  ansv jsonb check (ansv is null or jsonb_typeof(ansv) = 'object'),
   valor_total numeric,
   fecha_inscripcion date default current_date,
   estado text not null default 'activo' check (estado in ('activo', 'cerrado', 'cancelado')),
@@ -424,6 +426,7 @@ create table public.gastos (
   metodo_pago text default 'transferencia' check (metodo_pago in ('efectivo', 'tarjeta', 'transferencia', 'domiciliacion')),
   proveedor text,
   numero_factura text,
+  factura_identidad text,
   fecha date default current_date,
   fecha_vencimiento date default current_date,
   estado_pago text not null default 'pagado' check (estado_pago in ('pendiente', 'pagado', 'anulado')),
@@ -433,13 +436,16 @@ create table public.gastos (
 );
 
 -- 12. INTEGRACION DE CORREO PARA FACTURAS ELECTRONICAS
+create unique index if not exists gastos_factura_identidad_unique
+  on public.gastos(escuela_id, factura_identidad) where factura_identidad is not null;
+
 create table public.facturas_correo_integraciones (
   id uuid default gen_random_uuid() primary key,
   escuela_id uuid references public.escuelas(id) on delete cascade not null,
   sede_id uuid references public.sedes(id) on delete cascade not null,
   created_by uuid references public.perfiles(id) on delete set null,
   updated_by uuid references public.perfiles(id) on delete set null,
-  provider text not null default 'imap' check (provider in ('imap', 'gmail_google')),
+  provider text not null default 'imap' check (provider in ('imap', 'gmail_google', 'outlook_microsoft')),
   correo text not null,
   imap_host text not null,
   imap_port integer not null default 993 check (imap_port between 1 and 65535),
@@ -447,6 +453,8 @@ create table public.facturas_correo_integraciones (
   imap_user text not null,
   imap_password_encrypted text,
   oauth_refresh_token_encrypted text,
+  oauth_sync_state jsonb not null default '{}'::jsonb,
+  sync_locked_until timestamp with time zone,
   mailbox text not null default 'INBOX',
   from_filter text,
   subject_filter text,
@@ -516,6 +524,19 @@ create table public.ingresos (
   notas text,
   created_at timestamp with time zone default now()
 );
+
+create table if not exists public.web_payment_operations (
+  id uuid primary key,
+  actor_id uuid not null references public.perfiles(id) on delete cascade,
+  escuela_id uuid not null references public.escuelas(id) on delete cascade,
+  request_hash text not null,
+  ingreso_id uuid references public.ingresos(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.web_payment_operations enable row level security;
+revoke all on public.web_payment_operations from public, anon, authenticated;
+grant select, insert on public.web_payment_operations to service_role;
+
 
 -- 14. CATEGORÍAS DE PREGUNTAS DE EXAMEN (globales, solo super_admin)
 create table public.categorias_examen (
@@ -867,6 +888,13 @@ alter table public.examenes_cale_preguntas enable row level security;
 alter table public.actividad_log enable row level security;
 alter table public.api_rate_limits enable row level security;
 revoke all on table public.api_rate_limits from anon, authenticated;
+alter table public.configuracion_contratos_escuela enable row level security;
+alter table public.plantillas_contrato_escuela enable row level security;
+alter table public.contratos_emitidos_alumno enable row level security;
+revoke all on table public.configuracion_contratos_escuela, public.plantillas_contrato_escuela,
+  public.contratos_emitidos_alumno from public, anon, authenticated;
+grant select, insert, update, delete on table public.configuracion_contratos_escuela,
+  public.plantillas_contrato_escuela, public.contratos_emitidos_alumno to service_role;
 alter table public.mantenimiento_vehiculos enable row level security;
 -- alter table public.cursos enable row level security;
 -- alter table public.sede_cursos enable row level security;

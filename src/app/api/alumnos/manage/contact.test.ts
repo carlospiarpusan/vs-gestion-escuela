@@ -11,6 +11,7 @@ vi.mock("@/lib/api-auth", async (original) => ({
 vi.mock("@/lib/server-db", () => ({ getServerDbPool: () => ({ query: mock.query }) }));
 const id = "10000000-0000-4000-8000-000000000001";
 const body = {
+  consentimiento_datos: true,
   sede_id: id,
   tipo_registro: "regular",
   nombre: "Ana",
@@ -20,6 +21,9 @@ const body = {
   email: "ana@example.com",
   telefono: "3001234567",
   lugar_expedicion_documento: "Ipiales",
+  fecha_nacimiento: "2000-01-15",
+  sexo: "F",
+  fecha_inscripcion: "2026-09-01",
   direccion: "Calle 1 numero 2",
   departamento: "Nariño",
   ciudad: "IPIALES",
@@ -66,6 +70,16 @@ it("un contacto completo llega a las comprobaciones existentes de sede", async (
   expect(mock.query).toHaveBeenCalled();
   expect(mock.provision).not.toHaveBeenCalled();
 });
+
+it.each(["country", "cityCode", "personType", "responsibilities", "taxRegime", "taxScheme"])(
+  "exige el dato fiscal %s aunque se evite el formulario",
+  async (field) => {
+    const datos_facturacion = { ...body.datos_facturacion, [field]: "" };
+    expect((await POST(request({ ...body, datos_facturacion }))).status).toBe(400);
+    expect(mock.provision).not.toHaveBeenCalled();
+    expect(mock.query).not.toHaveBeenCalled();
+  }
+);
 it.each(["fecha_nacimiento", "fecha_inscripcion", "fecha_examen_teorico", "fecha_examen_practico"])(
   "rechaza %s imposible antes de crear cuentas",
   async (field) => {
