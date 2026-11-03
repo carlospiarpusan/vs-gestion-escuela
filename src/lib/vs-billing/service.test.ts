@@ -39,7 +39,8 @@ beforeAll(async () => {
     create table perfiles (id uuid primary key, rol text, activo boolean, escuela_id uuid);
     create table alumnos (id uuid primary key, escuela_id uuid references escuelas(id),
       nombre text, apellidos text, dni text, tipo_documento text, email text,
-      valor_total numeric, categorias text[], numero_contrato text, credencial text, estado text);
+      valor_total numeric, categorias text[], numero_contrato text, credencial text, estado text,
+      telefono text, direccion text, ciudad text, departamento text, datos_facturacion jsonb);
     insert into escuelas values ('${VS_BILLING_SCHOOL.id}', '${VS_BILLING_SCHOOL.nit}'), ('${otherSchool}', '900000000');
     insert into perfiles values ('${actor}', 'admin_escuela', true, '${VS_BILLING_SCHOOL.id}');
     insert into alumnos values ('${student}', '${VS_BILLING_SCHOOL.id}', 'Persona', 'Ficticia', '12345678', 'CC', 'demo@example.com', 850000, ARRAY['A2'], 'CONTRATO-SECRETO', 'PASSWORD-NUNCA-EXPORTAR', 'activo'),
@@ -291,7 +292,7 @@ describe("API privada sobre PostgreSQL en memoria", () => {
     ]);
     expect(await authenticateConnectionToken(`Bearer ${token}`)).not.toBeNull();
   });
-  it("exporta EXCLUSIVAMENTE identidad y correo del alumno", async () => {
+  it("exporta EXCLUSIVAMENTE identidad, correo y perfil fiscal del alumno", async () => {
     const result = await getBillingStudent(student);
     expect(result).toEqual({
       schema_version: 1,
@@ -306,6 +307,7 @@ describe("API privada sobre PostgreSQL en memoria", () => {
         documento: "12345678",
         email: "demo@example.com",
       },
+      fiscal: null,
     });
     const serialized = JSON.stringify(result);
     for (const forbidden of [
@@ -323,6 +325,44 @@ describe("API privada sobre PostgreSQL en memoria", () => {
     const sql = mock.query.mock.calls.map((call) => String(call[0])).join("\n");
     expect(sql).not.toMatch(
       /matriculas|ingresos|valor_total|categorias|numero_contrato|credencial|select\s+\*/i
+    );
+  });
+  it("incluye el perfil fiscal solo cuando esta completo", async () => {
+    await db.query(
+      "update alumnos set telefono=$1, direccion=$2, ciudad=$3, departamento=$4, datos_facturacion=$5 where id=$6",
+      [
+        "3001234567",
+        "Calle 1 numero 2",
+        "IPIALES",
+        "Nariño",
+        {
+          country: "CO",
+          cityCode: "52356",
+          personType: "2",
+          responsibilities: "R-99-PN",
+          taxRegime: "ordinario",
+          taxScheme: "ZZ",
+        },
+        student,
+      ]
+    );
+    expect((await searchBillingStudents("12345678", null)).data[0].fiscal).toEqual({
+      documentType: "13",
+      personType: "2",
+      countryCode: "CO",
+      departmentCode: "52",
+      address: "Calle 1 numero 2",
+      cityCode: "52356",
+      phone: "3001234567",
+      responsibilities: "R-99-PN",
+      taxRegime: "ordinario",
+      taxScheme: "ZZ",
+    });
+    await db.query("update alumnos set direccion=null where id=$1", [student]);
+    expect((await getBillingStudent(student))?.fiscal).toBeNull();
+    await db.query(
+      "update alumnos set telefono=null, ciudad=null, departamento=null, datos_facturacion=null where id=$1",
+      [student]
     );
   });
   it("no revela alumnos de otras escuelas por UUID o busqueda", async () => {

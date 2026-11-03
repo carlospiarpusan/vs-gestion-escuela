@@ -2,6 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { getServerDbPool } from "@/lib/server-db";
 import { VS_BILLING_SCHOOL, type BillingStudent, type ConnectionKey } from "./scope";
+import { invoiceStudent } from "./facturax-contract";
+import { getStudentInvoiceIssues } from "./student-invoice-data";
 
 const KEY_COLUMNS =
   "id, nombre, identificador, created_at::text, expires_at::text, last_used_at::text, revoked_at::text";
@@ -171,10 +173,16 @@ type StudentRow = {
   dni: string;
   tipo_documento: string | null;
   email: string | null;
+  telefono: string | null;
+  direccion: string | null;
+  ciudad: string | null;
+  departamento: string | null;
+  datos_facturacion: unknown;
 };
 
 // Lista explicita: nunca consultar matriculas, cursos, valores, pagos ni credenciales.
-const EXPORT_QUERY = `select a.id, a.nombre, a.apellidos, a.dni, a.tipo_documento, a.email
+const EXPORT_QUERY = `select a.id, a.nombre, a.apellidos, a.dni, a.tipo_documento, a.email,
+  a.telefono, a.direccion, a.ciudad, a.departamento, a.datos_facturacion
   from public.alumnos a where a.escuela_id = $1`;
 
 function toExport(row: StudentRow): BillingStudent {
@@ -191,6 +199,8 @@ function toExport(row: StudentRow): BillingStudent {
       documento: row.dni,
       email: row.email,
     },
+    // Solo el perfil fiscal completo; uno incompleto se corrige en ConduSoft.
+    fiscal: getStudentInvoiceIssues(row).length ? null : invoiceStudent(row).fiscal,
   };
 }
 
