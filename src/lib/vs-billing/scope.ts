@@ -62,4 +62,16 @@ export type BillingStudent = {
     documento: string;
     email: string | null;
   };
+  fiscal: {
+    documentType: string;
+    personType: string;
+    countryCode: string;
+    departmentCode: string;
+    address: string;
+    cityCode: string;
+    phone: string;
+    responsibilities: string;
+    taxRegime: string;
+    taxScheme: string;
+  } | null;
 };
