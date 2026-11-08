@@ -12,18 +12,23 @@ export class RetentionError extends Error {
 }
 async function transaction<T>(work: (client: PoolClient) => Promise<T>) {
   const client = await getServerDbPool().connect();
+  let discardConnection = false;
   try {
     await client.query("BEGIN");
     const value = await work(client);
     await client.query("COMMIT");
     return value;
   } catch (error) {
-    await client.query("ROLLBACK");
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      discardConnection = true;
+    }
     if ((error as { code?: string }).code === "23505")
       throw new RetentionError("Ya existe una baja abierta para esta escuela.", 409);
     throw error;
   } finally {
-    client.release();
+    client.release(discardConnection);
   }
 }
 export async function getRetentionOverview(schoolId: string): Promise<RetentionOverview> {

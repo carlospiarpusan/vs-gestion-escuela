@@ -223,7 +223,7 @@ async function saveSede(
     await client.query("ROLLBACK");
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "No se pudo guardar la sede.",
+        error: "No se pudo guardar la sede.",
       },
       { status: 400 }
     );
@@ -365,7 +365,7 @@ export async function DELETE(request: Request) {
     await client.query("ROLLBACK");
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "No se pudo eliminar la sede.",
+        error: "No se pudo eliminar la sede.",
       },
       { status: 400 }
     );

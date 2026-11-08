@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     console.error("Error al preparar checkout de Wompi:", error);
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "No se pudo preparar el checkout de Wompi.",
+        error: "No se pudo preparar el checkout de Wompi.",
       },
       { status: 500 }
     );

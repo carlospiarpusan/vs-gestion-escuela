@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   buildPayrollSummary,
@@ -190,10 +190,12 @@ export default function NominasPage() {
   const [formNotas, setFormNotas] = useState("");
 
   // ── Fetch nóminas ─────────────────────────────────────────────────
+  const nominasFetchIdRef = useRef(0);
   const fetchNominas = useCallback(async () => {
     if (!escuelaId) return;
     setLoading(true);
     setError(null);
+    const fetchId = ++nominasFetchIdRef.current;
     try {
       const params = new URLSearchParams({
         escuela_id: escuelaId,
@@ -205,6 +207,7 @@ export default function NominasPage() {
 
       const res = await fetch(`/api/nominas?${params}`);
       const json = await res.json();
+      if (fetchId !== nominasFetchIdRef.current) return;
       if (!res.ok) throw new Error(json.error || "Error al cargar");
 
       setNominas(json.nominas ?? []);
@@ -213,9 +216,10 @@ export default function NominasPage() {
       setSedes(json.sedes ?? []);
       setCierres(json.cierres ?? []);
     } catch (err) {
+      if (fetchId !== nominasFetchIdRef.current) return;
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
-      setLoading(false);
+      if (fetchId === nominasFetchIdRef.current) setLoading(false);
     }
   }, [escuelaId, sedeId, anio, mes, tab]);
 

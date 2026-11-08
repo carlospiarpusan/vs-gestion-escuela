@@ -25,6 +25,7 @@ export async function listConnectionKeys() {
 
 async function transaction<T>(operation: (client: PoolClient) => Promise<T>) {
   const client = await getServerDbPool().connect();
+  let discardConnection = false;
   try {
     await client.query("BEGIN");
     await client.query("select pg_advisory_xact_lock(hashtext($1))", [
@@ -34,10 +35,14 @@ async function transaction<T>(operation: (client: PoolClient) => Promise<T>) {
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      discardConnection = true;
+    }
     throw error;
   } finally {
-    client.release();
+    client.release(discardConnection);
   }
 }
 

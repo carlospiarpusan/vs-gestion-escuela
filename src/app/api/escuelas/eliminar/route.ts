@@ -86,36 +86,28 @@ export async function POST(request: Request) {
     let deletedUsers = 0;
     const authCleanupErrors: string[] = [];
 
+    let discardConnection = false;
     try {
       await client.query("BEGIN");
-      await client.query(
-        `
-          delete from public.perfiles
-          where escuela_id = $1
-        `,
-        [escuelaId]
-      );
-      await client.query(
-        `
-          delete from public.escuelas
-          where id = $1
-        `,
-        [escuelaId]
-      );
+      await client.query("delete from public.facturax_contract_invoices where escuela_id = $1", [
+        escuelaId,
+      ]);
+      await client.query("delete from public.perfiles where escuela_id = $1", [escuelaId]);
+      await client.query("delete from public.escuelas where id = $1", [escuelaId]);
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK");
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        discardConnection = true;
+      }
+      console.error("Error al eliminar escuela:", error);
       return NextResponse.json(
-        {
-          error:
-            error instanceof Error
-              ? `No se pudo eliminar completamente la escuela: ${error.message}`
-              : "No se pudo eliminar completamente la escuela.",
-        },
+        { error: "No se pudo eliminar completamente la escuela." },
         { status: 400 }
       );
     } finally {
-      client.release();
+      client.release(discardConnection);
     }
 
     for (const userId of userIds) {

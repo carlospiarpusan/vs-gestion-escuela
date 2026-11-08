@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     console.error("Error procesando evento de Wompi:", error);
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "No se pudo procesar el evento de Wompi.",
+        error: "No se pudo procesar el evento de Wompi.",
       },
       { status: 400 }
     );

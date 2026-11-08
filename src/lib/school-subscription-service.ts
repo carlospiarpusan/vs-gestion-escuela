@@ -950,11 +950,11 @@ async function finalizeAttempt(
         'active',
         $4::timestamptz,
         $5::timestamptz,
-        $5::timestamptz + interval '${nextPeriodInterval}',
+        $5::timestamptz + $6::interval,
         true,
         false,
-        jsonb_build_object('source', 'wompi', 'transaction_id', $6::text, 'attempt_id', $7::text),
-        $8
+        jsonb_build_object('source', 'wompi', 'transaction_id', $7::text, 'attempt_id', $8::text),
+        $9
       )
       returning id
     `,
@@ -964,6 +964,7 @@ async function finalizeAttempt(
       input.attempt.target_billing_interval,
       paidAt,
       nextPeriodStart,
+      nextPeriodInterval,
       input.transaction.id,
       input.attempt.id,
       input.attempt.initiated_by,
@@ -2011,11 +2012,11 @@ export async function performSchoolSubscriptionAdminAction(
               'active',
               $4::timestamptz,
               $4::timestamptz,
-              $4::timestamptz + interval '${nextPeriodInterval}',
+              $4::timestamptz + $5::interval,
               true,
               false,
-              jsonb_build_object('source', 'manual_support', 'reason', $5::text),
-              $6
+              jsonb_build_object('source', 'manual_support', 'reason', $6::text),
+              $7
             )
             returning id
           `,
@@ -2024,6 +2025,7 @@ export async function performSchoolSubscriptionAdminAction(
             input.planId,
             input.billingInterval,
             startAt.toISOString(),
+            nextPeriodInterval,
             resolvedReason,
             input.initiatedBy,
           ]
