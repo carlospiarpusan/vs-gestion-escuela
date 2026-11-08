@@ -48,13 +48,18 @@ function assertScope(actor: Actor, schoolId: string, sedeId: string) {
 
 async function transaction<T>(operation: (client: PoolClient) => Promise<T>) {
   const client = await getServerDbPool().connect();
+  let discardConnection = false;
   try {
     await client.query("BEGIN");
     const result = await operation(client);
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      discardConnection = true;
+    }
     if ((error as { code?: string })?.code === "23505") {
       throw new PayrollMutationError(
         "Ya existe una nómina para este empleado en el periodo seleccionado.",
@@ -63,7 +68,7 @@ async function transaction<T>(operation: (client: PoolClient) => Promise<T>) {
     }
     throw error;
   } finally {
-    client.release();
+    client.release(discardConnection);
   }
 }
 

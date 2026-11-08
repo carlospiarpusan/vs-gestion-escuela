@@ -167,10 +167,7 @@ export async function POST(
     console.error("Error al ejecutar acción comercial de super admin:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "No se pudo ejecutar la acción comercial sobre la escuela.",
+        error: "No se pudo ejecutar la acción comercial sobre la escuela.",
       },
       { status: 500 }
     );

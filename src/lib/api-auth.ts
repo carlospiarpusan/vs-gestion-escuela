@@ -290,29 +290,13 @@ export async function parseJsonBody<T>(
   return { ok: true, data: parsed.data };
 }
 
-export async function findAuthUserByEmail(supabaseAdmin: unknown, email: string) {
-  const client = supabaseAdmin as {
-    auth: {
-      admin: {
-        listUsers: (params: { page: number; perPage: number }) => Promise<{
-          data?: { users?: Array<{ id: string; email?: string | null }> };
-          error?: { message?: string } | null;
-        }>;
-      };
-    };
-  };
-
-  let page = 1;
-  while (true) {
-    const { data, error } = await client.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) throw new Error(error.message || "No se pudo consultar usuarios.");
-
-    const users = data?.users ?? [];
-    const match = users.find((user) => user.email?.toLowerCase() === email.toLowerCase());
-    if (match) return match;
-    if (users.length < 1000) return null;
-    page += 1;
-  }
+export async function findAuthUserByEmail(_supabaseAdmin: unknown, email: string) {
+  const pool = (await import("@/lib/server-db")).getServerDbPool();
+  const result = await pool.query<{ id: string; email: string }>(
+    "select id, email from auth.users where lower(email) = lower($1) limit 1",
+    [email]
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function createAuthUserWithRetryOnCollision(

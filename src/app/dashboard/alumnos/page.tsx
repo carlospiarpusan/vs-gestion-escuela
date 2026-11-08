@@ -535,6 +535,7 @@ export default function AlumnosPage() {
     setMatriculaOpen(true);
   };
 
+  const abonoFetchIdRef = useRef(0);
   const openAbono = useCallback(
     async (alumno: AlumnoRow) => {
       if (!canCreateIncome) return;
@@ -549,6 +550,7 @@ export default function AlumnosPage() {
       setAbonoOpen(true);
       setLoadingIngresos(true);
 
+      const fetchId = ++abonoFetchIdRef.current;
       const supabase = createClient();
       const { data } = await supabase
         .from("ingresos")
@@ -557,6 +559,7 @@ export default function AlumnosPage() {
         .order("fecha", { ascending: false })
         .order("created_at", { ascending: false });
 
+      if (fetchId !== abonoFetchIdRef.current) return;
       setAbonoIngresos((data as Ingreso[]) || []);
       setLoadingIngresos(false);
     },

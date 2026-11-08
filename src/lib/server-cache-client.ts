@@ -13,16 +13,26 @@ async function flushQueuedRevalidations() {
 
   if (normalizedTags.length === 0) return;
 
-  try {
-    await fetch("/api/cache/revalidate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tags: normalizedTags }),
-      cache: "no-store",
-      keepalive: true,
-    });
-  } catch (error) {
-    console.warn("[cache] No se pudo revalidar cache server-side", error);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch("/api/cache/revalidate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: normalizedTags }),
+        cache: "no-store",
+        keepalive: true,
+      });
+      if (res.ok) return;
+      console.warn(`[cache] Revalidación falló con status ${res.status}, tags:`, normalizedTags);
+    } catch (error) {
+      if (attempt === 1) {
+        console.error(
+          "[cache] No se pudo revalidar cache después de 2 intentos, tags:",
+          normalizedTags,
+          error
+        );
+      }
+    }
   }
 }
 

@@ -185,8 +185,14 @@ export async function PATCH(request: Request) {
       direccion: (v) => (v ? String(v).trim() : null),
       plan: (v) => String(v),
       estado: (v) => String(v),
-      max_alumnos: (v) => Math.max(1, Math.round(Number(v))),
-      max_sedes: (v) => Math.max(1, Math.round(Number(v))),
+      max_alumnos: (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.max(1, Math.round(n)) : 1;
+      },
+      max_sedes: (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.max(1, Math.round(n)) : 1;
+      },
       categorias: (v) => normalizeStoredCourseCategories(Array.isArray(v) ? v : []),
     };
 
@@ -217,10 +223,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error al actualizar escuela:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error al actualizar." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Error al actualizar la escuela." }, { status: 500 });
   }
 }
 
@@ -378,7 +381,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Error interno al crear la escuela.",
+        error: "Error interno al crear la escuela.",
       },
       { status: 400 }
     );

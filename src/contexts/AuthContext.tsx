@@ -77,7 +77,6 @@ interface AuthContextValue {
   subscriptionAccess: SchoolSubscriptionAccess | null;
   schoolOptions: DashboardSchoolOption[];
   activeEscuelaId: string | null;
-  setActiveEscuelaId: (escuelaId: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
   loading: boolean;
   error: string | null;
@@ -94,7 +93,6 @@ const FALLBACK_AUTH_CONTEXT: AuthContextValue = {
   subscriptionAccess: null,
   schoolOptions: [],
   activeEscuelaId: null,
-  setActiveEscuelaId: noopAsync,
   refreshProfile: noopAsync,
   loading: true,
   error: null,
@@ -495,11 +493,6 @@ export function AuthProvider({
     };
   }, [clearIdleLogoutState, performSignOut, user]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const setActiveEscuelaId = useCallback(async (_escuelaId: string) => {
-    // super_admin opera en alcance global — no se necesita cambiar escuela activa.
-  }, []);
-
   const logout = useCallback(async () => {
     await performSignOut("/");
   }, [performSignOut]);
@@ -519,7 +512,6 @@ export function AuthProvider({
         subscriptionAccess,
         schoolOptions,
         activeEscuelaId,
-        setActiveEscuelaId,
         refreshProfile,
         loading,
         error,

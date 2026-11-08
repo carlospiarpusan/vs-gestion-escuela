@@ -23,8 +23,7 @@ export async function GET() {
     console.error("Error al cargar el centro de facturación:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "No se pudo cargar el centro de facturación.",
+        error: "No se pudo cargar el centro de facturación.",
       },
       { status: 500 }
     );
