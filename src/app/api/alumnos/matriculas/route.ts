@@ -421,7 +421,6 @@ export async function PUT(request: Request) {
       )
     ).rows[0]?.invoiced;
     const changesInvoiceData =
-      Number(payload.valor_total ?? 0) !== Number(matricula.valor_total ?? 0) ||
       payload.fecha_inscripcion !== extractDateOnly(matricula.fecha_inscripcion) ||
       JSON.stringify([...payload.categorias].sort()) !==
         JSON.stringify(normalizeStoredCourseCategories(matricula.categorias).sort());
@@ -436,7 +435,7 @@ export async function PUT(request: Request) {
       (changesInvoiceData || changesAnsv)
     )
       throw new StudentRecordError(
-        "La matrícula tiene facturación asociada. Puedes cambiar sus notas y estado, conservando el valor, las categorías y la fecha originales."
+        "La matrícula tiene facturación asociada. Puedes cambiar el valor, las notas y el estado, conservando las categorías y la fecha originales."
       );
     const paid = Number(
       (
