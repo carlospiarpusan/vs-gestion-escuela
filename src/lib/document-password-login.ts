@@ -32,13 +32,13 @@ export async function signInWithDocument(
   // A public document number must not unlock email accounts using that same default password.
   if (
     profile?.email &&
-    !/@(alumno|instructor|administrativo)\.local$/i.test(profile.email) &&
+    !/@(alumno|instructor|administrativo|tramitador)\.local$/i.test(profile.email) &&
     password.trim().toLowerCase() === cedula.toLowerCase()
   )
     return deny();
   const candidates = profile?.email
     ? [profile.email]
-    : ["alumno", "instructor", "administrativo"].map(
+    : ["alumno", "instructor", "administrativo", "tramitador"].map(
         (role) => `${cedula.toLowerCase()}@${role}.local`
       );
   for (const email of candidates) {

@@ -82,6 +82,15 @@ beforeAll(async () => {
     const start = schema.indexOf(`create table public.${table} (`);
     await db.exec(schema.slice(start, schema.indexOf("\n);", start) + 3));
   }
+  // Catálogo real de tramitadores (función de normalización + tabla).
+  const tramitadoresStart = schema.indexOf(
+    "create or replace function public.normalize_tramitador_nombre"
+  );
+  const tramitadoresEnd = schema.indexOf(
+    "\n);",
+    schema.indexOf("create table public.tramitadores (")
+  );
+  await db.exec(schema.slice(tramitadoresStart, tramitadoresEnd + 3));
   for (const [file, table] of [
     ["014_horas_trabajo.sql", "horas_trabajo"],
     ["033_cierre_horas_a_gastos.sql", "cierres_horas_instructores"],
@@ -120,6 +129,7 @@ beforeAll(async () => {
       insert into horas_trabajo(escuela_id,sede_id,instructor_id,fecha,horas) values('${schoolId}','${branchId}','${id(300 + n)}','2026-10-01',2);
       insert into cierres_horas_instructores(escuela_id,sede_id,instructor_id,periodo_anio,periodo_mes,fecha_cierre,total_horas,valor_hora,monto_total) values('${schoolId}','${branchId}','${id(300 + n)}',2026,10,'2026-10-31',2,100,200);
       insert into gastos(id,escuela_id,sede_id,categoria,proveedor) values('${id(700 + n)}','${schoolId}','${branchId}','tramitador','Proveedor ${n}');
+      insert into tramitadores(escuela_id,nombre) values('${schoolId}','Proveedor ${n}');
       insert into ingresos(escuela_id,sede_id,user_id,alumno_id,categoria,concepto,monto,fecha) values('${schoolId}','${branchId}','${id(100 + n)}','${id(200 + n)}','matricula','Prueba',${100 * n},'2026-10-01');
     `);
   }
@@ -165,7 +175,9 @@ describe("operational list scope with real SQL", () => {
         if (payload._catalogs?.vehiculos)
           expect(payload._catalogs.vehiculos.map((r: { id: string }) => r.id)).toEqual([id(401)]);
         if (payload._catalogs?.tramitadorOptions)
-          expect(payload._catalogs.tramitadorOptions).toEqual(["Proveedor 1"]);
+          expect(
+            payload._catalogs.tramitadorOptions.map((r: { nombre: string }) => r.nombre)
+          ).toEqual(["Proveedor 1", "Proveedor 2"]);
       }
     }
   );
@@ -199,7 +211,12 @@ describe("operational list scope with real SQL", () => {
       expect(payload.instructores.map((r: { id: string }) => r.id)).toEqual([id(301)]);
     if (payload.vehiculos)
       expect(payload.vehiculos.map((r: { id: string }) => r.id)).toEqual([id(401)]);
-    if (payload.tramitadorOptions) expect(payload.tramitadorOptions).toEqual(["Proveedor 1"]);
+    // Los tramitadores son de la escuela (no de la sede), pero nunca de otra escuela.
+    if (payload.tramitadorOptions)
+      expect(payload.tramitadorOptions.map((r: { nombre: string }) => r.nombre)).toEqual([
+        "Proveedor 1",
+        "Proveedor 2",
+      ]);
   });
   it.each(allHandlers)("%s: signed-out requests never reach SQL", async (path, handler) => {
     mocks.auth.mockResolvedValue({ ok: false, response: new Response(null, { status: 401 }) });

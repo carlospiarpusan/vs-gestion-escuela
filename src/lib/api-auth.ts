@@ -197,6 +197,7 @@ const RESERVED_AUTH_EMAIL_SUFFIXES = [
   "@alumno.local",
   "@instructor.local",
   "@administrativo.local",
+  "@tramitador.local",
 ];
 
 export function ensureNonReservedAuthEmail(email: string | null): string | null {

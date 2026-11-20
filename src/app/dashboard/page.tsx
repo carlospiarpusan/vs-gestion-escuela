@@ -15,6 +15,10 @@ export default async function DashboardPage() {
     return <SuperAdminDashboardHome />;
   }
 
+  if (perfil?.rol === "tramitador") {
+    redirect("/dashboard/mis-alumnos");
+  }
+
   if (perfil?.rol === "alumno") {
     return <AlumnoDashboardHome />;
   }

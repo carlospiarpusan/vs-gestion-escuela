@@ -7,7 +7,8 @@ export type Rol =
   | "administrativo"
   | "instructor"
   | "recepcion"
-  | "alumno";
+  | "alumno"
+  | "tramitador";
 
 export type PlanEscuela = "gratuito" | "basico" | "profesional" | "enterprise";
 export type PlanEscuelaPago = Exclude<PlanEscuela, "gratuito">;
@@ -188,6 +189,7 @@ export interface MatriculaAlumno {
   estado: EstadoMatricula;
   notas: string | null;
   tiene_tramitador: boolean;
+  tramitador_id?: string | null;
   tramitador_nombre: string | null;
   tramitador_valor: number | null;
   created_at: string;

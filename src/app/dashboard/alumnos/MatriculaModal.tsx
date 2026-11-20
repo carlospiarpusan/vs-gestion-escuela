@@ -1,5 +1,7 @@
 "use client";
 
+import TramitadorFields from "./TramitadorFields";
+import type { TramitadorOption } from "@/lib/tramitadores";
 import Modal from "@/components/dashboard/Modal";
 import AnsvFields from "./AnsvFields";
 import type { MetodoPago } from "@/types/database";
@@ -26,7 +28,7 @@ interface MatriculaModalProps {
   toggleMatriculaCategoria: (cat: string) => void;
   catalogsLoading?: boolean;
   categoriasEscuela: string[];
-  tramitadorOptions: string[];
+  tramitadorOptions: TramitadorOption[];
   editingMatricula?: MatriculaResumen | null;
   formError?: string;
   onEditMatricula?: (alumno: AlumnoRow, matricula: MatriculaResumen) => void;
@@ -52,7 +54,6 @@ export default function MatriculaModal({
   const paidTramitador = Boolean(
     editingMatricula && Number(editingMatricula.tramitador_valor || 0) > 0
   );
-  const tramitadorListId = "matricula-tramitador-options";
   const {
     preview: contractPreview,
     loading: loadingContractPreview,
@@ -306,55 +307,23 @@ export default function MatriculaModal({
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
                 Tiene tramitador
               </p>
-              <p className="text-xs text-[#86868b]">
-                El costo se registrará automáticamente en Gastos
-              </p>
+              <p className="text-xs text-[#86868b]">La comisión se registra en Gastos</p>
             </div>
           </label>
 
           {matriculaForm.tiene_tramitador && (
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className={labelClass}>Nombre del tramitador</label>
-                <input
-                  type="text"
-                  list={tramitadorOptions.length > 0 ? tramitadorListId : undefined}
-                  value={matriculaForm.tramitador_nombre}
-                  disabled={paidTramitador}
-                  onChange={(e) =>
-                    setMatriculaForm({ ...matriculaForm, tramitador_nombre: e.target.value })
-                  }
-                  placeholder="Nombre o agencia"
-                  className={inputClass}
-                />
-                {tramitadorOptions.length > 0 ? (
-                  <datalist id={tramitadorListId}>
-                    {tramitadorOptions.map((option) => (
-                      <option key={option} value={option} />
-                    ))}
-                  </datalist>
-                ) : null}
-                <p className="mt-1 text-[11px] text-[#86868b]">
-                  Reutiliza nombres existentes para no duplicar el mismo tercero con variantes.
-                </p>
-              </div>
-              <div>
-                <label className={labelClass}>Valor del tramitador</label>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  value={matriculaForm.tramitador_valor}
-                  disabled={paidTramitador}
-                  onChange={(e) =>
-                    setMatriculaForm({ ...matriculaForm, tramitador_valor: e.target.value })
-                  }
-                  className={inputClass}
-                />
-                <p className="mt-1 text-[11px] text-[#86868b]">
-                  Con 0 solo queda asignado el tercero; cuando pongas valor se registra el gasto.
-                </p>
-              </div>
+              <TramitadorFields
+                idPrefix="matricula"
+                options={tramitadorOptions}
+                nombre={matriculaForm.tramitador_nombre}
+                valor={matriculaForm.tramitador_valor}
+                disabled={paidTramitador}
+                required
+                labelClassName={labelClass}
+                inputClassName={inputClass}
+                onChange={(next) => setMatriculaForm({ ...matriculaForm, ...next })}
+              />
             </div>
           )}
         </div>

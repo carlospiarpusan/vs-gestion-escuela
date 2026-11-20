@@ -1,9 +1,11 @@
+import { canAccessDashboardPath } from "@/lib/access-control";
 import { describe, expect, it } from "vitest";
 import {
   DASHBOARD_MODULES,
   findDashboardModuleByPath,
   getDashboardDefaultRoute,
   getDashboardHomePriorityModules,
+  getDashboardModulesForRole,
   getDashboardNavigationForRole,
   getDashboardPageMeta,
   getDashboardPrimaryMobileModules,
@@ -94,6 +96,7 @@ describe("dashboard navigation config", () => {
     expect(navigation[4]?.modules.map((module) => module.id)).toEqual([
       "instructors",
       "staff",
+      "agents",
       "contracts",
       "compliance",
       "branches",
@@ -170,5 +173,28 @@ describe("dashboard navigation config", () => {
       area: { id: "configuration" },
       module: null,
     });
+  });
+
+  it("limits the tramitador role to its own students page", () => {
+    expect(getDashboardModulesForRole("tramitador", { navOnly: false }).map((m) => m.id)).toEqual([
+      "agentStudents",
+    ]);
+    expect(getDashboardDefaultRoute("tramitador")).toBe("/dashboard/mis-alumnos");
+    for (const path of [
+      "/dashboard/alumnos",
+      "/dashboard/ingresos",
+      "/dashboard/cartera",
+      "/dashboard/gastos",
+      "/dashboard/tramitadores",
+      "/dashboard/informes",
+    ]) {
+      expect(canAccessDashboardPath("tramitador", path)).toBe(false);
+    }
+    expect(canAccessDashboardPath("tramitador", "/dashboard/mis-alumnos")).toBe(true);
+    for (const role of ["admin_escuela", "admin_sede", "administrativo", "alumno"] as const) {
+      expect(canAccessDashboardPath(role, "/dashboard/mis-alumnos")).toBe(false);
+    }
+    expect(canAccessDashboardPath("admin_sede", "/dashboard/tramitadores")).toBe(true);
+    expect(canAccessDashboardPath("administrativo", "/dashboard/tramitadores")).toBe(false);
   });
 });

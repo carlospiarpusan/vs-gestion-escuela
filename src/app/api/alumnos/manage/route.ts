@@ -1,3 +1,8 @@
+import {
+  TramitadorError,
+  resolveEnrollmentTramitador,
+  type TramitadorRecord,
+} from "@/lib/tramitadores-server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -562,6 +567,23 @@ async function handleMutation(request: Request, mode: "create" | "update") {
     );
   }
 
+  let tramitadorCatalogo: TramitadorRecord | null = null;
+  if (payload.tiene_tramitador && !(mode === "update" && payload.solo_ficha)) {
+    try {
+      tramitadorCatalogo = await resolveEnrollmentTramitador(
+        getServerDbPool(),
+        schoolId,
+        { tramitador_nombre: payload.tramitador_nombre },
+        { alumnoId: existing?.alumno.id ?? null }
+      );
+    } catch (error) {
+      if (error instanceof TramitadorError) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
+      throw error;
+    }
+  }
+
   if (
     mode === "create" &&
     payload.abono > 0 &&
@@ -656,9 +678,9 @@ async function handleMutation(request: Request, mode: "create" | "update") {
         ? payload.fecha_inscripcion || hoy
         : (existing?.alumno.fecha_inscripcion ?? null);
     const tramitadorValor = payload.tiene_tramitador ? (payload.tramitador_valor ?? null) : null;
-    const tramitadorNombre = payload.tiene_tramitador
-      ? payload.tramitador_nombre?.trim() || null
-      : null;
+    // Solo los tramitadores de tipo comisión generan gasto; el descuento ya va en el curso.
+    const tramitadorGeneraGasto = tramitadorCatalogo?.tipo === "comision";
+    const tramitadorNombre = tramitadorCatalogo?.nombre ?? null;
 
     failureStage = "base_de_datos";
     const pool = getServerDbPool();
@@ -1060,12 +1082,12 @@ async function handleMutation(request: Request, mode: "create" | "update") {
           }
           matriculaId = editingMatricula.id;
 
-          if (payload.tiene_tramitador && (payload.tramitador_valor ?? 0) > 0) {
+          if (tramitadorGeneraGasto && (tramitadorValor ?? 0) > 0) {
             const originalValor = toNumber(editingMatricula.tramitador_valor);
             const esPrimeraVez = !editingMatricula.tiene_tramitador;
             const montoGasto = esPrimeraVez
-              ? (payload.tramitador_valor ?? 0)
-              : (payload.tramitador_valor ?? 0) - originalValor;
+              ? (tramitadorValor ?? 0)
+              : (tramitadorValor ?? 0) - originalValor;
 
             if (montoGasto > 0) {
               await client.query(
@@ -1209,7 +1231,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
             categoria: payload.ansv_categoria,
           });
 
-          if (payload.tiene_tramitador && (payload.tramitador_valor ?? 0) > 0) {
+          if (tramitadorGeneraGasto && (tramitadorValor ?? 0) > 0) {
             await client.query(
               `
                 insert into public.gastos (
@@ -1222,7 +1244,7 @@ async function handleMutation(request: Request, mode: "create" | "update") {
                 payload.sede_id,
                 authz.perfil.id,
                 `Tramitador — ${payload.nombre} ${payload.apellidos}`,
-                payload.tramitador_valor ?? 0,
+                tramitadorValor ?? 0,
                 tramitadorNombre,
                 hoy,
                 `Tramitador asignado al alumno ${payload.nombre} ${payload.apellidos}`,

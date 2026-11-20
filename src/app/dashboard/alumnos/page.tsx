@@ -1,5 +1,6 @@
 "use client";
 
+import type { TramitadorOption } from "@/lib/tramitadores";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase";
@@ -65,7 +66,7 @@ const FacturaElectronicaModal = dynamic(() => import("./FacturaElectronicaModal"
 
 type AlumnosCatalogosResponse = {
   categoriasEscuela: string[];
-  tramitadorOptions: string[];
+  tramitadorOptions: TramitadorOption[];
   defaultSedeId: string | null;
 };
 
@@ -109,7 +110,7 @@ export default function AlumnosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [categoriasEscuela, setCategoriasEscuela] = useState<string[]>([]);
-  const [tramitadorOptions, setTramitadorOptions] = useState<string[]>([]);
+  const [tramitadorOptions, setTramitadorOptions] = useState<TramitadorOption[]>([]);
   const [defaultSedeId, setDefaultSedeId] = useState<string | null>(null);
   const [filtrosTipo, setFiltrosTipo] = useState<TipoRegistroAlumno[]>([]);
   const [filtrosCat, setFiltrosCat] = useState<string[]>([]);

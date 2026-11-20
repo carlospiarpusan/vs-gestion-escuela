@@ -58,7 +58,9 @@ export type DashboardModuleId =
   | "permissions"
   | "compliance"
   | "analytics"
-  | "arco";
+  | "arco"
+  | "agents"
+  | "agentStudents";
 
 export type DashboardAreaDescriptor = {
   id: DashboardAreaId;
@@ -327,6 +329,31 @@ export const DASHBOARD_MODULES: DashboardModuleDescriptor[] = [
     homePriority: 120,
   },
   {
+    id: "agents",
+    label: "Tramitadores",
+    shortLabel: "Tramitadores",
+    href: "/dashboard/tramitadores",
+    pathPrefix: "/dashboard/tramitadores",
+    description: "Catálogo de tramitadores, tipo de pago y acceso a sus alumnos.",
+    area: "configuration",
+    icon: "staff",
+    roles: ["admin_escuela", "admin_sede"],
+    priority: 122,
+  },
+  {
+    id: "agentStudents",
+    label: "Mis alumnos",
+    shortLabel: "Mis alumnos",
+    href: "/dashboard/mis-alumnos",
+    pathPrefix: "/dashboard/mis-alumnos",
+    description: "Alumnos asignados, valor del curso, abonos y comisión.",
+    area: "overview",
+    icon: "students",
+    roles: ["tramitador"],
+    priority: 1,
+    mobilePriority: 0,
+  },
+  {
     id: "permissions",
     label: "Permisos",
     shortLabel: "Permisos",
@@ -567,6 +594,7 @@ export function getDashboardHomePriorityModules(rol?: Rol | null) {
     recepcion: ["students", "income", "cash", "portfolio"],
     instructor: ["vehicles", "logbook"],
     alumno: ["exams"],
+    tramitador: ["agentStudents"],
   };
   const allowed = getDashboardModulesForRole(rol, { navOnly: true });
   return (rol ? (priorities[rol] ?? []) : [])
@@ -576,5 +604,6 @@ export function getDashboardHomePriorityModules(rol?: Rol | null) {
 
 export function getDashboardDefaultRoute(rol?: Rol | null) {
   if (rol === "instructor") return "/dashboard/vehiculos?tab=bitacora";
+  if (rol === "tramitador") return "/dashboard/mis-alumnos";
   return "/dashboard";
 }

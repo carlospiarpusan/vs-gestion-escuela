@@ -190,6 +190,26 @@ const routes = [
     methods: ["GET"],
   },
   { name: "vehiculos", load: () => import("./vehiculos/route"), methods: ["GET"] },
+  {
+    name: "tramitadores",
+    load: () => import("./tramitadores/route"),
+    methods: ["GET", "POST", "PATCH", "DELETE"],
+  },
+  {
+    name: "tramitadores/fusionar",
+    load: () => import("./tramitadores/fusionar/route"),
+    methods: ["POST"],
+  },
+  {
+    name: "tramitadores/acceso",
+    load: () => import("./tramitadores/acceso/route"),
+    methods: ["POST", "PATCH"],
+  },
+  {
+    name: "tramitador/mis-alumnos",
+    load: () => import("./tramitador/mis-alumnos/route"),
+    methods: ["GET"],
+  },
 ];
 for (const route of routes)
   for (const method of route.methods) {
@@ -218,3 +238,38 @@ for (const route of routes)
       expect(mock.query).not.toHaveBeenCalled();
     });
   }
+
+const tramitadorAdminRoutes = [
+  { load: () => import("./tramitadores/route"), methods: ["GET", "POST", "PATCH", "DELETE"] },
+  { load: () => import("./tramitadores/fusionar/route"), methods: ["POST"] },
+  { load: () => import("./tramitadores/acceso/route"), methods: ["POST", "PATCH"] },
+];
+it("el rol tramitador no entra a ninguna API de administración de tramitadores", async () => {
+  for (const route of tramitadorAdminRoutes) {
+    const handlers = (await route.load()) as Record<
+      string,
+      (request: Request) => Promise<Response>
+    >;
+    for (const method of route.methods) {
+      mock.auth.mockClear();
+      await handlers[method](
+        new Request("https://example.com/api/tramitadores", {
+          method,
+          ...(method === "GET"
+            ? {}
+            : { body: "{}", headers: { "Content-Type": "application/json" } }),
+        })
+      );
+      const allowed = mock.auth.mock.calls[0]?.[0] as string[];
+      expect(allowed).not.toContain("tramitador");
+      expect(allowed).not.toContain("alumno");
+      expect(allowed).not.toContain("instructor");
+      if (method !== "GET") expect(allowed).not.toContain("administrativo");
+    }
+  }
+});
+it("solo el rol tramitador entra a su portal de alumnos", async () => {
+  const { GET } = await import("./tramitador/mis-alumnos/route");
+  await GET(new Request("https://example.com/api/tramitador/mis-alumnos"));
+  expect(mock.auth.mock.calls[0]?.[0]).toEqual(["tramitador"]);
+});
