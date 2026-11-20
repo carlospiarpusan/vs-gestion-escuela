@@ -370,6 +370,7 @@ export async function POST(request: Request) {
       client.release();
     }
   } catch (error) {
+    console.error("Error creando escuela:", error);
     if (createdAuthUserId) {
       try {
         const supabaseAdmin = buildSupabaseAdminClient();

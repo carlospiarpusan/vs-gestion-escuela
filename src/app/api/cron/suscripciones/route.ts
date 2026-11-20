@@ -3,6 +3,7 @@ import {
   processDueSchoolSubscriptions,
   reconcileSchoolPaymentAttemptByReference,
   reconcileSchoolPaymentAttemptByTransactionId,
+  touchPendingAttempt,
 } from "@/lib/school-subscription-service";
 import { getServerDbPool } from "@/lib/server-db";
 
@@ -41,32 +42,38 @@ export async function GET(request: Request) {
     }
 
     const pendingAttemptsRes = await client.query<{
+      id: string;
       reference: string;
       wompi_transaction_id: string | null;
     }>(
       `
-        select reference, wompi_transaction_id
+        select id, reference, wompi_transaction_id
         from public.school_payment_attempts
         where status = 'pending'
-        order by created_at asc
+        order by updated_at asc
         limit 20
       `
     );
 
     const reconciled: string[] = [];
+    const failed: string[] = [];
     for (const row of pendingAttemptsRes.rows) {
-      if (row.wompi_transaction_id) {
-        await reconcileSchoolPaymentAttemptByTransactionId(pool, row.wompi_transaction_id);
-        reconciled.push(row.wompi_transaction_id);
-        continue;
+      try {
+        if (row.wompi_transaction_id) {
+          await reconcileSchoolPaymentAttemptByTransactionId(pool, row.wompi_transaction_id);
+        } else {
+          await reconcileSchoolPaymentAttemptByReference(pool, row.reference);
+        }
+        reconciled.push(row.reference);
+      } catch (error) {
+        console.error(`[CRON suscripciones] No se pudo conciliar ${row.reference}:`, error);
+        failed.push(row.reference);
+        await touchPendingAttempt(pool, row.id).catch(() => undefined);
       }
-
-      await reconcileSchoolPaymentAttemptByReference(pool, row.reference);
-      reconciled.push(row.reference);
     }
 
     const summary = await processDueSchoolSubscriptions(pool);
-    return NextResponse.json({ ok: true, summary, reconciled });
+    return NextResponse.json({ ok: true, summary, reconciled, failed });
   } catch (error) {
     return NextResponse.json(
       {

@@ -220,6 +220,7 @@ async function saveSede(
     await client.query("COMMIT");
     return NextResponse.json({ ok: true, id: savedId });
   } catch (error) {
+    console.error("Error guardando sede:", error);
     await client.query("ROLLBACK");
     return NextResponse.json(
       {
@@ -362,6 +363,7 @@ export async function DELETE(request: Request) {
     await client.query("COMMIT");
     return NextResponse.json({ ok: true });
   } catch (error) {
+    console.error("Error eliminando sede:", error);
     await client.query("ROLLBACK");
     return NextResponse.json(
       {
