@@ -69,10 +69,6 @@ export const createEscuelaSchema = z
     }
   });
 
-export const buscarEmailCedulaSchema = z.object({
-  cedula: z.string().min(3, "Cédula muy corta").max(30),
-});
-
 export const publicRegisterSchema = z.object({
   nombre: z.string().trim().min(2, "Nombre muy corto").max(100),
   email: z.string().trim().email("Email inválido"),

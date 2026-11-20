@@ -1,14 +1,14 @@
 import { getServerDbPool } from "@/lib/server-db";
 import { buildSupabaseAdminClient } from "@/lib/api-auth";
 
-export interface SupabaseServicePingStatus {
+interface SupabaseServicePingStatus {
   ok: boolean;
   latencyMs: number;
   error?: string;
   details?: Record<string, unknown>;
 }
 
-export interface SupabaseMaintenancePingReport {
+interface SupabaseMaintenancePingReport {
   ok: boolean;
   timestamp: string;
   services: {
@@ -36,7 +36,7 @@ export type PingSupabaseClient = {
   };
 };
 
-export interface SupabasePingDependencies {
+interface SupabasePingDependencies {
   getPool?: () => PingDbPool;
   getAdminClient?: () => PingSupabaseClient;
 }

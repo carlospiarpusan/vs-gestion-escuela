@@ -52,7 +52,7 @@ function sortNormalizedCategories(values: string[]) {
   });
 }
 
-export function expandLegacyCourseCategory(value: string) {
+function expandLegacyCourseCategory(value: string) {
   const normalized = normalizeCategoryLabel(String(value || ""));
   if (!normalized) return [];
 

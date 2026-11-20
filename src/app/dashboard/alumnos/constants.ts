@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase";
 import { getCurrentYear, getTodayDateString } from "@/lib/date-utils";
 import { studentBillingFormDefaults } from "@/lib/student-billing-defaults";
 import {
-  inferTipoPermisoFromCategories,
   normalizeStoredCourseCategories,
   SELECTABLE_COURSE_CATEGORIES,
 } from "@/lib/course-categories";
@@ -58,7 +57,7 @@ export const metodosPago: { value: MetodoPago; label: string }[] = [
 ];
 export const TODAS_CATEGORIAS = [...SELECTABLE_COURSE_CATEGORIES];
 export const CATEGORIAS_APTITUD = ["C1", "C2", "C3"];
-export const CONTRACT_CATEGORY_BUTTON_ORDER = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
+const CONTRACT_CATEGORY_BUTTON_ORDER = ["A1", "A2", "B1", "C1", "RC1", "C2", "C3"];
 
 export type MatriculaResumen = Pick<
   MatriculaAlumno,
@@ -182,18 +181,6 @@ export function applyAlumnoBillingDefaults(form: AlumnoFormType): AlumnoFormType
 
 export const inputClass = "apple-input";
 export const labelClass = "apple-label";
-
-export function mapTipoPermiso(categorias: string[]) {
-  return inferTipoPermisoFromCategories(categorias);
-}
-
-export function buildAptitudReference() {
-  return `APT-${Date.now()}`;
-}
-
-export function buildPracticeReference() {
-  return `PRA-${Date.now()}`;
-}
 
 export function formatTipoRegistroLabel(tipo: TipoRegistroAlumno) {
   if (tipo === "aptitud_conductor") return "Aptitud";

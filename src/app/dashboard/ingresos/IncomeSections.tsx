@@ -4,14 +4,13 @@ import { useMemo } from "react";
 import { ArrowDownCircle, ChevronDown, ChevronUp, Clock3, Filter, X } from "lucide-react";
 import StudentSearch from "@/components/dashboard/StudentSearch";
 import DataTable from "@/components/dashboard/DataTable";
-import AccountingBreakdownCard from "@/components/dashboard/AccountingBreakdownCard";
 import {
   AccountingChipTabs,
   AccountingPanel,
   AccountingStatCard,
 } from "@/components/dashboard/accounting/AccountingWorkspace";
 import { formatCompactDate } from "@/lib/accounting-dashboard";
-import type { IncomeDashboardResponse, IncomeLedgerRow, IncomeSummary } from "@/lib/finance/types";
+import type { IncomeLedgerRow, IncomeSummary } from "@/lib/finance/types";
 import type { IncomeView } from "@/lib/income-view";
 import {
   categorias,
@@ -55,11 +54,6 @@ type IncomeFiltersSectionProps = {
   onEstadoChange: (value: string) => void;
   onToggleAdvancedFilters: () => void;
   onClearFilters: () => void;
-};
-
-type IncomeBreakdownSectionProps = {
-  loading: boolean;
-  breakdown: IncomeDashboardResponse["breakdown"] | null | undefined;
 };
 
 type IncomeLedgerSectionProps = {
@@ -327,46 +321,6 @@ export function IncomeFiltersSection({
         </div>
       )}
     </AccountingPanel>
-  );
-}
-
-export function IncomeBreakdownSection({ loading, breakdown }: IncomeBreakdownSectionProps) {
-  if (!breakdown || loading) {
-    return null;
-  }
-
-  return (
-    <div className="mb-4 space-y-4">
-      <div className="px-1">
-        <p className="text-[11px] font-semibold tracking-[0.18em] text-[#7b8591] uppercase">
-          Distribución del recaudo
-        </p>
-        <h3 className="mt-2 text-lg font-semibold text-[#111214] dark:text-[#f5f5f7]">
-          Lee categoría y método sin ruido adicional
-        </h3>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#66707a] dark:text-[#aeb6bf]">
-          Dejamos visibles solo las dos aperturas que ayudan a entender rapido de donde entra el
-          dinero antes de bajar al libro operativo.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <AccountingBreakdownCard
-          title="Ingresos por categoría"
-          subtitle="Qué tipo de servicio explica más recaudo en el periodo."
-          rows={breakdown.ingresosPorCategoria}
-          labelKey="categoria"
-          emptyLabel="Sin datos de categorías."
-        />
-        <AccountingBreakdownCard
-          title="Ingresos por método"
-          subtitle="Cómo entró el dinero: efectivo, datáfono, Nequi y otros medios."
-          rows={breakdown.ingresosPorMetodo}
-          labelKey="metodo_pago"
-          emptyLabel="Sin datos de métodos."
-        />
-      </div>
-    </div>
   );
 }
 

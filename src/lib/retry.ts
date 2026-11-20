@@ -10,7 +10,7 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function isRetryableError(error: unknown) {
+function isRetryableError(error: unknown) {
   const err = error as ErrorWithStatus | null;
   const message = err?.message?.toLowerCase?.() ?? "";
   const status = err?.status;

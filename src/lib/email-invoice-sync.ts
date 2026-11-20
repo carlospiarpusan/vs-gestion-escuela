@@ -68,14 +68,12 @@ type SaveIntegrationInput = {
   activa: boolean;
 };
 
-export type EmailInvoiceIntegrationView = Omit<FacturaCorreoIntegracion, "last_uid"> & {
+type EmailInvoiceIntegrationView = Omit<FacturaCorreoIntegracion, "last_uid"> & {
   last_uid: string | null;
   has_password: boolean;
 };
 
-export type EmailInvoiceImportView = FacturaCorreoImportacion;
-
-export type EmailInvoiceSyncSummary = {
+type EmailInvoiceSyncSummary = {
   mode: "incremental" | "historical";
   imported: number;
   duplicated: number;
@@ -89,7 +87,7 @@ export type EmailInvoiceSyncSummary = {
   lastSyncedAt: string | null;
 };
 
-export type EmailInvoiceSyncOptions = {
+type EmailInvoiceSyncOptions = {
   mode?: "incremental" | "historical";
   monthsBack?: number;
   maxMessages?: number;
@@ -377,27 +375,6 @@ function sanitizeIntegration(row: IntegrationRow | null): EmailInvoiceIntegratio
 
 function normalizeMailbox(value: string | null | undefined) {
   return normalizeText(value) || DEFAULT_MAILBOX;
-}
-
-function inferImapHost(correo: string) {
-  const domain = correo.split("@")[1]?.toLowerCase() || "";
-  if (domain === "gmail.com" || domain === "googlemail.com") return "imap.gmail.com";
-  if (["outlook.com", "hotmail.com", "live.com", "msn.com", "outlook.es"].includes(domain))
-    return "outlook.office365.com";
-  if (domain === "icloud.com" || domain === "me.com" || domain === "mac.com")
-    return "imap.mail.me.com";
-  if (domain === "yahoo.com" || domain === "ymail.com") return "imap.mail.yahoo.com";
-  return "";
-}
-
-export function buildSuggestedImapConfig(correo: string) {
-  return {
-    imapHost: inferImapHost(correo),
-    imapPort: 993,
-    imapSecure: true,
-    imapUser: correo,
-    mailbox: DEFAULT_MAILBOX,
-  };
 }
 
 function extractImapErrorDetail(error: unknown) {

@@ -350,7 +350,7 @@ export function buildExpenseColumns(activeSection: ExpenseSection): ExpenseTable
   return [...baseColumns, { key: "metodo_pago", label: "Método" }];
 }
 
-export function renderExpenseMobileCard(row: Gasto, activeSection: ExpenseSection) {
+function renderExpenseMobileCard(row: Gasto, activeSection: ExpenseSection) {
   const dueMeta =
     activeSection === "cuentas" || activeSection === "tramitadores"
       ? getExpenseDueMeta(row.fecha_vencimiento)

@@ -3,7 +3,7 @@ import source from "./contract-templates/sin-fronteras.json";
 
 export const CONTRACT_PAGE_BREAK = "\n---PAGE_BREAK---\n";
 export const SIN_FRONTERAS_SCHOOL_ID = "a5320c4a-3bf6-4da5-b365-da17d7001d4f";
-export const SIN_FRONTERAS_TEMPLATE_TITLE = "SF-GC-FORM-01";
+const SIN_FRONTERAS_TEMPLATE_TITLE = "SF-GC-FORM-01";
 export const CONTRACT_TEMPLATE_LABELS: Record<TipoPlantillaContratoEscuela, string> = {
   vehiculo: "Vehiculo",
   moto: "Moto",

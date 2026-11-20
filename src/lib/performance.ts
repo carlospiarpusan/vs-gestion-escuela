@@ -1,10 +1,10 @@
-export type PerformanceRouteGroup =
+type PerformanceRouteGroup =
   | "public"
   | "dashboard-home"
   | "dashboard-listados"
   | "dashboard-reportes";
 
-export type PerformanceBudget = {
+type PerformanceBudget = {
   lcpMs: number;
   inpMs: number;
   cls: number;
@@ -22,7 +22,7 @@ export type ReportableWebVital = {
   navigationType?: string;
 };
 
-export const PERFORMANCE_BUDGETS: Record<PerformanceRouteGroup, PerformanceBudget> = {
+const PERFORMANCE_BUDGETS: Record<PerformanceRouteGroup, PerformanceBudget> = {
   public: {
     lcpMs: 2500,
     inpMs: 200,
@@ -91,7 +91,7 @@ export function formatWebVitalValue(metric: Pick<ReportableWebVital, "name" | "v
   return `${Math.round(metric.value)}ms`;
 }
 
-export function getBudgetForMetric(
+function getBudgetForMetric(
   routeGroup: PerformanceRouteGroup,
   metricName: ReportableWebVital["name"]
 ) {

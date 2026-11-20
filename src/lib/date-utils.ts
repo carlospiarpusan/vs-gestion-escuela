@@ -13,7 +13,7 @@ export function isValidDateOnly(value: string) {
   );
 }
 
-export function formatDateOnly(year: number, month: number, day: number) {
+function formatDateOnly(year: number, month: number, day: number) {
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 

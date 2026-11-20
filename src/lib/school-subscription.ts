@@ -50,14 +50,6 @@ export function getSchoolSubscriptionPlanLabel(planId: PlanEscuelaPago) {
   }
 }
 
-export function isSchoolSubscriptionWriteEnabled(status: SchoolSubscriptionStatus) {
-  return status === "trialing" || status === "active" || status === "grace";
-}
-
-export function isSchoolSubscriptionHardBlocked(status: SchoolSubscriptionStatus) {
-  return status === "suspended";
-}
-
 export function getSchoolSubscriptionStatusTone(status: SchoolSubscriptionStatus) {
   switch (status) {
     case "active":

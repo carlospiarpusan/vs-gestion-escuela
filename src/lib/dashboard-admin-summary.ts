@@ -97,13 +97,13 @@ export interface AlumnoDashboardResponse {
   examenes: AlumnoDashboardExamen[];
 }
 
-export type DashboardMonthRange = {
+type DashboardMonthRange = {
   start: string;
   end: string;
   label: string;
 };
 
-export const DASHBOARD_TIME_ZONE = "America/Bogota";
+const DASHBOARD_TIME_ZONE = "America/Bogota";
 export const DASHBOARD_SUMMARY_CACHE_TTL_MS = 120 * 1000;
 export const DASHBOARD_CATALOG_CACHE_TTL_MS = 300 * 1000;
 

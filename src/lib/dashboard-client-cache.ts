@@ -9,11 +9,11 @@ import {
   buildDashboardSummaryCacheKey,
 } from "@/lib/dashboard-admin-summary";
 
-export const DASHBOARD_SUMMARY_CACHE_PREFIX = "dashboard-summary:";
-export const DASHBOARD_CATALOG_CACHE_PREFIX = "dashboard-catalog:";
-export const DASHBOARD_LIST_CACHE_PREFIX = "dashboard-list:";
+const DASHBOARD_SUMMARY_CACHE_PREFIX = "dashboard-summary:";
+const DASHBOARD_CATALOG_CACHE_PREFIX = "dashboard-catalog:";
+const DASHBOARD_LIST_CACHE_PREFIX = "dashboard-list:";
 export const STAFF_SCOPE_CACHE_VERSION = "staff-scope-v2";
-export const ACCOUNTING_REPORT_CACHE_PREFIX = `accounting-report:${STAFF_SCOPE_CACHE_VERSION}:`;
+const ACCOUNTING_REPORT_CACHE_PREFIX = `accounting-report:${STAFF_SCOPE_CACHE_VERSION}:`;
 export const FINANCE_INCOME_CACHE_PREFIX = `finance-income:${STAFF_SCOPE_CACHE_VERSION}:`;
 export const FINANCE_EXPENSE_CACHE_PREFIX = `finance-expense:${STAFF_SCOPE_CACHE_VERSION}:`;
 export const FINANCE_PORTFOLIO_CACHE_PREFIX = `finance-portfolio:${STAFF_SCOPE_CACHE_VERSION}:`;

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
 export const SITE_NAME = "ConduSoft";
-export const DEFAULT_SITE_URL = "https://condusoft.co";
+const DEFAULT_SITE_URL = "https://condusoft.co";
 export const SITE_SHARE_IMAGE_PATH = "/opengraph-image";
 export const SITE_DESCRIPTION =
   "ConduSoft organiza alumnos, pagos, horas, flota y cartera para autoescuelas y CEA en Colombia, con preparación CALE y app oficial en Google Play para alumnos.";
-export const DEFAULT_GOOGLE_SITE_VERIFICATION =
+const DEFAULT_GOOGLE_SITE_VERIFICATION =
   "google-site-verification=U3R7Q9uL_tC3jpUJV65oksAggtp0CEB9yACnUoAMSrg";
 
 export const SITE_KEYWORDS = [
