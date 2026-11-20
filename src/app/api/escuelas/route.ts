@@ -369,7 +369,7 @@ export async function POST(request: Request) {
     } finally {
       client.release();
     }
-  } catch (error) {
+  } catch {
     if (createdAuthUserId) {
       try {
         const supabaseAdmin = buildSupabaseAdminClient();

@@ -57,7 +57,7 @@ describe("date-utils", () => {
   });
 
   it("formatea fechas sin correrlas por la zona del navegador", () => {
-    expect(formatDateOnlyForDisplay("2026-09-01")).toMatch(/1.*sept.*2026/i);
+    expect(formatDateOnlyForDisplay("2026-09-01")).toMatch(/^1 .*sept?\.? .*2026$/i);
     expect(formatDateOnlyForDisplay("2026-03-30T05:00:00.000Z")).toMatch(/30.*mar.*2026/i);
     expect(getDateOnlyDiffInDays("2026-03-31", "2026-03-30")).toBe(1);
   });
