@@ -383,7 +383,7 @@ describe("factura por contrato", () => {
     expect(mock.remote).toHaveBeenCalledTimes(1);
   });
   it("conserva un perfil fiscal efectivo legitimo de FacturaX sin confundirlo con cambios posteriores", async () => {
-    mock.remote.mockImplementation(async (_schema, body, id) =>
+    mock.remote.mockImplementation(async (_schema, _body, id) =>
       id
         ? {
             ...quoted,
@@ -435,7 +435,7 @@ describe("factura por contrato", () => {
     expect((await contractInvoices(student)).map((i) => i.contratoId)).toEqual([contract]);
   });
   it("un timeout conserva la reserva y se recupera consultando sin volver a emitir", async () => {
-    mock.remote.mockImplementation(async (_schema, body, id) => {
+    mock.remote.mockImplementation(async (_schema, _body, id) => {
       if (id) return quoted;
       throw Error("timeout");
     });
