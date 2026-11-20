@@ -219,7 +219,7 @@ async function saveSede(
 
     await client.query("COMMIT");
     return NextResponse.json({ ok: true, id: savedId });
-  } catch (error) {
+  } catch {
     await client.query("ROLLBACK");
     return NextResponse.json(
       {
@@ -361,7 +361,7 @@ export async function DELETE(request: Request) {
     await client.query("delete from public.sedes where id = $1", [existing.id]);
     await client.query("COMMIT");
     return NextResponse.json({ ok: true });
-  } catch (error) {
+  } catch {
     await client.query("ROLLBACK");
     return NextResponse.json(
       {
