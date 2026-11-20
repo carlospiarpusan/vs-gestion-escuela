@@ -3,8 +3,8 @@ import type { Rol } from "@/types/database";
 export type AuditedRole = "super_admin" | "admin_escuela" | "admin_sede" | "administrativo";
 
 export type RoleCapabilityState = "full" | "scoped" | "readonly" | "none";
-export type RoleCapabilityScope = "platform" | "school" | "branch" | "self" | "none";
-export type RoleCapabilityAction =
+type RoleCapabilityScope = "platform" | "school" | "branch" | "self" | "none";
+type RoleCapabilityAction =
   | "view"
   | "create"
   | "edit"
@@ -14,7 +14,7 @@ export type RoleCapabilityAction =
   | "close"
   | "configure";
 
-export type RoleCapabilityModuleId =
+type RoleCapabilityModuleId =
   | "home"
   | "students"
   | "classes"
@@ -39,21 +39,21 @@ export type RoleCapabilityModuleId =
   | "permissions"
   | "account";
 
-export type RoleCapability = {
+type RoleCapability = {
   state: RoleCapabilityState;
   scope: RoleCapabilityScope;
   actions: RoleCapabilityAction[];
   note?: string;
 };
 
-export type RoleCapabilityModuleDescriptor = {
+type RoleCapabilityModuleDescriptor = {
   id: RoleCapabilityModuleId;
   label: string;
   description: string;
   visibleInAudit?: boolean;
 };
 
-export type RoleSummaryDescriptor = {
+type RoleSummaryDescriptor = {
   role: AuditedRole;
   label: string;
   shortLabel: string;
@@ -76,7 +76,7 @@ export const AUDITED_ROLE_ORDER: AuditedRole[] = [
   "administrativo",
 ];
 
-export const ROLE_CAPABILITY_MODULES: RoleCapabilityModuleDescriptor[] = [
+const ROLE_CAPABILITY_MODULES: RoleCapabilityModuleDescriptor[] = [
   {
     id: "schools",
     label: "Escuelas",
@@ -211,7 +211,7 @@ export const ROLE_CAPABILITY_MODULES: RoleCapabilityModuleDescriptor[] = [
   },
 ];
 
-export const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
+const ROLE_SUMMARIES: Record<AuditedRole, RoleSummaryDescriptor> = {
   super_admin: {
     role: "super_admin",
     label: "Super admin",
@@ -672,10 +672,6 @@ export function getRoleSummary(role: AuditedRole) {
   return ROLE_SUMMARIES[role];
 }
 
-export function getCapabilityModuleDescriptor(moduleId: RoleCapabilityModuleId) {
-  return ROLE_CAPABILITY_MODULES.find((module) => module.id === moduleId) ?? null;
-}
-
 export function getAuditedRoleCapability(
   role: AuditedRole | null | undefined,
   moduleId: RoleCapabilityModuleId
@@ -684,7 +680,7 @@ export function getAuditedRoleCapability(
   return AUDITED_ROLE_CAPABILITY_MATRIX[role][moduleId] ?? NONE_CAPABILITY;
 }
 
-export function canAuditedRoleAccessModule(
+function canAuditedRoleAccessModule(
   role: AuditedRole | null | undefined,
   moduleId: RoleCapabilityModuleId
 ) {
@@ -751,74 +747,9 @@ export function getAuditedVisibleModules() {
   return ROLE_CAPABILITY_MODULES.filter((module) => module.visibleInAudit);
 }
 
-// ---------------------------------------------------------------------------
-// Override support — allows super_admin to customize the matrix at runtime
-// ---------------------------------------------------------------------------
-
-export type CapabilityOverride = {
-  rol: AuditedRole;
-  module_id: RoleCapabilityModuleId;
-  state: RoleCapabilityState;
-  scope: RoleCapabilityScope;
-  actions: RoleCapabilityAction[];
-  note?: string | null;
-};
-
-export type CapabilityOverrideMap = Record<string, Record<string, CapabilityOverride>>;
-
 export function getDefaultCapability(
   role: AuditedRole,
   moduleId: RoleCapabilityModuleId
 ): RoleCapability {
   return AUDITED_ROLE_CAPABILITY_MATRIX[role][moduleId] ?? NONE_CAPABILITY;
-}
-
-export function getCapabilityWithOverrides(
-  role: AuditedRole,
-  moduleId: RoleCapabilityModuleId,
-  overrides: CapabilityOverrideMap | null
-): RoleCapability {
-  const base = getDefaultCapability(role, moduleId);
-  if (!overrides) return base;
-  const override = overrides[role]?.[moduleId];
-  if (!override) return base;
-  return {
-    state: override.state,
-    scope: override.scope,
-    actions: override.actions,
-    note: override.note ?? undefined,
-  };
-}
-
-export function buildOverrideList(overrides: CapabilityOverrideMap): CapabilityOverride[] {
-  const list: CapabilityOverride[] = [];
-  for (const role of AUDITED_ROLE_ORDER) {
-    const roleOverrides = overrides[role];
-    if (!roleOverrides) continue;
-    for (const moduleId of Object.keys(roleOverrides)) {
-      list.push(roleOverrides[moduleId]);
-    }
-  }
-  return list;
-}
-
-export function diffFromDefaults(overrides: CapabilityOverrideMap): CapabilityOverride[] {
-  const diffs: CapabilityOverride[] = [];
-  for (const role of AUDITED_ROLE_ORDER) {
-    const roleOverrides = overrides[role];
-    if (!roleOverrides) continue;
-    for (const moduleId of Object.keys(roleOverrides) as RoleCapabilityModuleId[]) {
-      const override = roleOverrides[moduleId];
-      const def = getDefaultCapability(role, moduleId);
-      if (
-        override.state !== def.state ||
-        override.scope !== def.scope ||
-        JSON.stringify(override.actions.slice().sort()) !==
-          JSON.stringify(def.actions.slice().sort())
-      ) {
-        diffs.push(override);
-      }
-    }
-  }
-  return diffs;
 }

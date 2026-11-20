@@ -1,7 +1,7 @@
 import type { Rol } from "@/types/database";
 import { getDashboardRolesForCapabilityModule } from "@/lib/role-capabilities";
 
-export type DashboardAreaId =
+type DashboardAreaId =
   | "overview"
   | "operation"
   | "finance"
@@ -34,7 +34,7 @@ export type DashboardIconKey =
   | "analytics"
   | "arco";
 
-export type DashboardModuleId =
+type DashboardModuleId =
   | "home"
   | "invoicing"
   | "students"
@@ -60,14 +60,14 @@ export type DashboardModuleId =
   | "analytics"
   | "arco";
 
-export type DashboardAreaDescriptor = {
+type DashboardAreaDescriptor = {
   id: DashboardAreaId;
   label: string;
   description: string;
   priority: number;
 };
 
-export type DashboardModuleDescriptor = {
+type DashboardModuleDescriptor = {
   id: DashboardModuleId;
   label: string;
   shortLabel: string;
@@ -84,11 +84,11 @@ export type DashboardModuleDescriptor = {
   hiddenInNavRoles?: Rol[];
 };
 
-export type DashboardNavConfig = DashboardAreaDescriptor & {
+type DashboardNavConfig = DashboardAreaDescriptor & {
   modules: DashboardModuleDescriptor[];
 };
 
-export const DASHBOARD_AREAS: DashboardAreaDescriptor[] = [
+const DASHBOARD_AREAS: DashboardAreaDescriptor[] = [
   {
     id: "overview",
     label: "Principal",
@@ -474,7 +474,7 @@ export function isDashboardModuleVisibleToRole(
   return Boolean(rol && module.roles.includes(rol));
 }
 
-export function getDashboardModulesForRole(
+function getDashboardModulesForRole(
   rol?: Rol | null,
   options?: { navOnly?: boolean }
 ): DashboardModuleDescriptor[] {

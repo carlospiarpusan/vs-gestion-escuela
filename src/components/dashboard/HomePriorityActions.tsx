@@ -9,7 +9,7 @@ import {
 } from "@/lib/dashboard-nav";
 import { renderDashboardIcon } from "@/components/dashboard/dashboard-icons";
 
-export type HomePriorityActionItem = {
+type HomePriorityActionItem = {
   id: string;
   label: string;
   href: string;

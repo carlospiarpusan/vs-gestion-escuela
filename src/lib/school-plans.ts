@@ -1,6 +1,6 @@
 import type { PlanEscuela, PlanEscuelaPago } from "@/types/database";
 
-export type SchoolPlanDescriptor = {
+type SchoolPlanDescriptor = {
   id: PlanEscuela;
   label: string;
   badge: string;

@@ -4,7 +4,7 @@ import type { PlanEscuelaPago, SchoolPaidBillingInterval } from "@/types/databas
 
 export type BillingHubOperation = "new_subscription" | "renewal" | "upgrade" | "downgrade_schedule";
 
-export type PublicBillingTokenPayload = {
+type PublicBillingTokenPayload = {
   empresa_id: string;
   target_plan_code: PlanEscuelaPago;
   billing_interval: SchoolPaidBillingInterval;
@@ -13,7 +13,7 @@ export type PublicBillingTokenPayload = {
   nonce: string;
 };
 
-export type HubCheckoutResponse = {
+type HubCheckoutResponse = {
   ok: true;
   checkoutIntentId: string;
   reference: string;
@@ -64,28 +64,24 @@ function required(name: string) {
   return value;
 }
 
-export function getHubUrl() {
+function getHubUrl() {
   return required("CLOVENT_BILLING_HUB_URL");
 }
 
-export function getSharedSecret() {
+function getSharedSecret() {
   return required("CONDUSOFT_BILLING_SHARED_SECRET");
 }
 
-export function getPublicTokenSecret() {
+function getPublicTokenSecret() {
   return required("CONDUSOFT_PUBLIC_BILLING_TOKEN_SECRET");
 }
 
-export function getCondusoftBaseUrl() {
+function getCondusoftBaseUrl() {
   const raw = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (raw) {
     return raw;
   }
   return getSiteUrl().toString().replace(/\/$/, "");
-}
-
-function b64urlEncode(input: string) {
-  return Buffer.from(input, "utf8").toString("base64url");
 }
 
 function b64urlDecode(input: string) {
@@ -107,7 +103,7 @@ function safeEqualHex(left: string, right: string) {
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-export function buildInternalSignature(
+function buildInternalSignature(
   payloadText: string,
   timestamp: string,
   secret = getSharedSecret()
@@ -115,7 +111,7 @@ export function buildInternalSignature(
   return hmacHex(`${timestamp}.${payloadText}`, secret);
 }
 
-export function buildInternalHeaders(payloadText: string) {
+function buildInternalHeaders(payloadText: string) {
   const timestamp = String(Date.now());
   const signature = buildInternalSignature(payloadText, timestamp);
   return {
@@ -134,13 +130,6 @@ export function verifyInternalSignature(
 ) {
   const expected = buildInternalSignature(payloadText, timestamp, secret);
   return safeEqualHex(expected, provided);
-}
-
-export function signPublicBillingToken(payload: PublicBillingTokenPayload) {
-  const payloadText = JSON.stringify(payload);
-  const encoded = b64urlEncode(payloadText);
-  const signature = hmacHex(encoded, getPublicTokenSecret());
-  return `${encoded}.${signature}`;
 }
 
 export function verifyPublicBillingToken(token: string): PublicBillingTokenPayload {

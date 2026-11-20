@@ -92,8 +92,8 @@ export default function MatriculaModal({
       <div className="space-y-4">
         {editing && (editingMatricula?.facturax_invoice || matriculaAlumno?.facturado) && (
           <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200">
-            Esta matrícula tiene facturación asociada. Puedes editar notas y estado; el valor, las
-            categorías y la fecha deben conservarse.
+            Esta matrícula tiene facturación asociada. Puedes editar el valor, las notas y el
+            estado; las categorías y la fecha deben conservarse.
           </p>
         )}
         {catalogsLoading && (

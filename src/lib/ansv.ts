@@ -56,7 +56,7 @@ export const ansvSnapshotSchema = z.object({
 });
 export type AnsvSnapshot = z.infer<typeof ansvSnapshotSchema>;
 
-export function resolveAnsvCategory(categories: string[], selected?: string | null) {
+function resolveAnsvCategory(categories: string[], selected?: string | null) {
   const normalized = normalizeStoredCourseCategories(categories);
   const category = selected?.trim().toUpperCase() || (normalized.length === 1 ? normalized[0] : "");
   if (!category || !normalized.includes(category))

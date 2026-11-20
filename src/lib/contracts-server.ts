@@ -37,10 +37,10 @@ type ContractSequenceRun = {
   length: number;
 };
 
-export const CAR_SEQUENCE_FLOOR = 2932;
-export const CAR_SEQUENCE_FLOOR_SCHOOL_ID = "a5320c4a-3bf6-4da5-b365-da17d7001d4f";
+const CAR_SEQUENCE_FLOOR = 2932;
+const CAR_SEQUENCE_FLOOR_SCHOOL_ID = "a5320c4a-3bf6-4da5-b365-da17d7001d4f";
 
-export type ContractSchemaCapabilities = {
+type ContractSchemaCapabilities = {
   /** Whether the matriculas_alumno table has a `prefijo_contrato` column. */
   matriculaPrefix: boolean;
   /** Whether the matriculas_alumno table has a `consecutivo_contrato` column. */
@@ -68,7 +68,7 @@ export async function getContractSchemaCapabilities(
   };
 }
 
-export type ReservedContractNumber = {
+type ReservedContractNumber = {
   /** Full formatted contract number, e.g. "MOT-0042". */
   nextNumber: string;
   /** Prefix used, e.g. "MOT". */
@@ -100,7 +100,7 @@ function getConfiguredContractSequenceStart(
   return Math.max(configured, floor);
 }
 
-export function formatReservedContractNumber(prefix: ContractSequencePrefix, sequence: number) {
+function formatReservedContractNumber(prefix: ContractSequencePrefix, sequence: number) {
   return `${prefix}-${String(sequence).padStart(4, "0")}`;
 }
 
@@ -175,9 +175,7 @@ export function findSmallestAvailableContractSequence(
   return candidate;
 }
 
-export function buildContractSequenceRuns(
-  occupiedSequences: Iterable<number>
-): ContractSequenceRun[] {
+function buildContractSequenceRuns(occupiedSequences: Iterable<number>): ContractSequenceRun[] {
   const normalized = Array.from(new Set(occupiedSequences))
     .filter((value): value is number => Number.isInteger(value) && value > 0)
     .sort((a, b) => a - b);
@@ -287,40 +285,6 @@ export async function previewNextContractNumber(
     nextNumber: formatReservedContractNumber(prefix, nextSequence),
     prefix,
     nextSequence,
-  };
-}
-
-export async function alignSchoolContractSequenceConfig(db: DbClient, escuelaId: string) {
-  await ensureContractConfigRow(db, escuelaId);
-
-  const [motRows, carRows, comRows] = await Promise.all([
-    loadOccupiedContractRows(db, { escuelaId, prefix: "MOT" }),
-    loadOccupiedContractRows(db, { escuelaId, prefix: "CAR" }),
-    loadOccupiedContractRows(db, { escuelaId, prefix: "COM" }),
-  ]);
-
-  const nextMot = Math.max(...listOccupiedContractSequences(motRows, "MOT"), 0) + 1;
-  const nextCar = Math.max(...listOccupiedContractSequences(carRows, "CAR"), 0) + 1;
-  const nextCom = Math.max(...listOccupiedContractSequences(comRows, "COM"), 0) + 1;
-
-  await db.query(
-    `
-      update public.configuracion_contratos_escuela
-      set
-        siguiente_consecutivo_mot = $2,
-        siguiente_consecutivo_car = $3,
-        siguiente_consecutivo_com = $4,
-        updated_at = now()
-      where escuela_id = $1
-    `,
-    [escuelaId, nextMot, nextCar, nextCom]
-  );
-
-  return {
-    escuelaId,
-    siguiente_consecutivo_mot: nextMot,
-    siguiente_consecutivo_car: nextCar,
-    siguiente_consecutivo_com: nextCom,
   };
 }
 

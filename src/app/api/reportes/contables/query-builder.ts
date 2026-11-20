@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { parseExpenseSearch } from "@/lib/expense-search";
 import { normalizeUuid } from "@/lib/dashboard-scope";
 import { APP_TIME_ZONE, getTodayDateString, isValidDateOnly } from "@/lib/date-utils";
@@ -7,47 +6,14 @@ import {
   MATRICULA_INCOME_CATEGORIES,
   PRACTICA_INCOME_CATEGORIES,
 } from "@/lib/income-view";
-import { getServerDbPool } from "@/lib/server-db";
-import type { Rol } from "@/types/database";
-import type {
-  AllowedPerfil,
-  ReportScope,
-  QueryParts,
-  QueryFilters,
-  ReportInclude,
-  LedgerRow,
-} from "./types";
-
-/* ------------------------------------------------------------------ */
-/*  Constants                                                          */
-/* ------------------------------------------------------------------ */
-
-export const ALLOWED_ROLES: Rol[] = ["admin_escuela", "admin_sede", "administrativo"];
-export const DEFAULT_REPORT_INCLUDES: ReportInclude[] = [
-  "options",
-  "summary",
-  "breakdown",
-  "series",
-  "ledger",
-];
-export const ALL_REPORT_INCLUDES: ReportInclude[] = [
-  "options",
-  "summary",
-  "breakdown",
-  "series",
-  "ledger",
-  "receivables",
-  "payables",
-  "contracts",
-  "students",
-];
-export const VEHICULAR_EXPENSE_CATEGORIES = [
+import type { AllowedPerfil, ReportScope, QueryParts, QueryFilters } from "./types";
+const VEHICULAR_EXPENSE_CATEGORIES = [
   "combustible",
   "mantenimiento_vehiculo",
   "reparaciones",
   "seguros",
 ];
-export const ADMINISTRATIVE_EXPENSE_CATEGORIES = [
+const ADMINISTRATIVE_EXPENSE_CATEGORIES = [
   "alquiler",
   "servicios",
   "material_didactico",
@@ -56,8 +22,8 @@ export const ADMINISTRATIVE_EXPENSE_CATEGORIES = [
   "suministros",
   "otros",
 ];
-export const PEOPLE_EXPENSE_CATEGORIES = ["nominas", "tramitador"];
-export const TRAMITADOR_EXPENSE_CATEGORY = "tramitador";
+const PEOPLE_EXPENSE_CATEGORIES = ["nominas", "tramitador"];
+const TRAMITADOR_EXPENSE_CATEGORY = "tramitador";
 
 /* ------------------------------------------------------------------ */
 /*  Helper functions                                                   */
@@ -88,23 +54,6 @@ export function normalizeSearch(value: string | null) {
   return normalized.length > 0 ? normalized : "";
 }
 
-export function parseReportIncludes(value: string | null) {
-  const requested = (value ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (requested.length === 0) {
-    return new Set<ReportInclude>(DEFAULT_REPORT_INCLUDES);
-  }
-
-  const validIncludes = requested.filter((item): item is ReportInclude =>
-    ALL_REPORT_INCLUDES.includes(item as ReportInclude)
-  );
-
-  return new Set<ReportInclude>(validIncludes.length > 0 ? validIncludes : DEFAULT_REPORT_INCLUDES);
-}
-
 export function resolveScope(
   perfil: AllowedPerfil,
   requestedSchoolId: string | null,
@@ -130,7 +79,7 @@ export function resolveScope(
   };
 }
 
-export function buildSqlInClause(values: string[], addValue: (value: string) => string) {
+function buildSqlInClause(values: string[], addValue: (value: string) => string) {
   return values.map((value) => addValue(value)).join(", ");
 }
 
@@ -630,124 +579,4 @@ export function buildQueryParts({
       )
     `,
   };
-}
-
-/* ------------------------------------------------------------------ */
-/*  CSV helpers & builder                                              */
-/* ------------------------------------------------------------------ */
-
-function formatCsvCell(value: string | number | null) {
-  const text = value === null ? "" : String(value);
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function normalizeDateOnly(value: unknown) {
-  if (!value) return "";
-
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-
-  const text = String(value);
-  const match = text.match(/^\d{4}-\d{2}-\d{2}/);
-  if (match) return match[0];
-
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return text;
-
-  return parsed.toISOString().slice(0, 10);
-}
-
-function toNumber(value: unknown) {
-  return Number(value || 0);
-}
-
-export async function buildCsvResponse({
-  pool,
-  parts,
-  from,
-  to,
-  ledgerTipo,
-}: {
-  pool: ReturnType<typeof getServerDbPool>;
-  parts: QueryParts;
-  from: string;
-  to: string;
-  ledgerTipo: "ingreso" | "gasto" | null;
-}) {
-  const cte = `with ${parts.filteredIngresosCte}, ${parts.filteredGastosCte}, ${parts.filteredObligationsCte}`;
-  const ledgerRes = await pool.query<LedgerRow & { created_at: string }>(
-    `
-      ${cte}
-      select *
-      from (
-        ${
-          ledgerTipo !== "gasto"
-            ? `
-        select
-          fecha, 'ingreso'::text as tipo, categoria, concepto, monto, estado,
-          metodo_pago, numero_factura, contraparte, documento, contrato, created_at
-        from filtered_ingresos
-        `
-            : ""
-        }
-        ${!ledgerTipo ? "union all" : ""}
-        ${
-          ledgerTipo !== "ingreso"
-            ? `
-        select
-          fecha, 'gasto'::text as tipo, categoria, concepto, monto, estado,
-          metodo_pago, numero_factura, contraparte, documento, contrato, created_at
-        from filtered_gastos
-        `
-            : ""
-        }
-      ) ledger
-      order by fecha desc, created_at desc
-    `,
-    parts.values
-  );
-
-  const lines = [
-    [
-      "Fecha",
-      "Tipo",
-      "Categoria",
-      "Concepto",
-      "Monto",
-      "Estado",
-      "Metodo de pago",
-      "Factura",
-      "Contraparte",
-      "Documento",
-      "Contrato",
-    ]
-      .map(formatCsvCell)
-      .join(","),
-    ...ledgerRes.rows.map((row: LedgerRow & { created_at: string }) =>
-      [
-        normalizeDateOnly(row.fecha),
-        row.tipo,
-        row.categoria,
-        row.concepto,
-        toNumber(row.monto),
-        row.estado,
-        row.metodo_pago,
-        row.numero_factura,
-        row.contraparte,
-        row.documento,
-        row.contrato,
-      ]
-        .map((value) => formatCsvCell(value as string | number | null))
-        .join(",")
-    ),
-  ];
-
-  return new NextResponse(lines.join("\n"), {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="informe-contable-${from}-a-${to}.csv"`,
-    },
-  });
 }
