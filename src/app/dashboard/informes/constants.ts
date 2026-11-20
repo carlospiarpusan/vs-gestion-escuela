@@ -1,8 +1,4 @@
-import {
-  getCurrentAccountingYear,
-  getMonthDateRange,
-  type AccountingBreakdownRow,
-} from "@/lib/accounting-dashboard";
+import { getCurrentAccountingYear, getMonthDateRange } from "@/lib/accounting-dashboard";
 
 export type ReportSection = "resumen" | "estudiantes";
 
@@ -184,14 +180,4 @@ export function buildParams(
   }
 
   return params;
-}
-
-export function mapBreakdownAsConcept(
-  rows: Array<{ nombre?: string; categoria?: string; total: number; cantidad: number }>
-) {
-  return rows.map((row) => ({
-    concepto: row.nombre || row.categoria || "Sin clasificar",
-    total: row.total,
-    cantidad: row.cantidad,
-  })) as AccountingBreakdownRow[];
 }

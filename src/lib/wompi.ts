@@ -1,23 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
-export type WompiEnvironment = "sandbox" | "production";
-
-export type WompiCheckoutPayload = {
-  "public-key": string;
-  currency: "COP";
-  "amount-in-cents": string;
-  reference: string;
-  "signature:integrity": string;
-  "redirect-url": string;
-  "expiration-time"?: string;
-  "customer-data:email"?: string;
-  "customer-data:full-name"?: string;
-  "customer-data:phone-number"?: string;
-  "customer-data:phone-number-prefix"?: string;
-  "customer-data:legal-id"?: string;
-  "customer-data:legal-id-type"?: string;
-  "collect-customer-legal-id"?: string;
-};
+type WompiEnvironment = "sandbox" | "production";
 
 export type WompiEventBody = {
   event?: string;
@@ -76,33 +59,14 @@ export function getWompiConfig() {
   };
 }
 
-export function getWompiCheckoutUrl() {
-  return "https://checkout.wompi.co/p/";
-}
-
-export function getWompiApiBaseUrl(environment: WompiEnvironment) {
+function getWompiApiBaseUrl(environment: WompiEnvironment) {
   return environment === "sandbox"
     ? "https://sandbox.wompi.co/v1"
     : "https://production.wompi.co/v1";
 }
 
-export function sha256Hex(value: string) {
+function sha256Hex(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-export function buildWompiIntegritySignature(input: {
-  reference: string;
-  amountInCents: number;
-  currency: "COP";
-  expirationTime?: string | null;
-  integritySecret: string;
-}) {
-  const base = `${input.reference}${input.amountInCents}${input.currency}`;
-  const fullText = input.expirationTime
-    ? `${base}${input.expirationTime}${input.integritySecret}`
-    : `${base}${input.integritySecret}`;
-
-  return sha256Hex(fullText);
 }
 
 function getNestedValue(source: unknown, path: string) {
@@ -132,61 +96,6 @@ export function validateWompiEventChecksum(event: WompiEventBody, eventSecret: s
   const expectedBuf = Buffer.from(expected.toLowerCase(), "utf8");
   const actualBuf = Buffer.from(String(signature.checksum).toLowerCase(), "utf8");
   return expectedBuf.length === actualBuf.length && timingSafeEqual(expectedBuf, actualBuf);
-}
-
-export function buildWompiCheckoutPayload(input: {
-  reference: string;
-  amountInCents: number;
-  redirectUrl: string;
-  integritySecret: string;
-  publicKey: string;
-  expirationTime?: string | null;
-  customerEmail?: string | null;
-  customerFullName?: string | null;
-  customerPhone?: string | null;
-  customerLegalId?: string | null;
-}) {
-  const integrity = buildWompiIntegritySignature({
-    reference: input.reference,
-    amountInCents: input.amountInCents,
-    currency: "COP",
-    expirationTime: input.expirationTime,
-    integritySecret: input.integritySecret,
-  });
-
-  const payload: WompiCheckoutPayload = {
-    "public-key": input.publicKey,
-    currency: "COP",
-    "amount-in-cents": String(input.amountInCents),
-    reference: input.reference,
-    "signature:integrity": integrity,
-    "redirect-url": input.redirectUrl,
-  };
-
-  if (input.expirationTime) {
-    payload["expiration-time"] = input.expirationTime;
-  }
-
-  if (input.customerEmail) {
-    payload["customer-data:email"] = input.customerEmail;
-  }
-
-  if (input.customerFullName) {
-    payload["customer-data:full-name"] = input.customerFullName;
-  }
-
-  if (input.customerPhone) {
-    payload["customer-data:phone-number"] = input.customerPhone;
-    payload["customer-data:phone-number-prefix"] = "+57";
-  }
-
-  if (input.customerLegalId) {
-    payload["customer-data:legal-id"] = input.customerLegalId;
-    payload["customer-data:legal-id-type"] = "CC";
-    payload["collect-customer-legal-id"] = "true";
-  }
-
-  return payload;
 }
 
 export async function fetchWompiTransaction(transactionId: string) {

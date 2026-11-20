@@ -35,7 +35,7 @@ const subtitleSizeMap = {
   lg: "text-[0.72rem]",
 } as const;
 
-export function CondusoftMarkSvg({ className, title }: CondusoftMarkSvgProps) {
+function CondusoftMarkSvg({ className, title }: CondusoftMarkSvgProps) {
   return (
     <Image
       src="/brand/condusoft-mark.svg"

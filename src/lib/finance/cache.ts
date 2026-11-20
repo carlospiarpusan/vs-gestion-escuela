@@ -1,11 +1,10 @@
 import {
   type ClientResourceCachePolicy,
   getClientResourceCached,
-  invalidateClientResourceCache,
 } from "@/lib/client-resource-cache";
 import { serializeSearchParams } from "@/lib/dashboard-client-cache";
 
-export function buildFinanceCacheKey(prefix: string, params?: URLSearchParams | string) {
+function buildFinanceCacheKey(prefix: string, params?: URLSearchParams | string) {
   const serializedParams =
     typeof params === "string" ? params : params ? serializeSearchParams(params) : "";
 
@@ -37,8 +36,4 @@ export async function getFinanceResourceCached<T>({
     persistToSession,
     loader,
   });
-}
-
-export function invalidateFinanceCache(prefixes: string | string[]) {
-  invalidateClientResourceCache(prefixes);
 }

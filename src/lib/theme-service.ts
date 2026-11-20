@@ -1,6 +1,6 @@
 export type ThemePreference = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "theme";
+const THEME_STORAGE_KEY = "theme";
 export const THEME_CHANGE_EVENT = "dashboard:theme-change";
 
 export function normalizeThemePreference(value: string | null | undefined): ThemePreference {

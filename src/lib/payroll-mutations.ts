@@ -10,7 +10,7 @@ type Concept = {
   descripcion?: string | null;
   valor: number;
 };
-export type PayrollCreate = {
+type PayrollCreate = {
   escuela_id: string;
   sede_id: string;
   empleado_tipo: "instructor" | "administrativo";
@@ -23,7 +23,7 @@ export type PayrollCreate = {
   conceptos: Concept[];
   notas?: string | null;
 };
-export type PayrollUpdate = {
+type PayrollUpdate = {
   nomina_id: string;
   estado?: Nomina["estado"];
   fecha_pago?: string | null;

@@ -95,14 +95,10 @@ export function DeviceVariantProvider({
     document.body.setAttribute("data-device-variant", variant);
   }, [variant]);
 
-  return (
-    <DeviceVariantContext.Provider value={variant}>
-      {children}
-    </DeviceVariantContext.Provider>
-  );
+  return <DeviceVariantContext.Provider value={variant}>{children}</DeviceVariantContext.Provider>;
 }
 
-export function useDeviceVariant() {
+function useDeviceVariant() {
   return useContext(DeviceVariantContext);
 }
 

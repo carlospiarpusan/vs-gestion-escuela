@@ -1,22 +1,3 @@
-export type FinanceModuleDescriptor = {
-  id: "income" | "portfolio" | "cash" | "expenses" | "reports";
-  title: string;
-  description: string;
-  primaryActionLabel?: string;
-};
-
-export type FinancePeriodFilters = {
-  year: string;
-  month: string;
-  schoolId?: string;
-  branchId?: string;
-};
-
-export type FinanceListQueryState = {
-  page: number;
-  search: string;
-};
-
 export type FinanceBreakdownRow = {
   categoria?: string;
   metodo_pago?: string | null;

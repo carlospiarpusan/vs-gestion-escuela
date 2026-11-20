@@ -118,7 +118,7 @@ export type SchoolBillingPlanOption = {
   caracteristicas: string[];
 };
 
-export type SchoolBillingCenterResponse = {
+type SchoolBillingCenterResponse = {
   school: {
     id: string;
     nombre: string;
@@ -301,7 +301,7 @@ export type SchoolSubscriptionAdminActionInput =
       reason?: string;
     };
 
-export type SchoolSubscriptionAdminActionResult = {
+type SchoolSubscriptionAdminActionResult = {
   success: true;
   action: SchoolSubscriptionAdminActionInput["action"];
   message: string;
@@ -456,11 +456,6 @@ export async function resolveSchoolPlanCheckoutPricing(
     currency: "COP" as const,
     planName: plan.nombre,
   };
-}
-
-export async function loadCommercialSchoolPlans(db: Queryable) {
-  const planMap = await fetchPlanConfigMap(db);
-  return COMMERCIAL_SCHOOL_PLAN_ORDER.map((planId) => planMap[planId]).filter(Boolean);
 }
 
 export async function loadCommercialPlanConfigs(db: Queryable) {
@@ -1602,42 +1597,6 @@ export async function processDueSchoolSubscriptions(db: Queryable) {
     graceCount: graceResult.rowCount,
     suspendedCount: suspendedResult.rowCount,
   };
-}
-
-export async function loadPlatformSubscriptionBoard(db: Queryable) {
-  const result = await db.query<SchoolSummaryRow>(
-    `
-      select
-        e.id,
-        e.nombre,
-        e.email,
-        e.telefono,
-        e.plan,
-        e.estado,
-        e.max_alumnos,
-        e.max_sedes,
-        access.current_period_end::text,
-        access.trial_ends_at::text,
-        access.grace_ends_at::text,
-        access.billing_interval,
-        access.status,
-        access.actual_status,
-        access.can_write,
-        access.requires_review,
-        access.scheduled_plan_id,
-        access.scheduled_billing_interval,
-        access.pending_payment_reference
-      from public.escuelas e
-      left join lateral public.school_subscription_access(e.id) access on true
-      order by e.created_at desc
-    `
-  );
-
-  return result.rows.map((row) => ({
-    ...row,
-    max_alumnos: toNumber(row.max_alumnos),
-    max_sedes: toNumber(row.max_sedes),
-  }));
 }
 
 function getCurrentAmountForAccess(

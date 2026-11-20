@@ -12,7 +12,7 @@ type AuthorizationResult =
   | { ok: true; perfil: MinimalPerfil; user: User }
   | { ok: false; response: NextResponse };
 
-export type AuthorizeApiRequestOptions = {
+type AuthorizeApiRequestOptions = {
   allowMustChangePassword?: boolean;
   request?: Request;
   skipCsrf?: boolean;
@@ -290,7 +290,7 @@ export async function parseJsonBody<T>(
   return { ok: true, data: parsed.data };
 }
 
-export async function findAuthUserByEmail(_supabaseAdmin: unknown, email: string) {
+async function findAuthUserByEmail(_supabaseAdmin: unknown, email: string) {
   const pool = (await import("@/lib/server-db")).getServerDbPool();
   const result = await pool.query<{ id: string; email: string }>(
     "select id, email from auth.users where lower(email) = lower($1) limit 1",
