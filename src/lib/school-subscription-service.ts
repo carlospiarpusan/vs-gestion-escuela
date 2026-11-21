@@ -1185,6 +1185,18 @@ function normalizeRemoteStatus(status: string | null | undefined) {
     .toUpperCase();
 }
 
+function isNonFinalRemoteStatus(status: string) {
+  return status === "" || status === "PENDING";
+}
+
+// Bumps updated_at (trigger) so the cron rotates through long-pending attempts.
+export async function touchPendingAttempt(db: Queryable, attemptId: string) {
+  await db.query(
+    "update public.school_payment_attempts set updated_at = now() where id = $1 and status = 'pending'",
+    [attemptId]
+  );
+}
+
 async function markAttemptAsFailed(
   db: Queryable,
   attemptId: string,
@@ -1213,7 +1225,7 @@ async function markAttemptAsFailed(
   );
 }
 
-async function applyWompiTransactionToSubscription(
+export async function applyWompiTransactionToSubscription(
   db: Pick<Pool, "connect">,
   transaction: WompiTransaction
 ) {
@@ -1244,7 +1256,8 @@ async function applyWompiTransactionToSubscription(
 
     const wompiStatus = String(transaction.status ?? "").toUpperCase();
 
-    if (attempt.processed_at && wompiStatus === "APPROVED") {
+    if (attempt.processed_at || isNonFinalRemoteStatus(wompiStatus)) {
+      if (!attempt.processed_at) await touchPendingAttempt(client, attempt.id);
       await client.query("commit");
       return attempt;
     }
@@ -1332,7 +1345,8 @@ export async function applyBillingHubPaymentConfirmation(
 
     const remoteStatus = normalizeRemoteStatus(confirmation.transaction_status);
 
-    if (attempt.processed_at && remoteStatus === "APPROVED") {
+    if (attempt.processed_at || isNonFinalRemoteStatus(remoteStatus)) {
+      if (!attempt.processed_at) await touchPendingAttempt(client, attempt.id);
       await client.query("commit");
       return attempt;
     }
@@ -1411,14 +1425,24 @@ export async function applyBillingHubPaymentConfirmation(
   }
 }
 
+export function subtractUtcMonthsClamped(date: Date, months: number) {
+  const result = new Date(date);
+  const day = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() - months);
+  const lastDay = new Date(
+    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)
+  ).getUTCDate();
+  result.setUTCDate(Math.min(day, lastDay));
+  return result;
+}
+
 function buildConfirmationFromHubStatus(status: HubStatusResponse): PaymentConfirmationPayload {
   const expiresAt = status.subscription?.billing_expires_at ?? new Date().toISOString();
   const periodEnd = new Date(expiresAt);
-  const periodStartBase = new Date(expiresAt);
-  const periodStart = new Date(
-    status.billing_interval === "annual"
-      ? periodStartBase.setUTCFullYear(periodStartBase.getUTCFullYear() - 1)
-      : periodStartBase.setUTCMonth(periodStartBase.getUTCMonth() - 1)
+  const periodStart = subtractUtcMonthsClamped(
+    periodEnd,
+    status.billing_interval === "annual" ? 12 : 1
   ).toISOString();
 
   return {
