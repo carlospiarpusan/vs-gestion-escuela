@@ -192,7 +192,8 @@ create table public.perfiles (
     'secretaria',      -- Ve solo SU sede (gestiona finanzas, alumnos, agenda)
     'instructor',      -- Ve solo SU sede (clases y alumnos)
     'recepcion',       -- Ve solo SU sede (atención al público)
-    'alumno'           -- Solo ve SUS datos: pagos, exámenes, resultados
+    'alumno',          -- Solo ve SUS datos: pagos, exámenes, resultados
+    'tramitador'       -- Solo ve los alumnos que tiene asignados (vía API)
   )),
   telefono text,
   avatar_url text,
@@ -206,6 +207,8 @@ create table public.perfiles (
     (rol = 'super_admin')
     or (rol = 'admin_escuela' and escuela_id is not null)
     or (rol in ('admin_sede', 'secretaria', 'instructor', 'recepcion', 'alumno') and escuela_id is not null and sede_id is not null)
+    -- tramitador: sin escuela ni sede para no heredar políticas RLS de la escuela
+    or (rol = 'tramitador' and escuela_id is null and sede_id is null)
   )
 );
 
@@ -247,6 +250,41 @@ create table public.alumnos (
   created_at timestamp with time zone default now()
 );
 
+-- 4b. TRAMITADORES (catálogo único por escuela)
+create or replace function public.normalize_tramitador_nombre(value text)
+returns text
+language sql
+immutable
+parallel safe
+set search_path = pg_catalog
+as $$
+  select nullif(
+    regexp_replace(
+      lower(translate(btrim(coalesce(value, '')), 'ÁÀÄÂÉÈËÊÍÌÏÎÓÒÖÔÚÙÜÛÑáàäâéèëêíìïîóòöôúùüûñ', 'AAAAEEEEIIIIOOOOUUUUNaaaaeeeeiiiioooouuuun')),
+      '\s+', ' ', 'g'
+    ),
+    ''
+  );
+$$;
+
+create table public.tramitadores (
+  id uuid primary key default gen_random_uuid(),
+  escuela_id uuid not null references public.escuelas(id) on delete cascade,
+  nombre text not null check (length(btrim(nombre)) between 2 and 120),
+  nombre_normalizado text generated always as (public.normalize_tramitador_nombre(nombre)) stored,
+  tipo text not null default 'comision' check (tipo in ('comision', 'descuento')),
+  comision_valor numeric(14, 2) check (comision_valor is null or comision_valor >= 0),
+  documento text,
+  telefono text,
+  notas text,
+  activo boolean not null default true,
+  perfil_id uuid unique references public.perfiles(id) on delete set null,
+  created_by uuid references public.perfiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint tramitadores_nombre_unico unique (escuela_id, nombre_normalizado)
+);
+
 -- 5. MATRÍCULAS / CONTRATOS DE ALUMNOS
 create table public.matriculas_alumno (
   id uuid default gen_random_uuid() primary key,
@@ -264,6 +302,7 @@ create table public.matriculas_alumno (
   estado text not null default 'activo' check (estado in ('activo', 'cerrado', 'cancelado')),
   notas text,
   tiene_tramitador boolean default false,
+  tramitador_id uuid,
   tramitador_nombre text,
   tramitador_valor numeric,
   updated_by uuid references public.perfiles(id) on delete set null,
@@ -271,6 +310,10 @@ create table public.matriculas_alumno (
   updated_at timestamp with time zone not null default now(),
   constraint matriculas_alumno_contrato_unique unique (escuela_id, numero_contrato)
 );
+
+alter table public.matriculas_alumno
+  add constraint matriculas_alumno_tramitador_id_fkey
+  foreign key (tramitador_id) references public.tramitadores(id) on delete restrict;
 
 do $$
 begin

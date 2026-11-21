@@ -51,7 +51,10 @@ function Fixture({
       }
       openNewMatricula={vi.fn()}
       categoriasEscuela={["A2", "B1"]}
-      tramitadorOptions={[]}
+      tramitadorOptions={[
+        { id: "t1", nombre: "Agencia prueba", tipo: "comision", comision_valor: 70000 },
+        { id: "t2", nombre: "Agencia descuento", tipo: "descuento", comision_valor: null },
+      ]}
     />
   );
 }
@@ -94,13 +97,19 @@ it("agrupa campos ocasionales sin perder sus valores ni sus controles", () => {
   expect(screen.getByLabelText("Notas")).toHaveValue("Observación guardada");
   expect(screen.getByLabelText("Notas").closest("details")).toHaveAttribute("open");
   fireEvent.click(screen.getByLabelText("Tiene tramitador"));
-  expect(screen.getByLabelText(/Nombre del tramitador/)).toBeRequired();
-  fireEvent.change(screen.getByLabelText(/Nombre del tramitador/), {
+  expect(screen.getByLabelText(/^Tramitador/)).toBeRequired();
+  fireEvent.change(screen.getByLabelText(/^Tramitador/), {
     target: { value: "Agencia prueba" },
   });
+  // La comisión fija del catálogo se propone y sigue siendo editable.
+  expect(screen.getByLabelText(/^Comisión/)).toHaveValue(70000);
   fireEvent.click(screen.getByLabelText("Tiene tramitador"));
   fireEvent.click(screen.getByLabelText("Tiene tramitador"));
-  expect(screen.getByLabelText(/Nombre del tramitador/)).toHaveValue("Agencia prueba");
+  expect(screen.getByLabelText(/^Tramitador/)).toHaveValue("Agencia prueba");
+  fireEvent.change(screen.getByLabelText(/^Tramitador/), {
+    target: { value: "Agencia descuento" },
+  });
+  expect(screen.queryByLabelText(/^Comisión/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Factura externa registrada"));
   fireEvent.click(screen.getByLabelText("Factura electronica emitida"));
   expect(screen.getByPlaceholderText("FE-001234")).toBeInTheDocument();

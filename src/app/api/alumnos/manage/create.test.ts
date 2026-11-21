@@ -79,6 +79,17 @@ beforeEach(async () => {
     new URL("../../../../../supabase/schema.sql", import.meta.url),
     "utf8"
   );
+  const tramitadoresStart = schema.indexOf(
+    "create or replace function public.normalize_tramitador_nombre"
+  );
+  const tramitadoresEnd = schema.indexOf(
+    "\n);",
+    schema.indexOf("create table public.tramitadores (")
+  );
+  await db.exec(schema.slice(tramitadoresStart, tramitadoresEnd + 3));
+  await db.exec(
+    `insert into tramitadores(escuela_id,nombre,tipo,comision_valor) values('${school}','Agencia de prueba','comision',5000),('${school}','Agencia descuento','descuento',null)`
+  );
   for (const table of ["alumnos", "matriculas_alumno"]) {
     const start = schema.indexOf(`create table public.${table} (`);
     await db.exec(schema.slice(start, schema.indexOf("\n);", start) + 3));
@@ -634,4 +645,51 @@ it("records a newly assigned intermediary once and does not duplicate its expens
     409
   );
   expect((await db.query("select monto,proveedor from gastos")).rows).toEqual(expenses);
+});
+
+it("rejects an intermediary that is not in the school catalog", async () => {
+  const target = await newEnrollment();
+  const response = await updateEnrollment(
+    editRequest({
+      ...enrollmentEdit(target),
+      tiene_tramitador: true,
+      tramitador_nombre: "Alguien nuevo",
+      tramitador_valor: 5000,
+    })
+  );
+  expect(response.status).toBe(400);
+  expect((await db.query("select * from gastos")).rows).toHaveLength(0);
+});
+
+it("stores the catalog spelling regardless of case and accents", async () => {
+  const target = await newEnrollment();
+  const response = await updateEnrollment(
+    editRequest({
+      ...enrollmentEdit(target),
+      tiene_tramitador: true,
+      tramitador_nombre: "  AGENCIA   de PRUEBA ",
+      tramitador_valor: 5000,
+    })
+  );
+  expect(response.status).toBe(200);
+  expect((await db.query("select tramitador_nombre from matriculas_alumno")).rows[0]).toEqual({
+    tramitador_nombre: "Agencia de prueba",
+  });
+  expect((await db.query("select proveedor from gastos")).rows).toEqual([
+    { proveedor: "Agencia de prueba" },
+  ]);
+});
+
+it("does not record an expense for a discount-type intermediary", async () => {
+  const target = await newEnrollment();
+  const response = await updateEnrollment(
+    editRequest({
+      ...enrollmentEdit(target),
+      tiene_tramitador: true,
+      tramitador_nombre: "Agencia descuento",
+      tramitador_valor: 5000,
+    })
+  );
+  expect(response.status).toBe(200);
+  expect((await db.query("select * from gastos")).rows).toHaveLength(0);
 });

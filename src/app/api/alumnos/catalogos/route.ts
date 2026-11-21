@@ -1,3 +1,5 @@
+import { listTramitadores } from "@/lib/tramitadores-server";
+import { toTramitadorOptions } from "@/lib/tramitadores";
 import { NextResponse } from "next/server";
 import {
   authorizeApiRequest,
@@ -31,10 +33,6 @@ type SedeRow = {
   id: string;
 };
 
-type TramitadorRow = {
-  nombre: string | null;
-};
-
 export async function GET(request: Request) {
   const auth = await authorizeApiRequest(ALLOWED_ROLES);
   if (!auth.ok) return auth.response;
@@ -65,7 +63,7 @@ export async function GET(request: Request) {
     tags: buildDashboardListCacheTags("alumnos-catalogos", scope),
     bypass: isFreshDashboardDataRequested(url.searchParams),
     loader: async () => {
-      const [escuelaRes, sedeRes, tramitadoresRes] = await Promise.all([
+      const [escuelaRes, sedeRes] = await Promise.all([
         pool.query<EscuelaCategoriesRow>(
           `
             select categorias
@@ -87,31 +85,25 @@ export async function GET(request: Request) {
               `,
               [escuelaId]
             ),
-        pool.query<TramitadorRow>(
-          `
-            select distinct nullif(trim(proveedor), '') as nombre
-            from public.gastos
-            where escuela_id = $1
-              ${sedeId ? "and sede_id = $2" : ""}
-              and categoria = 'tramitador'
-              and nullif(trim(proveedor), '') is not null
-            order by nombre asc
-          `,
-          sedeId ? [escuelaId, sedeId] : [escuelaId]
-        ),
       ]);
 
       return {
         categoriasEscuela: normalizeStoredCourseCategories(escuelaRes.rows[0]?.categorias || []),
-        tramitadorOptions: tramitadoresRes.rows.map((row) => row.nombre || "").filter(Boolean),
         defaultSedeId: sedeRes.rows[0]?.id ?? null,
       };
     },
   });
 
-  return NextResponse.json(payload, {
-    headers: {
-      "Cache-Control": `private, max-age=${Math.floor(CACHE_TTL_MS / 1000)}, stale-while-revalidate=120`,
-    },
-  });
+  // El catálogo de tramitadores se lee sin caché: un tramitador recién creado
+  // debe aparecer de inmediato en el formulario de matrícula.
+  const tramitadorOptions = toTramitadorOptions(await listTramitadores(escuelaId));
+
+  return NextResponse.json(
+    { ...payload, tramitadorOptions },
+    {
+      headers: {
+        "Cache-Control": `private, max-age=${Math.floor(CACHE_TTL_MS / 1000)}, stale-while-revalidate=120`,
+      },
+    }
+  );
 }

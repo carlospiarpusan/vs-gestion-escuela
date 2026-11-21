@@ -1,3 +1,5 @@
+import { listTramitadores } from "@/lib/tramitadores-server";
+import { toTramitadorOptions } from "@/lib/tramitadores";
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, resolveEscuelaIdForRequest } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
@@ -582,14 +584,7 @@ export async function GET(request: Request) {
             `select id from public.sedes where escuela_id = $1 order by es_principal desc, created_at asc limit 1`,
             [escuelaId]
           ),
-      pool.query<{ nombre: string | null }>(
-        `select distinct nullif(trim(proveedor), '') as nombre
-         from public.gastos
-         where escuela_id = $1 and categoria = 'tramitador' and nullif(trim(proveedor), '') is not null
-         ${sedeId ? "and sede_id = $2" : ""}
-         order by nombre asc`,
-        sedeId ? [escuelaId, sedeId] : [escuelaId]
-      ),
+      listTramitadores(escuelaId),
     ]);
 
     const categoriasEscuela = normalizeStoredCourseCategories(escuelaRes.rows[0]?.categorias || []);
@@ -598,7 +593,7 @@ export async function GET(request: Request) {
       ...result,
       _catalogs: {
         categoriasEscuela,
-        tramitadorOptions: tramitadoresRes.rows.map((r) => r.nombre || "").filter(Boolean),
+        tramitadorOptions: toTramitadorOptions(tramitadoresRes),
         defaultSedeId: sedeRes.rows[0]?.id ?? null,
       },
     });

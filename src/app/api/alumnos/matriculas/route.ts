@@ -1,3 +1,9 @@
+import {
+  TramitadorError,
+  resolveEnrollmentTramitador,
+  type TramitadorRecord,
+} from "@/lib/tramitadores-server";
+import { normalizeTramitadorNombre } from "@/lib/tramitadores";
 import { NextResponse } from "next/server";
 import { StudentRecordError, invalidateStudentRecordCaches } from "@/lib/student-records-server";
 import { z } from "zod";
@@ -144,11 +150,23 @@ export async function POST(request: Request) {
     );
   }
 
+  let tramitadorCatalogo: TramitadorRecord | null = null;
+  if (payload.tiene_tramitador) {
+    try {
+      tramitadorCatalogo = await resolveEnrollmentTramitador(pool, alumno.escuela_id, payload, {
+        alumnoId: alumno.id,
+      });
+    } catch (error) {
+      if (error instanceof TramitadorError) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
+      throw error;
+    }
+  }
+
   const client = await pool.connect();
   const hoy = getToday();
-  const tramitadorNombre = payload.tiene_tramitador
-    ? payload.tramitador_nombre?.trim() || null
-    : null;
+  const tramitadorNombre = tramitadorCatalogo?.nombre ?? null;
   const tramitadorValor = payload.tiene_tramitador ? (payload.tramitador_valor ?? null) : null;
 
   try {
@@ -301,7 +319,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (payload.tiene_tramitador && (payload.tramitador_valor ?? 0) > 0) {
+    if (tramitadorCatalogo?.tipo === "comision" && (tramitadorValor ?? 0) > 0) {
       await client.query(
         `
           insert into public.gastos (
@@ -314,7 +332,7 @@ export async function POST(request: Request) {
           payload.sede_id,
           authz.perfil.id,
           `Tramitador — ${alumno.nombre} ${alumno.apellidos}`,
-          payload.tramitador_valor ?? 0,
+          tramitadorValor ?? 0,
           tramitadorNombre,
           hoy,
           `Tramitador asignado al alumno ${alumno.nombre} ${alumno.apellidos}`,
@@ -454,13 +472,24 @@ export async function PUT(request: Request) {
     const nextTramitadorValue = payload.tiene_tramitador
       ? Number(payload.tramitador_valor || 0)
       : 0;
-    const nextTramitadorName = payload.tiene_tramitador
-      ? payload.tramitador_nombre?.trim() || null
-      : null;
+    let tramitadorCatalogo: TramitadorRecord | null = null;
+    if (payload.tiene_tramitador) {
+      try {
+        tramitadorCatalogo = await resolveEnrollmentTramitador(client, alumno.escuela_id, payload, {
+          alumnoId: alumno.id,
+        });
+      } catch (error) {
+        if (error instanceof TramitadorError)
+          throw new StudentRecordError(error.message, error.status);
+        throw error;
+      }
+    }
+    const nextTramitadorName = tramitadorCatalogo?.nombre ?? null;
     if (
       oldTramitadorValue > 0 &&
       (nextTramitadorValue !== oldTramitadorValue ||
-        nextTramitadorName !== matricula.tramitador_nombre ||
+        normalizeTramitadorNombre(nextTramitadorName) !==
+          normalizeTramitadorNombre(matricula.tramitador_nombre) ||
         payload.tiene_tramitador !== matricula.tiene_tramitador)
     )
       throw new StudentRecordError(
@@ -499,7 +528,11 @@ export async function PUT(request: Request) {
         throw new StudentRecordError((error as Error).message, 400);
       }
     }
-    if (oldTramitadorValue <= 0 && nextTramitadorValue > 0) {
+    if (
+      tramitadorCatalogo?.tipo === "comision" &&
+      oldTramitadorValue <= 0 &&
+      nextTramitadorValue > 0
+    ) {
       await client.query(
         `insert into public.gastos (escuela_id,sede_id,user_id,categoria,concepto,monto,metodo_pago,proveedor,fecha,recurrente,notas)
         values($1,$2,$3,'tramitador',$4,$5,'transferencia',$6,$7,false,$8)`,

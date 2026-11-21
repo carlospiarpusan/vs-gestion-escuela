@@ -41,19 +41,32 @@ export async function GET() {
       loader: async () => {
         const pool = getServerDbPool();
         const values: string[] = [escuelaId];
-        const where = ["escuela_id = $1", "categoria = 'tramitador'", "proveedor is not null"];
+        const where = [
+          "g.escuela_id = $1",
+          "g.categoria = 'tramitador'",
+          "g.proveedor is not null",
+        ];
 
         if (sedeId) {
           values.push(sedeId);
-          where.push(`sede_id = $${values.length}`);
+          where.push(`g.sede_id = $${values.length}`);
         }
 
+        // Catálogo único de tramitadores más los proveedores históricos que
+        // aún no estén en el catálogo (sin variantes de mayúsculas).
         const result = await pool.query<TramitadorRow>(
           `
-            select distinct trim(proveedor) as proveedor
-            from public.gastos
+            select nombre as proveedor from public.tramitadores
+            where escuela_id = $1 and activo
+            union
+            select distinct trim(g.proveedor) from public.gastos g
             where ${where.join(" and ")}
-            order by proveedor asc
+              and not exists (
+                select 1 from public.tramitadores t
+                where t.escuela_id = g.escuela_id
+                  and t.nombre_normalizado = public.normalize_tramitador_nombre(g.proveedor)
+              )
+            order by 1 asc
             limit 200
           `,
           values
@@ -74,9 +87,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[API GASTOS/TRAMITADORES] Error:", error);
-    return NextResponse.json(
-      { error: "No se pudieron cargar los tramitadores." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "No se pudieron cargar los tramitadores." }, { status: 500 });
   }
 }

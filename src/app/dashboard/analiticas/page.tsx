@@ -65,6 +65,7 @@ const ROL_LABELS: Record<string, string> = {
   instructor: "Instructor",
   recepcion: "Recepcion",
   alumno: "Alumno",
+  tramitador: "Tramitador",
 };
 
 const TABLE_LABELS: Record<string, string> = {

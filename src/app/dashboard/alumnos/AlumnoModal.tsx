@@ -1,5 +1,7 @@
 "use client";
 
+import TramitadorFields from "./TramitadorFields";
+import type { TramitadorOption } from "@/lib/tramitadores";
 import { useEffect, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { BookOpen, Pencil } from "lucide-react";
 import Modal from "@/components/dashboard/Modal";
@@ -43,7 +45,7 @@ interface AlumnoModalProps {
   openNewMatricula: (alumno: AlumnoRow) => void;
   catalogsLoading?: boolean;
   categoriasEscuela: string[];
-  tramitadorOptions: string[];
+  tramitadorOptions: TramitadorOption[];
   formError?: string;
   openEditMatricula?: (alumno: AlumnoRow, matricula: MatriculaResumen) => void;
 }
@@ -99,7 +101,6 @@ export default function AlumnoModal({
   formError = "",
   openEditMatricula,
 }: AlumnoModalProps) {
-  const tramitadorListId = "alumno-tramitador-options";
   const isRegularForm = !isAptitudForm && !isPracticeForm;
   const contactRequired = !editing;
   const birthRequired = isRegularForm && (!editing || Boolean(editing.fecha_nacimiento));
@@ -913,49 +914,21 @@ export default function AlumnoModal({
 
                   {form.tiene_tramitador ? (
                     <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-3">
-                      <div>
-                        <label htmlFor="alumno-tramitador" className={compactLabel}>
-                          Nombre del tramitador *
-                        </label>
-                        <input
-                          type="text"
-                          id="alumno-tramitador"
-                          required={form.tiene_tramitador}
-                          list={tramitadorOptions.length > 0 ? tramitadorListId : undefined}
-                          value={form.tramitador_nombre}
-                          onChange={(event) =>
-                            setForm({ ...form, tramitador_nombre: event.target.value })
-                          }
-                          className={compactInput}
-                          placeholder="Nombre o agencia"
-                        />
-                        {tramitadorOptions.length > 0 ? (
-                          <datalist id={tramitadorListId}>
-                            {tramitadorOptions.map((option) => (
-                              <option key={option} value={option} />
-                            ))}
-                          </datalist>
-                        ) : null}
-                      </div>
-                      <div>
-                        <label htmlFor="alumno-valor-tramitador" className={compactLabel}>
-                          Valor{" "}
-                          {editingMatricula && (editingMatricula.tramitador_valor ?? 0) > 0
+                      <TramitadorFields
+                        idPrefix="alumno"
+                        options={tramitadorOptions}
+                        nombre={form.tramitador_nombre}
+                        valor={form.tramitador_valor}
+                        required={form.tiene_tramitador}
+                        labelClassName={compactLabel}
+                        inputClassName={compactInput}
+                        valorLabelSuffix={
+                          editingMatricula && (editingMatricula.tramitador_valor ?? 0) > 0
                             ? "(ajuste sobre el anterior)"
-                            : "(va a gastos)"}
-                        </label>
-                        <input
-                          id="alumno-valor-tramitador"
-                          type="number"
-                          min="0"
-                          value={form.tramitador_valor}
-                          onChange={(event) =>
-                            setForm({ ...form, tramitador_valor: event.target.value })
-                          }
-                          className={compactInput}
-                          placeholder="0"
-                        />
-                      </div>
+                            : "(va a gastos)"
+                        }
+                        onChange={(next) => setForm({ ...form, ...next })}
+                      />
                     </div>
                   ) : null}
                 </div>
