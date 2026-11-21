@@ -60,13 +60,13 @@ export type AccountingMonthlySeriesRow = {
   balance: number;
 };
 
-export type AccountingAgingBucketRow = {
+type AccountingAgingBucketRow = {
   bucket: string;
   cantidad: number;
   total: number;
 };
 
-export type AccountingCounterpartyRow = {
+type AccountingCounterpartyRow = {
   nombre: string;
   cantidad: number;
   total: number;
@@ -91,7 +91,7 @@ export type AccountingPayablesSummary = {
   topTramitadores: AccountingCounterpartyRow[];
 };
 
-export type AccountingContractMonthlyRow = {
+type AccountingContractMonthlyRow = {
   periodo: string;
   registros: number;
   valorEsperado: number;
@@ -99,7 +99,7 @@ export type AccountingContractMonthlyRow = {
   saldoPendiente: number;
 };
 
-export type AccountingContractOldDebtRow = {
+type AccountingContractOldDebtRow = {
   nombre: string;
   documento: string | null;
   referencia: string | null;
@@ -110,7 +110,7 @@ export type AccountingContractOldDebtRow = {
   diasPendiente: number;
 };
 
-export type AccountingContractPendingRow = {
+type AccountingContractPendingRow = {
   obligationId: string;
   nombre: string;
   documento: string | null;
@@ -149,7 +149,7 @@ export type AccountingOptionSede = {
   escuela_id: string;
 };
 
-export type AccountingStudentReportRow = {
+type AccountingStudentReportRow = {
   id: string;
   nombre: string;
   dni: string;
@@ -222,7 +222,7 @@ export type AccountingReportResponse = {
 import { formatDateOnlyForDisplay, getCurrentYear } from "@/lib/date-utils";
 import { formatCop } from "@/lib/intl-formatters";
 
-export const HISTORICAL_START_YEAR = 2023;
+const HISTORICAL_START_YEAR = 2023;
 export const MONTH_OPTIONS = [
   { value: "", label: "Todos" },
   { value: "01", label: "Enero" },

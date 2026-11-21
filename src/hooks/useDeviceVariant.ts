@@ -1,1 +1,1 @@
-export { useDeviceVariant, useIsMobileVariant } from "@/contexts/DeviceVariantContext";
+export { useIsMobileVariant } from "@/contexts/DeviceVariantContext";

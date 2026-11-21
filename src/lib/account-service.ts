@@ -16,12 +16,7 @@ export type AccountProfileDraft = {
   confirmarPassword: string;
 };
 
-export type StudentProfileDraft = Pick<
-  AccountProfileDraft,
-  "ciudad" | "departamento" | "direccion" | "fechaNacimiento"
->;
-
-export type AccountProfileLoad = {
+type AccountProfileLoad = {
   draft: AccountProfileDraft;
   alumnoId: string | null;
 };
@@ -151,7 +146,8 @@ export async function saveAccountProfile({
     nombre: normalizedName,
   };
 
-  const shouldUpdateAuthEmail = normalizedEmail && normalizedEmail !== (user.email || "").toLowerCase();
+  const shouldUpdateAuthEmail =
+    normalizedEmail && normalizedEmail !== (user.email || "").toLowerCase();
 
   if (shouldUpdateAuthEmail) {
     const { error: authEmailError } = await supabase.auth.updateUser({

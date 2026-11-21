@@ -5,7 +5,6 @@ import {
   findDashboardModuleByPath,
   getDashboardDefaultRoute,
   getDashboardHomePriorityModules,
-  getDashboardModulesForRole,
   getDashboardNavigationForRole,
   getDashboardPageMeta,
   getDashboardPrimaryMobileModules,
@@ -176,9 +175,9 @@ describe("dashboard navigation config", () => {
   });
 
   it("limits the tramitador role to its own students page", () => {
-    expect(getDashboardModulesForRole("tramitador", { navOnly: false }).map((m) => m.id)).toEqual([
-      "agentStudents",
-    ]);
+    expect(
+      DASHBOARD_MODULES.filter((module) => module.roles.includes("tramitador")).map((m) => m.id)
+    ).toEqual(["agentStudents"]);
     expect(getDashboardDefaultRoute("tramitador")).toBe("/dashboard/mis-alumnos");
     for (const path of [
       "/dashboard/alumnos",

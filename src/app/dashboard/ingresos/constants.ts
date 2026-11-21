@@ -78,11 +78,6 @@ export function getAlumnoFullName(alumno?: Pick<Alumno, "nombre" | "apellidos"> 
   return `${alumno?.nombre ?? ""} ${alumno?.apellidos ?? ""}`.trim();
 }
 
-export function formatAlumnoOptionLabel(alumno: AlumnoOption) {
-  const nombreCompleto = getAlumnoFullName(alumno) || "Sin nombre";
-  return alumno.dni ? `${nombreCompleto} · ${alumno.dni}` : nombreCompleto;
-}
-
 export function formatMatriculaLabel(matricula: MatriculaOption) {
   if (matricula.numero_contrato) return `Contrato ${matricula.numero_contrato}`;
   if ((matricula.categorias ?? []).length > 0) return (matricula.categorias ?? []).join(", ");

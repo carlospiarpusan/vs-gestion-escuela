@@ -10,7 +10,7 @@ export const PAYABLE_BUCKET_LABELS = {
   current: "Al dia",
 } as const;
 
-export type AgingBucketLike = {
+type AgingBucketLike = {
   bucket: string;
   total: number | string | null;
 };

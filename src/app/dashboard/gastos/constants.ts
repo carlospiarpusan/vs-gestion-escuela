@@ -131,7 +131,7 @@ export type ExpenseView =
   | "with_invoice"
   | "without_invoice"
   | "recurrente";
-export type ExpenseSupabaseQueryable<T> = {
+type ExpenseSupabaseQueryable<T> = {
   in(column: string, values: readonly string[]): T;
   not(column: string, operator: string, value: string | null): T;
   neq(column: string, value: string): T;
@@ -160,13 +160,13 @@ export const emptyEmailIntegrationForm: EmailInvoiceConfigFormState = {
 export const MANUAL_IMAP_PROVIDER: FacturaCorreoProveedor = "imap";
 export const HISTORICAL_MONTH_OPTIONS = [3, 6, 12, 24, 36, 60];
 export const HISTORICAL_LIMIT_OPTIONS = [100, 250, 500, 1000, 2000];
-export const VEHICULAR_EXPENSE_CATEGORIES: CategoriaGasto[] = [
+const VEHICULAR_EXPENSE_CATEGORIES: CategoriaGasto[] = [
   "combustible",
   "mantenimiento_vehiculo",
   "reparaciones",
   "seguros",
 ];
-export const ADMINISTRATIVE_EXPENSE_CATEGORIES: CategoriaGasto[] = [
+const ADMINISTRATIVE_EXPENSE_CATEGORIES: CategoriaGasto[] = [
   "alquiler",
   "servicios",
   "material_didactico",
@@ -175,8 +175,7 @@ export const ADMINISTRATIVE_EXPENSE_CATEGORIES: CategoriaGasto[] = [
   "suministros",
   "otros",
 ];
-export const PEOPLE_EXPENSE_CATEGORIES: CategoriaGasto[] = ["nominas", "tramitador"];
-export const PAYROLL_EXPENSE_CATEGORIES: CategoriaGasto[] = ["nominas"];
+const PEOPLE_EXPENSE_CATEGORIES: CategoriaGasto[] = ["nominas", "tramitador"];
 export const EXPENSE_SECTION_ITEMS: Array<{
   id: ExpenseSection;
   label: string;

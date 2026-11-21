@@ -219,7 +219,7 @@ export async function mailAccountAddress(provider: MailOAuthProvider, token: str
   return email.toLowerCase();
 }
 
-export type MailSearch = {
+type MailSearch = {
   since: Date;
   onlyUnread: boolean;
   from: string | null;
