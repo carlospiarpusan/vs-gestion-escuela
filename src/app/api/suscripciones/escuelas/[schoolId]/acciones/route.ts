@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest, parseJsonBody } from "@/lib/api-auth";
 import {
+  SchoolPlanUnavailableError,
   performSchoolSubscriptionAdminAction,
   type SchoolSubscriptionAdminActionInput,
 } from "@/lib/school-subscription-service";
@@ -164,6 +165,9 @@ export async function POST(
 
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof SchoolPlanUnavailableError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     console.error("Error al ejecutar acción comercial de super admin:", error);
     return NextResponse.json(
       {

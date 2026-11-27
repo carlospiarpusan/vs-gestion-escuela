@@ -2,7 +2,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
 import { PATCH } from "./route";
-const mock = vi.hoisted(() => ({ auth: vi.fn(), query: vi.fn() }));
+const mock = vi.hoisted(() => ({ auth: vi.fn(), query: vi.fn(), revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath: mock.revalidatePath }));
 vi.mock("@/lib/api-auth", async (original) => ({
   ...(await original<typeof import("@/lib/api-auth")>()),
   authorizeApiRequest: mock.auth,
@@ -47,6 +48,7 @@ it("acepta precio cero y desactivacion explicitos del superadministrador", async
   const response = await PATCH(request({ id: "basico", precio_mensual: 0, activo: false }));
   expect(response.status).toBe(200);
   expect(mock.query).toHaveBeenCalledWith(expect.any(String), [0, false, id, "basico"]);
+  expect(mock.revalidatePath).toHaveBeenCalledWith("/");
 });
 it("no escribe planes si la autorizacion es rechazada", async () => {
   mock.auth.mockResolvedValue({

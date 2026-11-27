@@ -18,7 +18,7 @@ import {
 import { toast } from "sonner";
 import PageScaffold from "@/components/dashboard/PageScaffold";
 import { fetchJsonWithRetry } from "@/lib/retry";
-import { getSchoolPlanDescriptor } from "@/lib/school-plans";
+import { getSchoolPlanDescriptor, isConfiguredSchoolPlanPrice } from "@/lib/school-plans";
 import type { PlatformSubscriptionsResponse } from "@/lib/platform-subscriptions";
 import {
   getSchoolSubscriptionIntervalLabel,
@@ -409,6 +409,11 @@ function DetailDrawer({
   const [graceDays, setGraceDays] = useState(3);
   const [manualStartsAt, setManualStartsAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const currentPlan = detail?.plans.find((plan) => plan.id === selectedPlan);
+  const selectionPrice =
+    (selectedInterval === "annual" ? currentPlan?.precio_anual : currentPlan?.precio_mensual) ?? 0;
+  const canSubmitPaidChange =
+    !submitting && currentPlan?.activo === true && isConfiguredSchoolPlanPrice(selectionPrice);
   const isManualActivationState =
     detail?.access.actual_status === "trialing" ||
     detail?.access.actual_status === "read_only" ||
@@ -545,6 +550,7 @@ function DetailDrawer({
                       <button
                         key={plan.id}
                         type="button"
+                        aria-pressed={selected}
                         onClick={() => setSelectedPlan(plan.id)}
                         className={`rounded-3xl border px-4 py-4 text-left transition-all ${
                           selected
@@ -555,6 +561,11 @@ function DetailDrawer({
                         <p className="text-sm font-bold text-zinc-900 dark:text-white">
                           {plan.nombre}
                         </p>
+                        {!plan.activo ? (
+                          <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+                            Desactivado
+                          </p>
+                        ) : null}
                         <p className="mt-2 text-xs text-zinc-500">{plan.descripcion}</p>
                         <p className="mt-3 text-sm font-semibold text-zinc-900 dark:text-white">
                           {formatCurrency(plan.precio_mensual)}
@@ -573,6 +584,7 @@ function DetailDrawer({
                     <button
                       key={interval}
                       type="button"
+                      aria-pressed={selectedInterval === interval}
                       onClick={() => setSelectedInterval(interval)}
                       className={`rounded-full px-4 py-2 text-sm font-semibold ${
                         selectedInterval === interval
@@ -596,7 +608,7 @@ function DetailDrawer({
                 <div className="mt-4 flex flex-wrap gap-3">
                   <button
                     type="button"
-                    disabled={submitting}
+                    disabled={!canSubmitPaidChange}
                     onClick={() =>
                       void submit(
                         {
@@ -614,7 +626,7 @@ function DetailDrawer({
                   </button>
                   <button
                     type="button"
-                    disabled={submitting || reason.trim().length < 5}
+                    disabled={!canSubmitPaidChange || reason.trim().length < 5}
                     onClick={() =>
                       void submit(
                         {

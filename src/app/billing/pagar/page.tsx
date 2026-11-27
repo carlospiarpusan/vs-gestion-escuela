@@ -1,56 +1,49 @@
 import { redirect } from "next/navigation";
-import { requestHubCheckout, verifyPublicBillingToken } from "@/lib/billing/hub";
-import { resolveSchoolPlanCheckoutPricing } from "@/lib/school-subscription-service";
-import { getServerDbPool } from "@/lib/server-db";
+import { PublicBillingTokenError, verifyPublicBillingToken } from "@/lib/billing/hub";
+import { startPublicBillingCheckout } from "@/lib/billing/public-checkout";
+import { SchoolPlanUnavailableError } from "@/lib/school-subscription-service";
 
 type BillingPagarPageProps = {
-  searchParams?: Promise<{ token?: string }>;
+  searchParams?: Promise<{ token?: string | string[] }>;
 };
 
 export default async function BillingPagarPage({ searchParams }: BillingPagarPageProps) {
-  const params = await searchParams;
-  const token = params?.token?.trim();
+  const rawToken = (await searchParams)?.token;
+  const token = typeof rawToken === "string" ? rawToken.trim() : "";
 
   if (!token) {
     return (
       <main className="mx-auto max-w-xl px-6 py-16">
         <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
-          Falta el token de pago.
+          {Array.isArray(rawToken) ? "Token de pago inválido." : "Falta el token de pago."}
         </div>
       </main>
     );
   }
 
+  let redirectTarget: string | null = null;
   let checkoutMessage: string | null = null;
   let errorMessage: string | null = null;
 
   try {
-    const payload = verifyPublicBillingToken(token);
-    const pricing = await resolveSchoolPlanCheckoutPricing(
-      getServerDbPool(),
-      payload.target_plan_code,
-      payload.billing_interval
-    );
-    const checkout = await requestHubCheckout({
-      empresa_id: payload.empresa_id,
-      target_plan_code: payload.target_plan_code,
-      billing_interval: payload.billing_interval,
-      operation_type: payload.operation_type,
-      amount_in_cents: pricing.amountInCents,
-      currency: pricing.currency,
-      plan_name: pricing.planName,
-      metadata: {
-        source: "public_token",
-        nonce: payload.nonce,
-      },
-    });
-
-    if (checkout.checkoutUrl) {
-      redirect(checkout.checkoutUrl);
+    const payment = await startPublicBillingCheckout(verifyPublicBillingToken(token));
+    if (payment) {
+      redirectTarget = payment.url;
+      checkoutMessage = payment.message;
+    } else {
+      errorMessage = "Este enlace de pago ya fue utilizado, está en uso o expiró.";
     }
-    checkoutMessage = checkout.message;
   } catch (error) {
-    errorMessage = error instanceof Error ? error.message : "No fue posible iniciar el pago.";
+    if (error instanceof PublicBillingTokenError || error instanceof SchoolPlanUnavailableError) {
+      errorMessage = error.message;
+    } else {
+      console.error("billing.pagar.failed");
+      errorMessage = "No fue posible iniciar el pago. Vuelve a abrir el enlace para intentarlo.";
+    }
+  }
+
+  if (redirectTarget) {
+    redirect(redirectTarget);
   }
 
   if (errorMessage) {

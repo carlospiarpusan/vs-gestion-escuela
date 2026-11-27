@@ -479,6 +479,7 @@ export type EstadoNomina = "borrador" | "aprobada" | "pagada" | "anulada";
 export type TipoConceptoNomina = "devengo" | "deduccion";
 
 export interface Nomina {
+  gasto_id?: string | null;
   id: string;
   escuela_id: string;
   sede_id: string;

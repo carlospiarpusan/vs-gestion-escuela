@@ -6,7 +6,11 @@ import {
   type HubStatusResponse,
   type PaymentConfirmationPayload,
 } from "@/lib/billing/hub";
-import { COMMERCIAL_SCHOOL_PLAN_ORDER, isCommercialSchoolPlan } from "@/lib/school-plans";
+import {
+  COMMERCIAL_SCHOOL_PLAN_ORDER,
+  isCommercialSchoolPlan,
+  isConfiguredSchoolPlanPrice,
+} from "@/lib/school-plans";
 import { getSiteUrl } from "@/lib/site-metadata";
 import { getNextCycleDuration } from "@/lib/school-subscription";
 import {
@@ -110,6 +114,7 @@ type SchoolSummaryRow = {
 export type SchoolBillingPlanOption = {
   id: PlanEscuelaPago;
   nombre: string;
+  activo: boolean;
   descripcion: string | null;
   precio_mensual: number;
   precio_anual: number;
@@ -117,6 +122,15 @@ export type SchoolBillingPlanOption = {
   max_sedes_default: number;
   caracteristicas: string[];
 };
+
+type SchoolBillingPlanMap = Partial<Record<PlanEscuelaPago, SchoolBillingPlanOption>>;
+
+export class SchoolPlanUnavailableError extends Error {
+  constructor(message = "Este plan no está disponible para contratar.") {
+    super(message);
+    this.name = "SchoolPlanUnavailableError";
+  }
+}
 
 type SchoolBillingCenterResponse = {
   school: {
@@ -392,51 +406,30 @@ function normalizeEventRow(row: SchoolEventRow): SchoolSubscriptionEventItem {
   };
 }
 
-async function fetchPlanConfigMap(db: Queryable) {
-  const result = await db.query<PlanConfig>(
-    `
-      select
-        id,
-        nombre,
-        descripcion,
-        precio_mensual,
-        precio_anual,
-        max_alumnos_default,
-        max_sedes_default,
-        caracteristicas,
-        activo,
-        updated_by,
-        updated_at::text,
-        created_at::text
-      from public.planes_config
-      where id in ('basico', 'profesional', 'enterprise')
-      order by
-        case id
-          when 'basico' then 1
-          when 'profesional' then 2
-          when 'enterprise' then 3
-          else 99
-        end
-    `
-  );
+async function fetchPlanConfigMap(db: Queryable): Promise<SchoolBillingPlanMap> {
+  const rows = await loadCommercialPlanConfigs(db);
+  const plans: SchoolBillingPlanMap = {};
+  for (const row of rows) {
+    if (!isCommercialSchoolPlan(row.id)) continue;
+    plans[row.id] = {
+      id: row.id,
+      nombre: row.nombre,
+      activo: row.activo,
+      descripcion: row.descripcion,
+      precio_mensual: row.precio_mensual,
+      precio_anual: row.precio_anual,
+      max_alumnos_default: row.max_alumnos_default,
+      max_sedes_default: row.max_sedes_default,
+      caracteristicas: row.caracteristicas,
+    };
+  }
+  return plans;
+}
 
-  return result.rows.reduce<Record<PlanEscuelaPago, SchoolBillingPlanOption>>(
-    (acc, row) => {
-      if (!isCommercialSchoolPlan(row.id)) return acc;
-      acc[row.id] = {
-        id: row.id,
-        nombre: row.nombre,
-        descripcion: row.descripcion,
-        precio_mensual: toNumber(row.precio_mensual),
-        precio_anual: toNumber(row.precio_anual),
-        max_alumnos_default: toNumber(row.max_alumnos_default),
-        max_sedes_default: toNumber(row.max_sedes_default),
-        caracteristicas: parseJsonArray(row.caracteristicas),
-      };
-      return acc;
-    },
-    {} as Record<PlanEscuelaPago, SchoolBillingPlanOption>
-  );
+function requireActiveSchoolPlan(planMap: SchoolBillingPlanMap, planId: PlanEscuelaPago) {
+  const plan = planMap[planId];
+  if (!plan?.activo) throw new SchoolPlanUnavailableError();
+  return plan;
 }
 
 export async function resolveSchoolPlanCheckoutPricing(
@@ -445,14 +438,10 @@ export async function resolveSchoolPlanCheckoutPricing(
   billingInterval: SchoolPaidBillingInterval
 ) {
   const planMap = await fetchPlanConfigMap(db);
-  const plan = planMap[planId];
-
-  if (!plan) {
-    throw new Error("No se encontró la configuración del plan.");
-  }
+  const plan = requireActiveSchoolPlan(planMap, planId);
 
   return {
-    amountInCents: getAmountInCents(planMap, planId, billingInterval),
+    amountInCents: getAmountInCents(plan, billingInterval),
     currency: "COP" as const,
     planName: plan.nombre,
   };
@@ -582,34 +571,29 @@ export async function loadSchoolBillingCenter(db: Queryable, schoolId: string) {
       telefono: school.telefono,
     },
     access,
-    plans: COMMERCIAL_SCHOOL_PLAN_ORDER.map((planId) => planMap[planId]).filter(Boolean),
+    plans: COMMERCIAL_SCHOOL_PLAN_ORDER.map((planId) => planMap[planId]).filter(
+      (plan): plan is SchoolBillingPlanOption =>
+        plan?.activo === true &&
+        (isConfiguredSchoolPlanPrice(plan.precio_mensual) ||
+          isConfiguredSchoolPlanPrice(plan.precio_anual))
+    ),
     latestAttempts: attemptsRes.rows.map(normalizeAttemptRow),
     notes,
   } satisfies SchoolBillingCenterResponse;
 }
 
 function getAmountInCents(
-  planMap: Record<PlanEscuelaPago, SchoolBillingPlanOption>,
-  planId: PlanEscuelaPago,
+  plan: SchoolBillingPlanOption,
   billingInterval: SchoolPaidBillingInterval
 ) {
-  const plan = planMap[planId];
-  if (!plan) {
-    throw new Error("No se encontró la configuración del plan.");
-  }
-
   const amount = billingInterval === "annual" ? plan.precio_anual : plan.precio_mensual;
-  const amountInCents = Math.round(Number(amount) * 100);
-  const intervalLabel = billingInterval === "annual" ? "anual" : "mensual";
-
-  if (!Number.isFinite(amountInCents) || amountInCents < 0) {
-    throw new Error("El precio del plan es inválido.");
+  const amountInCents = Math.round(amount * 100);
+  if (!isConfiguredSchoolPlanPrice(amountInCents)) {
+    const intervalLabel = billingInterval === "annual" ? "anual" : "mensual";
+    throw new SchoolPlanUnavailableError(
+      `El plan ${plan.nombre} no tiene un precio ${intervalLabel} configurado.`
+    );
   }
-
-  if (amountInCents <= 0) {
-    throw new Error(`El plan ${plan.nombre} no tiene un precio ${intervalLabel} configurado.`);
-  }
-
   return amountInCents;
 }
 
@@ -648,7 +632,7 @@ async function applyPlanDefaultsToSchool(
   client: PoolClient,
   schoolId: string,
   planId: PlanEscuelaPago,
-  planMap: Record<PlanEscuelaPago, SchoolBillingPlanOption>
+  planMap: SchoolBillingPlanMap
 ) {
   const plan = planMap[planId];
   if (!plan) {
@@ -727,11 +711,8 @@ export async function createSchoolCheckoutSession(
   }
 
   const payer = profileRes.rows[0];
-  const selectedPlan = planMap[input.targetPlanId];
-  if (!selectedPlan) {
-    throw new Error("No se encontró la configuración del plan.");
-  }
-  const amountInCents = getAmountInCents(planMap, input.targetPlanId, input.targetBillingInterval);
+  const selectedPlan = requireActiveSchoolPlan(planMap, input.targetPlanId);
+  const amountInCents = getAmountInCents(selectedPlan, input.targetBillingInterval);
   const hubOperation = mapLocalAttemptOperationToHub(input.mode);
   const checkout = await requestHubCheckout({
     empresa_id: input.schoolId,
@@ -829,11 +810,16 @@ export async function scheduleSchoolPlanChange(
     billingInterval: SchoolPaidBillingInterval;
   }
 ) {
-  const access = await loadSchoolSubscriptionAccess(db, input.schoolId);
+  const [access, planMap] = await Promise.all([
+    loadSchoolSubscriptionAccess(db, input.schoolId),
+    fetchPlanConfigMap(db),
+  ]);
 
   if (!access?.cycle_id) {
     throw new Error("No existe un ciclo actual para programar el cambio.");
   }
+
+  getAmountInCents(requireActiveSchoolPlan(planMap, input.planId), input.billingInterval);
 
   await db.query(
     `
@@ -1600,7 +1586,7 @@ export async function processDueSchoolSubscriptions(db: Queryable) {
 }
 
 function getCurrentAmountForAccess(
-  planMap: Record<PlanEscuelaPago, SchoolBillingPlanOption>,
+  planMap: SchoolBillingPlanMap,
   access: SchoolSubscriptionAccess
 ) {
   if (access.billing_interval === "annual") {
@@ -1612,10 +1598,7 @@ function getCurrentAmountForAccess(
   return 0;
 }
 
-function getNextAmountForAccess(
-  planMap: Record<PlanEscuelaPago, SchoolBillingPlanOption>,
-  access: SchoolSubscriptionAccess
-) {
+function getNextAmountForAccess(planMap: SchoolBillingPlanMap, access: SchoolSubscriptionAccess) {
   if (access.scheduled_plan_id && access.scheduled_billing_interval) {
     return access.scheduled_billing_interval === "annual"
       ? (planMap[access.scheduled_plan_id]?.precio_anual ?? 0)
@@ -1863,7 +1846,9 @@ export async function loadSchoolSubscriptionAdminDetail(db: Queryable, schoolId:
     },
     access,
     cycle: cycleRes.rows[0] ? normalizeCycleRow(cycleRes.rows[0]) : null,
-    plans: COMMERCIAL_SCHOOL_PLAN_ORDER.map((planId) => planMap[planId]).filter(Boolean),
+    plans: COMMERCIAL_SCHOOL_PLAN_ORDER.map((planId) => planMap[planId]).filter(
+      (plan) => plan !== undefined
+    ),
     latestAttempts: attemptsRes.rows.map(normalizeAttemptRow),
     events: eventsRes.rows.map(normalizeEventRow),
     currentAmount: getCurrentAmountForAccess(planMap, access),
@@ -2112,6 +2097,9 @@ export async function performSchoolSubscriptionAdminAction(
       }
 
       case "schedule_change": {
+        const planMap = await fetchPlanConfigMap(client);
+        getAmountInCents(requireActiveSchoolPlan(planMap, input.planId), input.billingInterval);
+
         await client.query(
           `
             update public.school_subscription_cycles

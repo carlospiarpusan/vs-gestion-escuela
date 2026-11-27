@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as hub from "@/lib/billing/hub";
 import {
+  SchoolPlanUnavailableError,
   applyBillingHubPaymentConfirmation,
   applyWompiTransactionToSubscription,
+  createSchoolCheckoutSession,
+  loadSchoolBillingCenter,
+  resolveSchoolPlanCheckoutPricing,
+  scheduleSchoolPlanChange,
   subtractUtcMonthsClamped,
 } from "@/lib/school-subscription-service";
 
@@ -107,6 +113,74 @@ describe("pagos de suscripciones", () => {
     );
     await applyBillingHubPaymentConfirmation(db, hubConfirmation("VOIDED"));
     expect(wrote(failurePattern)).toBe(false);
+  });
+});
+
+describe("disponibilidad comercial de suscripciones", () => {
+  const input = {
+    schoolId: "school-1",
+    planId: "profesional",
+    billingInterval: "monthly",
+  } as const;
+  const plan = {
+    id: input.planId,
+    nombre: "Profesional",
+    precio_mensual: "299000.00",
+    precio_anual: "2990000.00",
+  };
+
+  function billingDb(activo: boolean) {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("from public.planes_config")) {
+        return { rows: [{ ...plan, activo }] };
+      }
+      if (sql.includes("from public.school_subscription_access")) {
+        return { rows: [{ plan_id: input.planId, cycle_id: "cycle-1", actual_status: "active" }] };
+      }
+      if (sql.includes("from public.escuelas")) {
+        return { rows: [{ id: input.schoolId, school_name: "Escuela de prueba" }] };
+      }
+      return { rows: [] };
+    });
+    return { db: { query } as never, query };
+  }
+
+  it("bloquea checkout y programación para un plan inactivo sin crear intentos ni eventos", async () => {
+    const { db, query } = billingDb(false);
+    const checkout = vi
+      .spyOn(hub, "requestHubCheckout")
+      .mockRejectedValue(new Error("El proveedor no se debe invocar"));
+
+    try {
+      const center = await loadSchoolBillingCenter(db, input.schoolId);
+      expect(center.access.plan_id).toBe(input.planId);
+      expect(center.plans).toEqual([]);
+      await expect(
+        createSchoolCheckoutSession(db, {
+          schoolId: input.schoolId,
+          mode: "renewal",
+          initiatedBy: "owner-1",
+          targetPlanId: input.planId,
+          targetBillingInterval: input.billingInterval,
+        })
+      ).rejects.toBeInstanceOf(SchoolPlanUnavailableError);
+      await expect(scheduleSchoolPlanChange(db, input)).rejects.toBeInstanceOf(
+        SchoolPlanUnavailableError
+      );
+      expect(checkout).not.toHaveBeenCalled();
+      expect(query.mock.calls.every(([sql]) => sql.trimStart().startsWith("select"))).toBe(true);
+    } finally {
+      checkout.mockRestore();
+    }
+  });
+
+  it("obtiene el importe vigente de un plan activo en centavos de COP", async () => {
+    const { db } = billingDb(true);
+    await expect(resolveSchoolPlanCheckoutPricing(db, input.planId, "annual")).resolves.toEqual({
+      amountInCents: 299_000_000,
+      currency: "COP",
+      planName: plan.nombre,
+    });
   });
 });
 

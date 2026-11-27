@@ -3,7 +3,6 @@ import { BadgeCheck, Headphones, Layers3 } from "lucide-react";
 import SectionIntro from "@/components/public/SectionIntro";
 import { COMMERCIAL_SCHOOL_PLAN_ORDER, SCHOOL_PLAN_DESCRIPTORS } from "@/lib/school-plans";
 import {
-  FALLBACK_PUBLIC_PLAN_PRICES,
   QUOTED_PUBLIC_PLANS,
   describeAnnualPrice,
   formatCop,
@@ -16,11 +15,12 @@ const planSupportHighlights = [
   "Revisión del punto de partida ideal antes de crecer a más sedes o más equipo interno.",
 ];
 
-export default function Pricing({
-  prices = FALLBACK_PUBLIC_PLAN_PRICES,
-}: {
-  prices?: PublicPlanPrices;
-}) {
+export default function Pricing({ prices }: { prices: PublicPlanPrices }) {
+  const availablePlans = COMMERCIAL_SCHOOL_PLAN_ORDER.flatMap((planId) => {
+    const price = prices[planId];
+    return price ? [{ planId, price }] : [];
+  });
+
   return (
     <section
       id="pricing"
@@ -37,18 +37,27 @@ export default function Pricing({
                 Enfoque comercial
               </p>
               <p className="mt-3 text-sm leading-6 text-[var(--gray-700)] dark:text-[var(--gray-500)]">
-                Precios en pesos colombianos (COP). Puedes pagar mes a mes o el año completo con
-                descuento.
+                Precios en pesos colombianos (COP).
               </p>
             </div>
           }
         />
 
         <div className="grid gap-5 lg:grid-cols-3">
-          {COMMERCIAL_SCHOOL_PLAN_ORDER.map((planId) => {
+          {availablePlans.length === 0 ? (
+            <p className="text-foreground text-sm lg:col-span-3">
+              Precios no disponibles por el momento.
+            </p>
+          ) : null}
+          {availablePlans.map(({ planId, price }) => {
             const plan = SCHOOL_PLAN_DESCRIPTORS[planId];
-            const price = prices[planId];
             const isQuoted = QUOTED_PUBLIC_PLANS.has(planId);
+            const hasMonthlyPrice = price.monthly > 0;
+            const priceNote = isQuoted
+              ? "Valor final según sedes y volumen."
+              : hasMonthlyPrice && price.annual > 0
+                ? describeAnnualPrice(price)
+                : null;
             return (
               <article
                 key={plan.id}
@@ -70,13 +79,15 @@ export default function Pricing({
                       <span className="text-sm font-medium text-[var(--gray-500)]">Desde</span>
                     ) : null}
                     <span className="text-3xl font-semibold tracking-tight tabular-nums">
-                      {formatCop(price.monthly)}
+                      {formatCop(hasMonthlyPrice ? price.monthly : price.annual)}
                     </span>
-                    <span className="text-sm text-[var(--gray-500)]">/ mes</span>
+                    <span className="text-sm text-[var(--gray-500)]">
+                      {hasMonthlyPrice ? "/ mes" : "/ año"}
+                    </span>
                   </p>
-                  <p className="mt-1 text-xs text-[var(--gray-500)] tabular-nums">
-                    {isQuoted ? "Valor final según sedes y volumen." : describeAnnualPrice(price)}
-                  </p>
+                  {priceNote ? (
+                    <p className="mt-1 text-xs text-[var(--gray-500)] tabular-nums">{priceNote}</p>
+                  ) : null}
                 </div>
                 <p className="mt-4 text-sm font-medium text-[var(--gray-700)] dark:text-[var(--gray-500)]">
                   {plan.audience}

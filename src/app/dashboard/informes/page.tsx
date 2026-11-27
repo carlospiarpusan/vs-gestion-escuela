@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, ChartNoAxesCombined } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobileVariant } from "@/hooks/useDeviceVariant";
@@ -384,6 +385,12 @@ export default function InformesPage() {
   }, [appliedFilters, report?.options?.availableYears, reportHasVisibleData]);
 
   const periodLabel = `${appliedFilters.year}${appliedFilters.month && appliedFilters.month !== "all" ? ` · ${MONTH_OPTIONS.find((item) => item.value === appliedFilters.month)?.label || appliedFilters.month}` : " · Todo el año"}`;
+  const analysisParams = new URLSearchParams({
+    year: appliedFilters.year,
+    month: appliedFilters.month || "all",
+    ...(appliedFilters.sedeId ? { sede_id: appliedFilters.sedeId } : {}),
+    ...(appliedFilters.escuelaId ? { escuela_id: appliedFilters.escuelaId } : {}),
+  });
 
   return (
     <div>
@@ -393,6 +400,12 @@ export default function InformesPage() {
         description="Una sola vista para saber si el corte está dejando resultado, dónde se está quedando el dinero y qué foco requiere atención inmediata. Todo lo secundario sale del primer plano."
         actions={
           <>
+            <Link
+              href={`/dashboard/informes/analisis?${analysisParams}`}
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--surface-border)] px-3 py-2 text-sm font-medium"
+            >
+              <ChartNoAxesCombined size={16} aria-hidden="true" /> Análisis
+            </Link>
             <button
               type="button"
               onClick={handleGenerate}

@@ -76,6 +76,11 @@ beforeEach(async () => {
       "utf8"
     )
   );
+  await db.exec(`
+    create table gastos(id uuid primary key default gen_random_uuid(),escuela_id uuid,sede_id uuid,user_id uuid,categoria text,concepto text,monto numeric,metodo_pago text,proveedor text,fecha date,fecha_vencimiento date,estado_pago text,recurrente boolean,notas text);
+    alter table nominas add gasto_id uuid references gastos(id);
+    create table cierres_horas_instructores(escuela_id uuid,instructor_id uuid,periodo_anio int,periodo_mes int,gasto_id uuid references gastos(id));
+  `);
   const query = (sql: string, values?: unknown[]) => db.query(sql, values);
   mock.pool.mockReturnValue({ query, connect: async () => ({ query, release: vi.fn() }) });
   mock.auth.mockResolvedValue({ ok: true, perfil: profile });
@@ -216,7 +221,7 @@ it("un administrativo no puede crear para un empleado de otra sede", async () =>
   mock.auth.mockResolvedValue({ ok: true, perfil: { ...profile, rol: "administrativo" } });
   expect((await POST(request({ ...body, empleado_id: otherInstructor }))).status).toBe(403);
 });
-it("no elimina una nómina aprobada y sí elimina un borrador con sus conceptos", async () => {
+it("mantiene el origen de una nómina causada y permite eliminar un borrador sin gasto", async () => {
   const row = await create();
   await PATCH(request({ nomina_id: row.id, estado: "aprobada" }, "PATCH"));
   const deletion = new Request(`https://example.com/api/nominas?id=${row.id}`, {
@@ -224,8 +229,16 @@ it("no elimina una nómina aprobada y sí elimina un borrador con sus conceptos"
   });
   expect((await DELETE(deletion)).status).toBe(400);
   await PATCH(request({ nomina_id: row.id, estado: "borrador" }, "PATCH"));
-  expect((await DELETE(deletion)).status).toBe(200);
-  expect(await snapshot()).toEqual({ payroll: [], concepts: [] });
+  expect((await DELETE(deletion)).status).toBe(400);
+  expect((await db.query("select estado_pago from gastos")).rows).toEqual([
+    { estado_pago: "anulado" },
+  ]);
+  const draft = await POST(request({ ...body, periodo_mes: 11 }));
+  const id = (await draft.json()).nomina.id;
+  expect(
+    (await DELETE(new Request(`https://example.com/api/nominas?id=${id}`, { method: "DELETE" })))
+      .status
+  ).toBe(200);
 });
 it("rechaza fecha de pago imposible e ID inválido antes de guardar", async () => {
   const row = await create();
@@ -267,4 +280,114 @@ it("un administrativo sin sede no puede listar nóminas", async () => {
   });
   expect((await GET(new Request("https://example.com/api/nominas"))).status).toBe(403);
   expect(mock.admin).not.toHaveBeenCalled();
+});
+
+it("links one expense to approval and payment instead of creating a second accounting movement", async () => {
+  const row = await create();
+  const approved = await PATCH(request({ nomina_id: row.id, estado: "aprobada" }, "PATCH"));
+  expect(approved.status).toBe(200);
+  const expense = (
+    await db.query<{ id: string; estado_pago: string }>("select id,estado_pago from gastos")
+  ).rows[0];
+  expect(expense.estado_pago).toBe("pendiente");
+  const paid = await PATCH(
+    request({ nomina_id: row.id, estado: "pagada", fecha_pago: "2026-10-22" }, "PATCH")
+  );
+  expect(paid.status).toBe(200);
+  const result = await paid.json();
+  expect(result.nomina.gasto_id).toBe(expense.id);
+  expect((await db.query("select id,estado_pago,monto::text from gastos")).rows).toEqual([
+    { id: expense.id, estado_pago: "pagado", monto: "1050.00" },
+  ]);
+  await PATCH(request({ nomina_id: row.id, estado: "pagada", fecha_pago: "2026-10-22" }, "PATCH"));
+  expect((await db.query("select count(*)::int as n from gastos")).rows[0]).toEqual({ n: 1 });
+});
+
+it("adopts the explicit hour closure expense and cancels the same movement without duplicating it", async () => {
+  const row = await create();
+  const expenseId = "30000000-0000-4000-8000-000000000001";
+  await db.query(
+    "insert into gastos(id,escuela_id,monto,estado_pago,notas) values($1,$2,1000,'pendiente','CIERRE_HORAS_INSTRUCTOR|2026-10')",
+    [expenseId, school]
+  );
+  await db.query("insert into cierres_horas_instructores values($1,$2,2026,10,$3)", [
+    school,
+    instructor,
+    expenseId,
+  ]);
+  expect((await PATCH(request({ nomina_id: row.id, estado: "aprobada" }, "PATCH"))).status).toBe(
+    200
+  );
+  expect((await db.query("select gasto_id from nominas")).rows).toEqual([{ gasto_id: expenseId }]);
+  expect((await db.query("select id,monto::text from gastos")).rows).toEqual([
+    { id: expenseId, monto: "1050.00" },
+  ]);
+  expect((await PATCH(request({ nomina_id: row.id, estado: "anulada" }, "PATCH"))).status).toBe(
+    200
+  );
+  expect((await db.query("select id,estado_pago from gastos")).rows).toEqual([
+    { id: expenseId, estado_pago: "anulado" },
+  ]);
+});
+
+async function recordPaidClosure(amount: number) {
+  const expenseId = "30000000-0000-4000-8000-000000000002";
+  await db.query(
+    `insert into gastos(id,escuela_id,sede_id,monto,estado_pago,fecha,fecha_vencimiento,notas)
+     values($1,$2,$3,$4,'pagado','2026-10-23','2026-10-15','CIERRE_HORAS_INSTRUCTOR|2026-10')`,
+    [expenseId, school, sede, amount]
+  );
+  await db.query("insert into cierres_horas_instructores values($1,$2,2026,10,$3)", [
+    school,
+    instructor,
+    expenseId,
+  ]);
+  return expenseId;
+}
+
+it("reconoce la nómina como pagada al aprobar un cierre ya pagado y conserva su fecha", async () => {
+  const row = await create();
+  const expenseId = await recordPaidClosure(1050);
+  const approval = { nomina_id: row.id, estado: "aprobada", fecha_pago: null };
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await PATCH(request(approval, "PATCH"));
+    expect(response.status).toBe(200);
+    expect((await response.json()).nomina).toMatchObject({
+      gasto_id: expenseId,
+      estado: "pagada",
+      fecha_pago: "2026-10-23",
+    });
+  }
+
+  expect(
+    (
+      await db.query(
+        "select id,estado_pago,fecha::text,fecha_vencimiento::text,monto::text from gastos"
+      )
+    ).rows
+  ).toEqual([
+    {
+      id: expenseId,
+      estado_pago: "pagado",
+      fecha: "2026-10-23",
+      fecha_vencimiento: "2026-10-15",
+      monto: "1050.00",
+    },
+  ]);
+});
+
+it("conserva el cierre pagado y el borrador si el neto difiere del pago histórico", async () => {
+  const row = await create();
+  const expenseId = await recordPaidClosure(1000);
+  const response = await PATCH(request({ nomina_id: row.id, estado: "aprobada" }, "PATCH"));
+
+  expect(response.status).toBe(409);
+  expect((await response.json()).error).toMatch(/debe coincidir con el gasto de horas ya pagado/);
+  expect((await db.query("select estado, gasto_id from nominas")).rows).toEqual([
+    { estado: "borrador", gasto_id: null },
+  ]);
+  expect((await db.query("select id, estado_pago, monto::text from gastos")).rows).toEqual([
+    { id: expenseId, estado_pago: "pagado", monto: "1000" },
+  ]);
 });

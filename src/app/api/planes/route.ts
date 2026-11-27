@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { authorizeApiRequest, parseJsonBody } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
 import { getServerReadCached, revalidateServerReadCache } from "@/lib/server-read-cache";
@@ -201,6 +202,7 @@ export async function PATCH(request: Request) {
       ...buildDashboardInvalidationTags("superadmin"),
       ...buildDashboardListInvalidationTags("subscriptions"),
     ]);
+    revalidatePath("/");
 
     const updated = result.rows[0];
     return NextResponse.json({

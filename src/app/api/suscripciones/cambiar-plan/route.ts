@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest, parseJsonBody } from "@/lib/api-auth";
 import {
+  SchoolPlanUnavailableError,
   createSchoolCheckoutSession,
   scheduleSchoolPlanChange,
 } from "@/lib/school-subscription-service";
@@ -56,6 +57,9 @@ export async function POST(request: Request) {
       checkout,
     });
   } catch (error) {
+    if (error instanceof SchoolPlanUnavailableError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     console.error("Error al cambiar el plan:", error);
     return NextResponse.json(
       {

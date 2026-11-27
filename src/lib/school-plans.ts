@@ -136,6 +136,10 @@ export function isCommercialSchoolPlan(plan: string | null | undefined): plan is
   return COMMERCIAL_SCHOOL_PLAN_ORDER.includes(plan as PlanEscuelaPago);
 }
 
+export function isConfiguredSchoolPlanPrice(price: number) {
+  return Number.isFinite(price) && price > 0;
+}
+
 export function getSchoolPlanDescriptor(plan: string | null | undefined) {
   return isSchoolPlan(plan) ? SCHOOL_PLAN_DESCRIPTORS[plan] : null;
 }

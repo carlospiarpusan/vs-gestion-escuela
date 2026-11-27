@@ -13,29 +13,20 @@ import {
 import { toast } from "sonner";
 import PageScaffold from "@/components/dashboard/PageScaffold";
 import { fetchJsonWithRetry } from "@/lib/retry";
+import { isConfiguredSchoolPlanPrice } from "@/lib/school-plans";
 import {
   getSchoolSubscriptionIntervalLabel,
   getSchoolSubscriptionPlanLabel,
   getSchoolSubscriptionStatusLabel,
   getSchoolSubscriptionStatusTone,
 } from "@/lib/school-subscription";
+import type { SchoolBillingPlanOption } from "@/lib/school-subscription-service";
 import type {
   PlanEscuelaPago,
   SchoolPaidBillingInterval,
   SchoolSubscriptionAccess,
   SchoolSubscriptionPaymentAttempt,
 } from "@/types/database";
-
-type SchoolBillingPlanOption = {
-  id: PlanEscuelaPago;
-  nombre: string;
-  descripcion: string | null;
-  precio_mensual: number;
-  precio_anual: number;
-  max_alumnos_default: number;
-  max_sedes_default: number;
-  caracteristicas: string[];
-};
 
 type SchoolBillingCenterResponse = {
   school: {
@@ -185,6 +176,10 @@ export default function SchoolBillingCenter() {
     () => data?.plans.find((plan) => plan.id === selectedPlan) ?? null,
     [data?.plans, selectedPlan]
   );
+  const selectionPrice =
+    (selectedInterval === "annual" ? currentPlan?.precio_anual : currentPlan?.precio_mensual) ?? 0;
+  const hasSelectionPrice = isConfiguredSchoolPlanPrice(selectionPrice);
+  const canSubmit = !submitting && hasSelectionPrice;
 
   const canActivate =
     data?.access.actual_status === "trialing" ||
@@ -390,6 +385,7 @@ export default function SchoolBillingCenter() {
                       <button
                         key={plan.id}
                         type="button"
+                        aria-pressed={selected}
                         onClick={() => setSelectedPlan(plan.id)}
                         className={`rounded-3xl border px-5 py-5 text-left transition-all ${
                           selected
@@ -402,13 +398,17 @@ export default function SchoolBillingCenter() {
                         </p>
                         <p className="mt-2 text-sm text-zinc-500">{plan.descripcion}</p>
                         <div className="mt-4 space-y-1">
-                          <p className="text-lg font-black text-zinc-900 dark:text-white">
-                            {formatCurrency(plan.precio_mensual)}
-                            <span className="ml-1 text-xs font-medium text-zinc-500">/ mes</span>
-                          </p>
-                          <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-                            {formatCurrency(plan.precio_anual)} / año
-                          </p>
+                          {isConfiguredSchoolPlanPrice(plan.precio_mensual) ? (
+                            <p className="text-lg font-black text-zinc-900 dark:text-white">
+                              {formatCurrency(plan.precio_mensual)}
+                              <span className="ml-1 text-xs font-medium text-zinc-500">/ mes</span>
+                            </p>
+                          ) : null}
+                          {isConfiguredSchoolPlanPrice(plan.precio_anual) ? (
+                            <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                              {formatCurrency(plan.precio_anual)} / año
+                            </p>
+                          ) : null}
                         </div>
                       </button>
                     );
@@ -417,13 +417,20 @@ export default function SchoolBillingCenter() {
 
                 <div className="mt-5 flex flex-wrap gap-3">
                   {(["monthly", "annual"] as const).map((interval) => {
-                    const active = interval === selectedInterval;
+                    const price =
+                      (interval === "annual"
+                        ? currentPlan?.precio_anual
+                        : currentPlan?.precio_mensual) ?? 0;
+                    const available = isConfiguredSchoolPlanPrice(price);
+                    const active = available && interval === selectedInterval;
                     return (
                       <button
                         key={interval}
                         type="button"
+                        aria-pressed={active}
+                        disabled={!available}
                         onClick={() => setSelectedInterval(interval)}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                        className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-60 ${
                           active
                             ? "bg-blue-600 text-white"
                             : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200"
@@ -435,17 +442,13 @@ export default function SchoolBillingCenter() {
                   })}
                 </div>
 
-                {currentPlan ? (
+                {currentPlan && hasSelectionPrice ? (
                   <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50/80 p-5 dark:border-white/10 dark:bg-zinc-950/30">
                     <p className="text-sm font-semibold text-zinc-900 dark:text-white">
                       Selección actual: {currentPlan.nombre}{" "}
                       {getSchoolSubscriptionIntervalLabel(selectedInterval).toLowerCase()}
                     </p>
-                    <p className="mt-1 text-sm text-zinc-500">
-                      {selectedInterval === "annual"
-                        ? formatCurrency(currentPlan.precio_anual)
-                        : formatCurrency(currentPlan.precio_mensual)}
-                    </p>
+                    <p className="mt-1 text-sm text-zinc-500">{formatCurrency(selectionPrice)}</p>
                     <div className="mt-4 flex flex-wrap gap-2">
                       {currentPlan.caracteristicas.slice(0, 4).map((feature) => (
                         <span
@@ -457,13 +460,19 @@ export default function SchoolBillingCenter() {
                       ))}
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-300" role="status">
+                    {data.plans.length
+                      ? "Selecciona un plan y un periodo disponibles."
+                      : "No hay planes disponibles por el momento."}
+                  </p>
+                )}
 
                 <div className="mt-6 flex flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={() => void handleRenewOrActivate()}
-                    disabled={submitting}
+                    disabled={!canSubmit}
                     className="inline-flex min-h-[48px] items-center gap-2 rounded-2xl bg-[#2563eb] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {canActivate ? "Activar con Wompi" : "Renovar con Wompi"}
@@ -475,7 +484,7 @@ export default function SchoolBillingCenter() {
                       <button
                         type="button"
                         onClick={() => void handleImmediateChange()}
-                        disabled={submitting}
+                        disabled={!canSubmit}
                         className="inline-flex min-h-[48px] items-center gap-2 rounded-2xl border border-zinc-300 px-5 py-3 text-sm font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:text-zinc-100 dark:hover:bg-white/5"
                       >
                         Cambiar hoy y pagar
@@ -483,7 +492,7 @@ export default function SchoolBillingCenter() {
                       <button
                         type="button"
                         onClick={() => void handleScheduleChange()}
-                        disabled={submitting}
+                        disabled={!canSubmit}
                         className="inline-flex min-h-[48px] items-center gap-2 rounded-2xl border border-zinc-300 px-5 py-3 text-sm font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:text-zinc-100 dark:hover:bg-white/5"
                       >
                         Programar para el siguiente ciclo

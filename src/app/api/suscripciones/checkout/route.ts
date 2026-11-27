@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest, parseJsonBody } from "@/lib/api-auth";
 import {
+  SchoolPlanUnavailableError,
   createSchoolCheckoutSession,
   loadSchoolSubscriptionAccess,
 } from "@/lib/school-subscription-service";
@@ -60,6 +61,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(payload);
   } catch (error) {
+    if (error instanceof SchoolPlanUnavailableError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     console.error("Error al preparar checkout de Wompi:", error);
     return NextResponse.json(
       {

@@ -4,7 +4,7 @@ import type { PlanEscuelaPago, SchoolPaidBillingInterval } from "@/types/databas
 
 export type BillingHubOperation = "new_subscription" | "renewal" | "upgrade" | "downgrade_schedule";
 
-type PublicBillingTokenPayload = {
+export type PublicBillingTokenPayload = {
   empresa_id: string;
   target_plan_code: PlanEscuelaPago;
   billing_interval: SchoolPaidBillingInterval;
@@ -66,6 +66,19 @@ function required(name: string) {
 
 function getHubUrl() {
   return required("CLOVENT_BILLING_HUB_URL");
+}
+
+export function validateHubCheckoutUrl(rawUrl: string) {
+  const url = new URL(rawUrl);
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    (url.origin !== "https://checkout.wompi.co" && url.origin !== new URL(getHubUrl()).origin)
+  ) {
+    throw new Error("Destino de checkout no autorizado.");
+  }
+  return url.toString();
 }
 
 function getSharedSecret() {
@@ -132,48 +145,64 @@ export function verifyInternalSignature(
   return safeEqualHex(expected, provided);
 }
 
+export class PublicBillingTokenError extends Error {}
+
 export function verifyPublicBillingToken(token: string): PublicBillingTokenPayload {
-  const [encoded, providedSignature] = token.split(".");
-  if (!encoded || !providedSignature) {
-    throw new Error("Token inválido.");
+  const invalidToken = () => new PublicBillingTokenError("Token de pago inválido.");
+  const [encoded, providedSignature, extra] = token.split(".");
+  if (
+    !encoded ||
+    !providedSignature ||
+    extra !== undefined ||
+    !/^[\da-f]{64}$/i.test(providedSignature)
+  ) {
+    throw invalidToken();
   }
 
   const expected = hmacHex(encoded, getPublicTokenSecret());
   if (!safeEqualHex(expected, providedSignature)) {
-    throw new Error("Firma inválida.");
+    throw invalidToken();
   }
 
-  const payload = JSON.parse(b64urlDecode(encoded)) as Partial<PublicBillingTokenPayload>;
+  let payload: Partial<PublicBillingTokenPayload> | null;
+  try {
+    payload = JSON.parse(b64urlDecode(encoded));
+  } catch {
+    throw invalidToken();
+  }
   if (
-    !payload.empresa_id ||
+    !payload?.empresa_id ||
     !payload.target_plan_code ||
     !payload.billing_interval ||
     !payload.operation_type ||
-    !payload.exp ||
+    typeof payload.exp !== "number" ||
+    !Number.isSafeInteger(payload.exp) ||
     !payload.nonce
   ) {
-    throw new Error("Token incompleto.");
+    throw invalidToken();
   }
 
-  const now = Math.floor(Date.now() / 1000);
-  if (payload.exp < now) {
-    throw new Error("Token vencido.");
+  if (payload.exp * 1000 <= Date.now()) {
+    throw new PublicBillingTokenError("El enlace de pago expiró.");
   }
 
   return payload as PublicBillingTokenPayload;
 }
 
-export async function requestHubCheckout(input: {
-  empresa_id: string;
-  target_plan_code: string;
-  billing_interval: SchoolPaidBillingInterval;
-  operation_type: BillingHubOperation;
-  amount_in_cents: number;
-  currency: "COP";
-  plan_name?: string | null;
-  redirect_url?: string;
-  metadata?: Record<string, unknown>;
-}) {
+export async function requestHubCheckout(
+  input: {
+    empresa_id: string;
+    target_plan_code: string;
+    billing_interval: SchoolPaidBillingInterval;
+    operation_type: BillingHubOperation;
+    amount_in_cents: number;
+    currency: "COP";
+    plan_name?: string | null;
+    redirect_url?: string;
+    metadata?: Record<string, unknown>;
+  },
+  signal?: AbortSignal
+) {
   const payload = {
     product_code: "condusoft" as const,
     empresa_id: input.empresa_id,
@@ -194,6 +223,7 @@ export async function requestHubCheckout(input: {
     headers: buildInternalHeaders(payloadText),
     body: payloadText,
     cache: "no-store",
+    signal,
   });
 
   const body = (await response.json().catch(() => null)) as

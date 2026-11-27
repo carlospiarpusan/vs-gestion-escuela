@@ -1,7 +1,7 @@
 import type { PoolClient } from "pg";
 import { ensureSchoolScope, ensureSedeScope } from "@/lib/api-auth";
 import { getServerDbPool } from "@/lib/server-db";
-import type { Nomina, Perfil } from "@/types/database";
+import type { EstadoPagoGasto, Nomina, Perfil } from "@/types/database";
 
 type Actor = Pick<Perfil, "id" | "rol" | "escuela_id" | "sede_id" | "activo">;
 type Concept = {
@@ -222,14 +222,108 @@ export async function updatePayroll(body: PayrollUpdate, actor: Actor) {
         body.notas === undefined ? payroll.notas : body.notas,
       ]
     );
+    await syncPayrollExpense(client, body.nomina_id, actor.id);
     return responsePayroll(client, body.nomina_id);
   });
+}
+
+async function syncPayrollExpense(client: PoolClient, id: string, actorId: string) {
+  const { rows } = await client.query<Nomina & { gasto_id: string | null }>(
+    "select * from public.nominas where id=$1",
+    [id]
+  );
+  const payroll = rows[0];
+  // The hours closure uses the same month lock, so it cannot create a second
+  // expense while payroll is adopting or creating the original movement.
+  await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [
+    `cierre-horas:${payroll.escuela_id}:${payroll.periodo_anio}:${payroll.periodo_mes}`,
+  ]);
+  let expenseId = payroll.gasto_id;
+  if (!expenseId && payroll.estado !== "borrador" && payroll.empleado_tipo === "instructor") {
+    // Only an explicit closure link is safe to reuse. Never infer a duplicate
+    // from the employee name or amount of an unrelated historic expense.
+    const closure = await client.query<{ gasto_id: string }>(
+      "select gasto_id from public.cierres_horas_instructores where escuela_id=$1 and instructor_id=$2 and periodo_anio=$3 and periodo_mes=$4 and gasto_id is not null for update",
+      [payroll.escuela_id, payroll.empleado_id, payroll.periodo_anio, payroll.periodo_mes]
+    );
+    expenseId = closure.rows[0]?.gasto_id || null;
+  }
+  if (!expenseId && (payroll.estado === "borrador" || payroll.estado === "anulada")) return;
+  const expense = expenseId
+    ? (
+        await client.query<{ estado_pago: EstadoPagoGasto; fecha: string; monto: string }>(
+          `select estado_pago,fecha::text,monto::text from public.gastos
+           where id=$1 and escuela_id=$2 for update`,
+          [expenseId, payroll.escuela_id]
+        )
+      ).rows[0]
+    : null;
+  if (expenseId && !expense)
+    throw new PayrollMutationError("No se encontró el gasto vinculado de la nómina.", 409);
+
+  // Approval can adopt a paid hours closure. Use the original payment so the
+  // payroll view cannot offer to pay it again or rewrite its recorded date.
+  const adoptPayment =
+    expense?.estado_pago === "pagado" &&
+    payroll.estado !== "anulada" &&
+    (!payroll.gasto_id || payroll.estado !== "pagada");
+  if (adoptPayment && Number(expense.monto) !== Number(payroll.neto_pagar))
+    throw new PayrollMutationError(
+      "El neto de la nómina debe coincidir con el gasto de horas ya pagado.",
+      409
+    );
+
+  const payrollState = adoptPayment ? "pagada" : payroll.estado;
+  const paymentDate = adoptPayment ? expense.fecha : payroll.fecha_pago;
+  const state =
+    payrollState === "pagada" ? "pagado" : payrollState === "aprobada" ? "pendiente" : "anulado";
+  const note = `NOMINA|id=${payroll.id}`;
+  if (expenseId) {
+    await client.query(
+      `update public.gastos set monto=$1,estado_pago=$2,fecha=coalesce($3::date,fecha),
+       notas=case when notas like 'NOMINA|id=%' then notas else concat($6::text,E'\\n',notas) end
+       where id=$4 and escuela_id=$5`,
+      [
+        payroll.neto_pagar,
+        state,
+        state === "pagado" ? paymentDate : null,
+        expenseId,
+        payroll.escuela_id,
+        note,
+      ]
+    );
+  } else {
+    const date =
+      paymentDate || `${payroll.periodo_anio}-${String(payroll.periodo_mes).padStart(2, "0")}-01`;
+    const result = await client.query<{ id: string }>(
+      `insert into public.gastos(escuela_id,sede_id,user_id,categoria,concepto,monto,metodo_pago,proveedor,fecha,fecha_vencimiento,estado_pago,recurrente,notas)
+      values($1,$2,$3,'nominas',$4,$5,'transferencia',$6,$7,$7,$8,false,$9) returning id`,
+      [
+        payroll.escuela_id,
+        payroll.sede_id,
+        actorId,
+        `Nómina ${payroll.periodo_mes}/${payroll.periodo_anio} — ${payroll.empleado_nombre}`,
+        payroll.neto_pagar,
+        payroll.empleado_nombre,
+        date,
+        state,
+        note,
+      ]
+    );
+    expenseId = result.rows[0].id;
+  }
+  await client.query("update public.nominas set gasto_id=$2,estado=$3,fecha_pago=$4 where id=$1", [
+    id,
+    expenseId,
+    payrollState,
+    paymentDate,
+  ]);
 }
 
 export async function deletePayroll(id: string, actor: Actor) {
   return transaction(async (client) => {
     const payroll = await loadPayroll(client, id, actor);
-    if (payroll.estado !== "borrador")
+    if (payroll.estado !== "borrador" || payroll.gasto_id)
       throw new PayrollMutationError("Solo se pueden eliminar nóminas en estado borrador.", 400);
     await client.query("delete from public.nominas where id=$1", [id]);
     return payroll;

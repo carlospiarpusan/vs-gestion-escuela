@@ -10,6 +10,7 @@ export default defineConfig({
     globals: true,
     // PGlite boot and jsdom forms exceed the 5s default when the full suite runs in parallel.
     testTimeout: 30_000,
+    hookTimeout: 30_000,
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: [".claude/**", ".next/**", "node_modules/**"],
     alias: {

@@ -1,45 +1,33 @@
 import type { PlanEscuelaPago } from "@/types/database";
-import { isCommercialSchoolPlan } from "@/lib/school-plans";
+import { isCommercialSchoolPlan, isConfiguredSchoolPlanPrice } from "@/lib/school-plans";
 
 export type PublicPlanPrice = {
   monthly: number;
   annual: number;
 };
 
-export type PublicPlanPrices = Record<PlanEscuelaPago, PublicPlanPrice>;
-
-/**
- * Valores de respaldo para la página pública cuando la base no responde
- * (por ejemplo, durante el build). Deben coincidir con planes_config.
- */
-export const FALLBACK_PUBLIC_PLAN_PRICES: PublicPlanPrices = {
-  basico: { monthly: 149_000, annual: 1_490_000 },
-  profesional: { monthly: 299_000, annual: 2_990_000 },
-  enterprise: { monthly: 590_000, annual: 5_900_000 },
-};
+export type PublicPlanPrices = Partial<Record<PlanEscuelaPago, PublicPlanPrice>>;
 
 /** Planes que se muestran como "Desde" porque se ajustan por cotización. */
 export const QUOTED_PUBLIC_PLANS: ReadonlySet<PlanEscuelaPago> = new Set(["enterprise"]);
 
 type PlanPriceRow = {
   id: string;
+  activo: boolean;
   precio_mensual: number | string | null;
   precio_anual: number | string | null;
 };
 
-export function mergePublicPlanPrices(rows: PlanPriceRow[]): PublicPlanPrices {
-  const prices: PublicPlanPrices = {
-    basico: { ...FALLBACK_PUBLIC_PLAN_PRICES.basico },
-    profesional: { ...FALLBACK_PUBLIC_PLAN_PRICES.profesional },
-    enterprise: { ...FALLBACK_PUBLIC_PLAN_PRICES.enterprise },
-  };
+export function selectPublicPlanPrices(rows: PlanPriceRow[]): PublicPlanPrices {
+  const prices: PublicPlanPrices = {};
 
   for (const row of rows) {
-    if (!isCommercialSchoolPlan(row.id)) continue;
-    const monthly = Number(row.precio_mensual);
-    const annual = Number(row.precio_anual);
-    if (Number.isFinite(monthly) && monthly > 0) prices[row.id].monthly = monthly;
-    if (Number.isFinite(annual) && annual > 0) prices[row.id].annual = annual;
+    if (!row.activo || !isCommercialSchoolPlan(row.id)) continue;
+    const monthlyPrice = Number(row.precio_mensual);
+    const annualPrice = Number(row.precio_anual);
+    const monthly = isConfiguredSchoolPlanPrice(monthlyPrice) ? monthlyPrice : 0;
+    const annual = isConfiguredSchoolPlanPrice(annualPrice) ? annualPrice : 0;
+    if (monthly > 0 || annual > 0) prices[row.id] = { monthly, annual };
   }
 
   return prices;

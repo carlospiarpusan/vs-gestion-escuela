@@ -55,6 +55,11 @@ async function cleanupExpiredRateLimits() {
   await pool.query("delete from public.api_rate_limits where reset_at < now()");
 }
 
+export async function prepareRateLimitStore() {
+  await ensureRateLimitStore();
+  void cleanupExpiredRateLimits().catch(() => undefined);
+}
+
 async function executeRateLimitQuery(
   pool: ReturnType<typeof getServerDbPool>,
   key: string,
@@ -85,8 +90,7 @@ export async function rateLimit(
   limit: number,
   windowMs: number
 ): Promise<RateLimitResult> {
-  await ensureRateLimitStore();
-  void cleanupExpiredRateLimits().catch(() => undefined);
+  await prepareRateLimitStore();
 
   const pool = getServerDbPool();
   const intervalText = `${windowMs} milliseconds`;
