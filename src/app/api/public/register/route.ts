@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { APP_TIME_ZONE } from "@/lib/date-utils";
 import {
   buildSupabaseAdminClient,
@@ -16,6 +16,7 @@ import {
   buildDashboardInvalidationTags,
   buildDashboardListInvalidationTags,
 } from "@/lib/server-cache-tags";
+import { notifySchoolSignup } from "@/lib/school-signup-notification";
 
 type ProfessionalPlanDefaultsRow = {
   max_alumnos_default: number | string | null;
@@ -240,6 +241,8 @@ export async function POST(request: Request) {
         ...buildDashboardListInvalidationTags("subscriptions"),
         ...buildDashboardInvalidationTags("superadmin"),
       ]);
+
+      after(() => notifySchoolSignup({ escuelaId: schoolId, escuela, nombre, email }));
 
       return NextResponse.json({ success: true, escuela_id: schoolId });
     } catch (error) {
