@@ -12,6 +12,7 @@ const Footer = dynamic(() => import("@/components/Footer"));
 const FAQ = dynamic(() => import("@/components/public/FAQ"));
 const TrustSection = dynamic(() => import("@/components/public/TrustSection"));
 import { faqItems } from "@/lib/public-site-content";
+import { loadPublicPlanPrices } from "@/lib/public-plan-pricing-server";
 import {
   buildPublicMetadata,
   SITE_DESCRIPTION,
@@ -27,7 +28,11 @@ export const metadata: Metadata = buildPublicMetadata({
   keywords: SITE_KEYWORDS,
 });
 
-export default function Home() {
+// Regenera la página para reflejar cambios de precio hechos desde el panel.
+export const revalidate = 300;
+
+export default async function Home() {
+  const planPrices = await loadPublicPlanPrices();
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
@@ -111,7 +116,7 @@ export default function Home() {
         <ProductTour />
         <HowItWorks />
         <TrustSection />
-        <Pricing />
+        <Pricing prices={planPrices} />
         <FAQ />
         <CTA />
       </main>

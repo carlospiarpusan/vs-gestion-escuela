@@ -2,6 +2,13 @@ import Link from "next/link";
 import { BadgeCheck, Headphones, Layers3 } from "lucide-react";
 import SectionIntro from "@/components/public/SectionIntro";
 import { COMMERCIAL_SCHOOL_PLAN_ORDER, SCHOOL_PLAN_DESCRIPTORS } from "@/lib/school-plans";
+import {
+  FALLBACK_PUBLIC_PLAN_PRICES,
+  QUOTED_PUBLIC_PLANS,
+  describeAnnualPrice,
+  formatCop,
+  type PublicPlanPrices,
+} from "@/lib/public-plan-pricing";
 
 const planSupportHighlights = [
   "Definición del plan según el tamaño real de la escuela.",
@@ -9,7 +16,11 @@ const planSupportHighlights = [
   "Revisión del punto de partida ideal antes de crecer a más sedes o más equipo interno.",
 ];
 
-export default function Pricing() {
+export default function Pricing({
+  prices = FALLBACK_PUBLIC_PLAN_PRICES,
+}: {
+  prices?: PublicPlanPrices;
+}) {
   return (
     <section
       id="pricing"
@@ -26,8 +37,8 @@ export default function Pricing() {
                 Enfoque comercial
               </p>
               <p className="mt-3 text-sm leading-6 text-[var(--gray-700)] dark:text-[var(--gray-500)]">
-                Los planes describen la etapa operativa ideal de la escuela y el nivel de control
-                que necesita en este momento.
+                Precios en pesos colombianos (COP). Puedes pagar mes a mes o el año completo con
+                descuento.
               </p>
             </div>
           }
@@ -36,6 +47,8 @@ export default function Pricing() {
         <div className="grid gap-5 lg:grid-cols-3">
           {COMMERCIAL_SCHOOL_PLAN_ORDER.map((planId) => {
             const plan = SCHOOL_PLAN_DESCRIPTORS[planId];
+            const price = prices[planId];
+            const isQuoted = QUOTED_PUBLIC_PLANS.has(planId);
             return (
               <article
                 key={plan.id}
@@ -51,7 +64,21 @@ export default function Pricing() {
                 </div>
 
                 <h3 className="text-foreground mt-4 text-xl font-semibold">{plan.label}</h3>
-                <p className="mt-2 text-sm font-medium text-[var(--gray-700)] dark:text-[var(--gray-500)]">
+                <div className="mt-3">
+                  <p className="text-foreground flex flex-wrap items-baseline gap-x-1.5">
+                    {isQuoted ? (
+                      <span className="text-sm font-medium text-[var(--gray-500)]">Desde</span>
+                    ) : null}
+                    <span className="text-3xl font-semibold tracking-tight tabular-nums">
+                      {formatCop(price.monthly)}
+                    </span>
+                    <span className="text-sm text-[var(--gray-500)]">/ mes</span>
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--gray-500)] tabular-nums">
+                    {isQuoted ? "Valor final según sedes y volumen." : describeAnnualPrice(price)}
+                  </p>
+                </div>
+                <p className="mt-4 text-sm font-medium text-[var(--gray-700)] dark:text-[var(--gray-500)]">
                   {plan.audience}
                 </p>
                 <p className="mt-3 text-sm leading-6 text-[var(--gray-700)] dark:text-[var(--gray-500)]">
